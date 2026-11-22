@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Topics — KANVERIFY</title>
+<link rel="stylesheet" href="kanverify.css">
+<script src="theme.js"></script>
+<script src="sample-data.js" defer></script>
+<script src="stats.js" defer></script>
+<script src="topic-view.js" defer></script>
+</head>
+<body>
+
+<p class="sample" role="note"><strong>Fictional sample data.</strong> Every person, party, place and quote here is invented.</p>
+
+<header class="site-header">
+  <div class="wrap">
+    <a class="brand" href="home.en.html">KANVERIFY</a>
+    <nav class="site-nav" aria-label="Main">
+      <ul>
+        <li><a href="topic.en.html" aria-current="page">Topics</a></li>
+        <li><a href="method.en.html">Method</a></li>
+      </ul>
+    </nav>
+    <ul class="tools">
+      <li><a href="topic.fr.html" hreflang="fr" lang="fr">FR</a></li>
+      <li><a href="topic.en.html" aria-current="true">EN</a></li>
+      <li><button type="button" data-theme-toggle hidden aria-pressed="false">Dark theme</button></li>
+    </ul>
+  </div>
+</header>
+
+<main class="wrap">
+  <h1>Topics</h1>
+
+  <div class="split">
+    <div>
+      <div class="controls">
+        <label class="field">Topic <select id="topic"></select></label>
+        <label class="field">Country
+          <select id="country"><option value="">All countries</option><option value="CA">Canada</option><option value="FR">France</option></select>
+        </label>
+        <fieldset class="toggle">
+          <legend>Order</legend>
+          <label><input type="radio" name="sort" value="name" checked> by name</label>
+          <label><input type="radio" name="sort" value="items"> by number of items</label>
+        </fieldset>
+      </div>
+
+      <ul class="keylist" id="key" aria-label="Key"></ul>
+      <ul class="people" id="people"></ul>
+      <p class="muted">One scale for everyone: one unit of bar is one item. <span id="nobody"></span></p>
+
+      <div class="layers">
+        <details class="layer">
+          <summary><span class="t">The same counts as a table</span><span class="s">All six verdicts, zeros included</span></summary>
+          <div class="table-scroll" id="table"></div>
+        </details>
+        <section class="tl" id="tl" hidden aria-label="Period">
+          <details class="layer">
+            <summary><span class="t">Period</span><span class="s tl-title" aria-live="polite"></span></summary>
+            <div class="tl-head">
+              <button type="button" class="tl-step" data-step="-1" aria-label="Previous year">‹</button>
+              <span class="tl-sub"></span>
+              <button type="button" class="tl-step" data-step="1" aria-label="Next year">›</button>
+            </div>
+            <div class="tl-svg"></div>
+            <p class="tl-note"></p>
+            <fieldset class="toggle">
+              <legend>Place items by</legend>
+              <label><input type="radio" name="basis" value="said"> the date they were made</label>
+              <label><input type="radio" name="basis" value="deadline"> their deadline</label>
+            </fieldset>
+            <fieldset class="toggle"><legend>Show</legend><label><input type="radio" name="type" value="all"> both</label><label><input type="radio" name="type" value="promise"> promises</label><label><input type="radio" name="type" value="prediction"> predictions</label></fieldset>
+            <div class="range">
+              <label>From <input type="range" name="from" id="r-from"> <output class="out-from" for="r-from"></output></label>
+              <label>To <input type="range" name="to" id="r-to"> <output class="out-to" for="r-to"></output></label>
+            </div>
+            <div class="presets"><button type="button" data-preset="all">All years</button><button type="button" data-preset="year">This year</button></div>
+          </details>
+        </section>
+      </div>
+    </div>
+
+    <section aria-labelledby="h-items">
+      <h2 id="h-items">Items</h2>
+      <p><span id="filter-state" class="muted" aria-live="polite"></span> <button type="button" class="linkbtn" id="reset" hidden>Everyone</button></p>
+      <ul class="rows" id="rows"></ul>
+      <noscript><p>The comparison and filters need JavaScript. The published site prints each topic’s items here.</p></noscript>
+    </section>
+  </div>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <ul>
+      <li><a href="home.en.html">Timeline</a></li>
+      <li><a href="method.en.html">Method</a></li>
+      <li><a href="#corrections">Corrections</a></li>
+      <li><a href="mailto:corrections@example.org">Request a correction</a></li>
+    </ul>
+  </div>
+</footer>
+</body>
+</html>

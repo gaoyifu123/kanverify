@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KANVERIFY — a chronicle of public promises</title>
+<link rel="stylesheet" href="kanverify.css">
+<script src="theme.js"></script>
+<script src="sample-data.js" defer></script>
+<script src="stats.js" defer></script>
+</head>
+<body>
+
+<p class="sample" role="note"><strong>Fictional sample data.</strong> Every person, party, place and quote here is invented.</p>
+
+<header class="site-header">
+  <div class="wrap">
+    <a class="brand" href="home.en.html" aria-current="page">KANVERIFY</a>
+    <nav class="site-nav" aria-label="Main">
+      <ul>
+        <li><a href="topic.en.html">Topics</a></li>
+        <li><a href="method.en.html">Method</a></li>
+      </ul>
+    </nav>
+    <ul class="tools">
+      <li><a href="home.fr.html" hreflang="fr" lang="fr">FR</a></li>
+      <li><a href="home.en.html" aria-current="true">EN</a></li>
+      <li><button type="button" data-theme-toggle hidden aria-pressed="false">Dark theme</button></li>
+    </ul>
+  </div>
+</header>
+
+<main class="wrap">
+  <h1 class="visually-hidden">A chronicle of public promises and predictions</h1>
+  <p class="tagline">A chronicle of what was promised or predicted in public, and what became of it.</p>
+
+  <section class="tl" id="tl" hidden aria-labelledby="tl-title">
+    <div class="tl-head">
+      <button type="button" class="tl-step" data-step="-1" aria-label="Previous year">‹</button>
+      <h2 class="tl-title" id="tl-title" aria-live="polite">2026</h2>
+      <button type="button" class="tl-step" data-step="1" aria-label="Next year">›</button>
+    </div>
+    <p class="tl-sub">Promises falling due</p>
+    <div class="tl-svg"></div>
+    <p class="tl-note"></p>
+    <details>
+      <summary>Change the period or the dates used</summary>
+      <fieldset class="toggle">
+        <legend>Place promises by</legend>
+        <label><input type="radio" name="basis" value="deadline"> their deadline</label>
+        <label><input type="radio" name="basis" value="said"> the date they were made</label>
+      </fieldset>
+      <fieldset class="toggle"><legend>Show</legend><label><input type="radio" name="type" value="all"> both</label><label><input type="radio" name="type" value="promise"> promises</label><label><input type="radio" name="type" value="prediction"> predictions</label></fieldset>
+      <div class="range">
+        <label>From <input type="range" name="from" id="r-from"> <output class="out-from" for="r-from"></output></label>
+        <label>To <input type="range" name="to" id="r-to"> <output class="out-to" for="r-to"></output></label>
+      </div>
+      <div class="presets"><button type="button" data-preset="year">This year</button><button type="button" data-preset="all">All years</button></div>
+    </details>
+  </section>
+
+  <div id="cards" aria-live="polite"></div>
+  <noscript><p>The timeline needs JavaScript. On the published site this list is printed in the page for the current year; every person below also has a plain list of their items.</p></noscript>
+
+  <h2>People and parties on record</h2>
+  <ul class="subjects">
+    <li><a href="#subject-31"><span><span lang="fr">Alliance civique de Valbourg</span> <span class="muted">· Party · France</span></span><span class="n">6 items</span></a></li>
+    <li><a href="#subject-23"><span>Daniel Okafor <span class="muted">· Person · Canada</span></span><span class="n">10 items</span></a></li>
+    <li><a href="person.en.html"><span>Hélène Marchetti <span class="muted">· Person · France</span></span><span class="n">14 items</span></a></li>
+    <li><a href="#subject-37"><span>Inès Vauclair <span class="muted">· Person · France</span></span><span class="n">3 items</span></a></li>
+    <li><a href="#subject-29"><span>Margaret Lindqvist <span class="muted">· Person · Canada</span></span><span class="n">5 items</span></a></li>
+  </ul>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <ul>
+      <li><a href="topic.en.html">Topics</a></li>
+      <li><a href="method.en.html">Method</a></li>
+      <li><a href="#corrections">Corrections</a></li>
+      <li><a href="mailto:corrections@example.org">Request a correction</a></li>
+    </ul>
+    <p class="muted">Every verdict rests on original documents and is confirmed by a person before publication. <a href="method.en.html">How</a></p>
+  </div>
+</footer>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  var S = window.KVStats, out = document.getElementById('cards');
+  S.timeline(document.getElementById('tl'), {
+    items: KV.items, basis: 'deadline',
+    onChange: function (list, st) { S.cards(out, list, st.basis); }
+  });
+});
+</script>
+</body>
+</html>

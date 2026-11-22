@@ -1,0 +1,37 @@
+# Local data never leaves this machine through git (principle 8)
+data/*.db
+data/*.db-*
+data/evidence/
+!data/.gitkeep
+
+node_modules/
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+Thumbs.db
+
+# Generated static site (npm run site); rebuilt from the ledger, never edited by hand
+dist/
+# Leftovers of an interrupted site build (src/site.js swaps folders by renaming)
+.dist.build-*/
+.dist.old-*/
+
+# Extraction candidates and transcriptions (src/extract.js): working files, reviewed before anything is recorded
+data/candidates/
+
+# Link inbox read from the project mailbox (local only)
+data/inbox.jsonl
+
+# Local-only notes and private URLs
+CLAUDE.local.md
+
+# Not public: unconfirmed results about real people, and research notes with long third-party quotes
+# (CLAUDE.md: no unconfirmed conclusions are published; decision 0011)
+docs/log/2026-11-22-jury-sample.md
+docs/log/2026-11-22-verify-output.md
+docs/log/2026-11-22-candidate-review.md
+docs/log/2026-11-22-pipeline-0010-output.md
+docs/log/2026-11-22-open-source-scan.md
+docs/research/

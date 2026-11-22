@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hélène Marchetti — KANVERIFY</title>
+<link rel="stylesheet" href="kanverify.css">
+<script src="theme.js"></script>
+<script src="sample-data.js" defer></script>
+<script src="stats.js" defer></script>
+<script src="person-view.js" defer></script>
+</head>
+<body>
+
+<p class="sample" role="note"><strong>Fictional sample data.</strong> Hélène Marchetti, Valbourg and every quote here are invented.</p>
+
+<header class="site-header">
+  <div class="wrap">
+    <a class="brand" href="home.en.html">KANVERIFY</a>
+    <nav class="site-nav" aria-label="Main">
+      <ul>
+        <li><a href="topic.en.html">Topics</a></li>
+        <li><a href="method.en.html">Method</a></li>
+      </ul>
+    </nav>
+    <ul class="tools">
+      <li><a href="person.fr.html" hreflang="fr" lang="fr">FR</a></li>
+      <li><a href="person.en.html" aria-current="true">EN</a></li>
+      <li><button type="button" data-theme-toggle hidden aria-pressed="false">Dark theme</button></li>
+    </ul>
+  </div>
+</header>
+
+<main class="wrap" data-subject="17">
+  <h1>Hélène Marchetti</h1>
+  <p class="muted">Person · France · 14 items · verdicts as of <time datetime="2026-11-21">21 November 2026</time></p>
+  <p class="prose">These 14 items come from 3 documents, listed below with the items taken from each. Anything Hélène Marchetti said outside these documents is not recorded here.</p>
+
+  <div class="split">
+    <div>
+      <section aria-labelledby="h-verdicts">
+        <h2 id="h-verdicts">Verdicts</h2>
+        <div class="stats">
+          <div class="donut" id="donut"></div>
+          <div id="legend"></div>
+        </div>
+        <p class="muted">These are counts, not a score. Tap a verdict to list its items. <a href="method.en.html#verdicts">What the verdicts mean</a></p>
+      </section>
+
+      <section aria-labelledby="h-topics">
+        <h2 id="h-topics">Topics</h2>
+        <ul class="topics" id="topics"></ul>
+      </section>
+
+      <section class="tl layers" id="tl" hidden aria-label="Period">
+        <details class="layer">
+          <summary><span class="t">Period</span><span class="s tl-title" aria-live="polite"></span></summary>
+          <div class="tl-head">
+            <button type="button" class="tl-step" data-step="-1" aria-label="Previous year">‹</button>
+            <span class="tl-sub"></span>
+            <button type="button" class="tl-step" data-step="1" aria-label="Next year">›</button>
+          </div>
+          <div class="tl-svg"></div>
+          <p class="tl-note"></p>
+          <fieldset class="toggle">
+            <legend>Place items by</legend>
+            <label><input type="radio" name="basis" value="said"> the date they were made</label>
+            <label><input type="radio" name="basis" value="deadline"> their deadline</label>
+          </fieldset>
+          <fieldset class="toggle"><legend>Show</legend><label><input type="radio" name="type" value="all"> both</label><label><input type="radio" name="type" value="promise"> promises</label><label><input type="radio" name="type" value="prediction"> predictions</label></fieldset>
+          <div class="range">
+            <label>From <input type="range" name="from" id="r-from"> <output class="out-from" for="r-from"></output></label>
+            <label>To <input type="range" name="to" id="r-to"> <output class="out-to" for="r-to"></output></label>
+          </div>
+          <div class="presets"><button type="button" data-preset="all">All years</button><button type="button" data-preset="year">This year</button></div>
+        </details>
+      </section>
+    </div>
+
+    <section aria-labelledby="h-items">
+      <h2 id="h-items">Items, by where they were said</h2>
+      <p><span id="filter-state" class="muted" aria-live="polite"></span> <button type="button" class="linkbtn" id="reset" hidden>Show all</button></p>
+      <div id="rows"></div>
+      <noscript><p>The charts and filters need JavaScript. The published site prints the full list here, grouped by document.</p></noscript>
+    </section>
+  </div>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <ul>
+      <li><a href="home.en.html">Timeline</a></li>
+      <li><a href="topic.en.html">Topics</a></li>
+      <li><a href="method.en.html">Method</a></li>
+      <li><a href="#corrections">Corrections</a></li>
+      <li><a href="mailto:corrections@example.org">Request a correction</a></li>
+    </ul>
+  </div>
+</footer>
+</body>
+</html>

@@ -1,0 +1,16 @@
+{
+  "name": "kanverify",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A sourced public ledger of promises and predictions, checked against primary evidence.",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "test": "node --test test/",
+    "db:init": "node src/db.js init",
+    "archive": "node src/archive.js",
+    "site": "node src/site.js"
+  }
+}

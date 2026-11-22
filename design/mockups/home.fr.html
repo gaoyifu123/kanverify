@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KANVERIFY — chronique des promesses publiques</title>
+<link rel="stylesheet" href="kanverify.css">
+<script src="theme.js"></script>
+<script src="sample-data.js" defer></script>
+<script src="stats.js" defer></script>
+</head>
+<body>
+
+<p class="sample" role="note"><strong>Données fictives d’exemple.</strong> Les personnes, partis, lieux et citations sont inventés.</p>
+
+<header class="site-header">
+  <div class="wrap">
+    <a class="brand" href="home.fr.html" aria-current="page">KANVERIFY</a>
+    <nav class="site-nav" aria-label="Menu principal">
+      <ul>
+        <li><a href="topic.fr.html">Thèmes</a></li>
+        <li><a href="method.fr.html">Méthode</a></li>
+      </ul>
+    </nav>
+    <ul class="tools">
+      <li><a href="home.fr.html" aria-current="true">FR</a></li>
+      <li><a href="home.en.html" hreflang="en" lang="en">EN</a></li>
+      <li><button type="button" data-theme-toggle hidden aria-pressed="false">Thème sombre</button></li>
+    </ul>
+  </div>
+</header>
+
+<main class="wrap">
+  <h1 class="visually-hidden">Chronique des promesses et prévisions publiques</h1>
+  <p class="tagline">Chronique de ce qui a été promis ou prédit publiquement, et de ce qu’il en est advenu.</p>
+
+  <section class="tl" id="tl" hidden aria-labelledby="tl-title">
+    <div class="tl-head">
+      <button type="button" class="tl-step" data-step="-1" aria-label="Année précédente">‹</button>
+      <h2 class="tl-title" id="tl-title" aria-live="polite">2026</h2>
+      <button type="button" class="tl-step" data-step="1" aria-label="Année suivante">›</button>
+    </div>
+    <p class="tl-sub">Promesses arrivant à échéance</p>
+    <div class="tl-svg"></div>
+    <p class="tl-note"></p>
+    <details>
+      <summary>Changer la période ou les dates utilisées</summary>
+      <fieldset class="toggle">
+        <legend>Placer les promesses selon</legend>
+        <label><input type="radio" name="basis" value="deadline"> leur échéance</label>
+        <label><input type="radio" name="basis" value="said"> la date où elles ont été faites</label>
+      </fieldset>
+      <fieldset class="toggle"><legend>Afficher</legend><label><input type="radio" name="type" value="all"> les deux</label><label><input type="radio" name="type" value="promise"> les promesses</label><label><input type="radio" name="type" value="prediction"> les prévisions</label></fieldset>
+      <div class="range">
+        <label>Du <input type="range" name="from" id="r-from"> <output class="out-from" for="r-from"></output></label>
+        <label>Au <input type="range" name="to" id="r-to"> <output class="out-to" for="r-to"></output></label>
+      </div>
+      <div class="presets"><button type="button" data-preset="year">Cette année</button><button type="button" data-preset="all">Toutes les années</button></div>
+    </details>
+  </section>
+
+  <div id="cards" aria-live="polite"></div>
+  <noscript><p>La frise nécessite JavaScript. Sur le site publié, cette liste est inscrite dans la page pour l’année en cours&#8239;; chaque personne ci-dessous dispose aussi d’une liste simple de ses fiches.</p></noscript>
+
+  <h2>Personnes et partis enregistrés</h2>
+  <ul class="subjects">
+    <li><a href="#sujet-31"><span>Alliance civique de Valbourg <span class="muted">· Parti · France</span></span><span class="n">6 fiches</span></a></li>
+    <li><a href="#sujet-23"><span>Daniel Okafor <span class="muted">· Personne · Canada</span></span><span class="n">10 fiches</span></a></li>
+    <li><a href="person.fr.html"><span>Hélène Marchetti <span class="muted">· Personne · France</span></span><span class="n">14 fiches</span></a></li>
+    <li><a href="#sujet-37"><span>Inès Vauclair <span class="muted">· Personne · France</span></span><span class="n">3 fiches</span></a></li>
+    <li><a href="#sujet-29"><span>Margaret Lindqvist <span class="muted">· Personne · Canada</span></span><span class="n">5 fiches</span></a></li>
+  </ul>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <ul>
+      <li><a href="topic.fr.html">Thèmes</a></li>
+      <li><a href="method.fr.html">Méthode</a></li>
+      <li><a href="#corrections">Corrections</a></li>
+      <li><a href="mailto:corrections@example.org">Demander une correction</a></li>
+    </ul>
+    <p class="muted">Chaque verdict repose sur des documents d’origine et est confirmé par une personne avant publication. <a href="method.fr.html">Comment</a></p>
+  </div>
+</footer>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  var S = window.KVStats, out = document.getElementById('cards');
+  S.timeline(document.getElementById('tl'), {
+    items: KV.items, basis: 'deadline',
+    onChange: function (list, st) { S.cards(out, list, st.basis); }
+  });
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Thèmes — KANVERIFY</title>
+<link rel="stylesheet" href="kanverify.css">
+<script src="theme.js"></script>
+<script src="sample-data.js" defer></script>
+<script src="stats.js" defer></script>
+<script src="topic-view.js" defer></script>
+</head>
+<body>
+
+<p class="sample" role="note"><strong>Données fictives d’exemple.</strong> Les personnes, partis, lieux et citations sont inventés.</p>
+
+<header class="site-header">
+  <div class="wrap">
+    <a class="brand" href="home.fr.html">KANVERIFY</a>
+    <nav class="site-nav" aria-label="Menu principal">
+      <ul>
+        <li><a href="topic.fr.html" aria-current="page">Thèmes</a></li>
+        <li><a href="method.fr.html">Méthode</a></li>
+      </ul>
+    </nav>
+    <ul class="tools">
+      <li><a href="topic.fr.html" aria-current="true">FR</a></li>
+      <li><a href="topic.en.html" hreflang="en" lang="en">EN</a></li>
+      <li><button type="button" data-theme-toggle hidden aria-pressed="false">Thème sombre</button></li>
+    </ul>
+  </div>
+</header>
+
+<main class="wrap">
+  <h1>Thèmes</h1>
+
+  <div class="split">
+    <div>
+      <div class="controls">
+        <label class="field">Thème <select id="topic"></select></label>
+        <label class="field">Pays
+          <select id="country"><option value="">Tous les pays</option><option value="CA">Canada</option><option value="FR">France</option></select>
+        </label>
+        <fieldset class="toggle">
+          <legend>Ordre</legend>
+          <label><input type="radio" name="sort" value="name" checked> par nom</label>
+          <label><input type="radio" name="sort" value="items"> par nombre de fiches</label>
+        </fieldset>
+      </div>
+
+      <ul class="keylist" id="key" aria-label="Légende"></ul>
+      <ul class="people" id="people"></ul>
+      <p class="muted">Une seule échelle pour tous&nbsp;: une unité de barre correspond à une fiche. <span id="nobody"></span></p>
+
+      <div class="layers">
+        <details class="layer">
+          <summary><span class="t">Les mêmes nombres en tableau</span><span class="s">Les six verdicts, zéros compris</span></summary>
+          <div class="table-scroll" id="table"></div>
+        </details>
+        <section class="tl" id="tl" hidden aria-label="Période">
+          <details class="layer">
+            <summary><span class="t">Période</span><span class="s tl-title" aria-live="polite"></span></summary>
+            <div class="tl-head">
+              <button type="button" class="tl-step" data-step="-1" aria-label="Année précédente">‹</button>
+              <span class="tl-sub"></span>
+              <button type="button" class="tl-step" data-step="1" aria-label="Année suivante">›</button>
+            </div>
+            <div class="tl-svg"></div>
+            <p class="tl-note"></p>
+            <fieldset class="toggle">
+              <legend>Placer les fiches selon</legend>
+              <label><input type="radio" name="basis" value="said"> la date où elles ont été formulées</label>
+              <label><input type="radio" name="basis" value="deadline"> leur échéance</label>
+            </fieldset>
+            <fieldset class="toggle"><legend>Afficher</legend><label><input type="radio" name="type" value="all"> les deux</label><label><input type="radio" name="type" value="promise"> les promesses</label><label><input type="radio" name="type" value="prediction"> les prévisions</label></fieldset>
+            <div class="range">
+              <label>Du <input type="range" name="from" id="r-from"> <output class="out-from" for="r-from"></output></label>
+              <label>Au <input type="range" name="to" id="r-to"> <output class="out-to" for="r-to"></output></label>
+            </div>
+            <div class="presets"><button type="button" data-preset="all">Toutes les années</button><button type="button" data-preset="year">Cette année</button></div>
+          </details>
+        </section>
+      </div>
+    </div>
+
+    <section aria-labelledby="h-items">
+      <h2 id="h-items">Fiches</h2>
+      <p><span id="filter-state" class="muted" aria-live="polite"></span> <button type="button" class="linkbtn" id="reset" hidden>Tout le monde</button></p>
+      <ul class="rows" id="rows"></ul>
+      <noscript><p>La comparaison et les filtres nécessitent JavaScript. Le site publié inscrit ici les fiches de chaque thème.</p></noscript>
+    </section>
+  </div>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <ul>
+      <li><a href="home.fr.html">Frise</a></li>
+      <li><a href="method.fr.html">Méthode</a></li>
+      <li><a href="#corrections">Corrections</a></li>
+      <li><a href="mailto:corrections@example.org">Demander une correction</a></li>
+    </ul>
+  </div>
+</footer>
+</body>
+</html>
