@@ -21,6 +21,9 @@ dist/
 # Extraction candidates and transcriptions (src/extract.js): working files, reviewed before anything is recorded
 data/candidates/
 
+# Review desk log (src/desk.js): append-only record of desk actions, local only; include it in backups
+data/desk/
+
 # Link inbox read from the project mailbox (local only)
 data/inbox.jsonl
 
