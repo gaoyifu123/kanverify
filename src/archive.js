@@ -32,6 +32,7 @@ export const MAX_REDIRECTS = 5;
 const STALE_TEMP_MS = 60 * 60 * 1000;
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 const USER_AGENT = 'evidence-archiver/1';
+const PDF_MAGIC = Buffer.from('%PDF-', 'latin1');
 
 const SHA_RE = /^[0-9a-f]{64}$/;
 const MEDIA_TYPE_RE = /^[a-z0-9][a-z0-9!#$&^_.+-]*\/[a-z0-9][a-z0-9!#$&^_.+-]*$/;
@@ -262,6 +263,10 @@ export async function archive(
     maxBytes = MAX_BYTES,
     timeoutMs = TIMEOUT_MS,
     maxRedirects = MAX_REDIRECTS,
+    // When set, anything else is refused before it is registered: a bot-check or error page
+    // served with status 200 is not evidence. For application/pdf the bytes must also start
+    // with "%PDF-", whatever the Content-Type says.
+    expectMediaType = null,
   } = {}
 ) {
   let current = parseHttpUrl(url);
@@ -295,6 +300,9 @@ export async function archive(
     const mediaType = (response.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase();
     if (!mediaType) throw new Error('The server sent no Content-Type; refusing to guess.');
     if (!MEDIA_TYPE_RE.test(mediaType)) throw new Error(`Unusable Content-Type: ${mediaType}`);
+    if (expectMediaType && mediaType !== expectMediaType) {
+      throw new Error(`Expected ${expectMediaType} but the server sent ${mediaType}; refusing to store it.`);
+    }
 
     const declared = Number(response.headers.get('content-length'));
     if (Number.isFinite(declared) && declared > maxBytes) {
@@ -303,11 +311,13 @@ export async function archive(
 
     const hash = createHash('sha256');
     let size = 0;
+    let head = Buffer.alloc(0);
     fd = openSync(tempPath, 'wx');
     if (response.body) {
       for await (const chunk of response.body) {
         size += chunk.byteLength;
         if (size > maxBytes) throw new Error(`File is over the ${maxBytes}-byte limit.`);
+        if (head.length < PDF_MAGIC.length) head = Buffer.concat([head, chunk]).subarray(0, PDF_MAGIC.length);
         hash.update(chunk);
         writeSync(fd, chunk);
       }
@@ -319,6 +329,9 @@ export async function archive(
     closeSync(fd);
     fd = null;
     if (size === 0) throw new Error('The server sent an empty file.');
+    if (expectMediaType === 'application/pdf' && !head.equals(PDF_MAGIC)) {
+      throw new Error('The server said application/pdf but the bytes are not a PDF; refusing to store them.');
+    }
 
     // Never trust whatever is already at the final path: the bytes just hashed replace it.
     // A directory there makes the rename fail, which is the right outcome.

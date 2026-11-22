@@ -455,3 +455,43 @@ test('registerSource removes its file after a failed insert when no row uses the
   assert.throws(() => registerSource(db, { ...META, kind: 'nonsense', url: 'https://example.org/b', sha256, media_type: 'text/plain' }, dir));
   assert.deepEqual(readdirSync(dir), []);
 });
+
+// --- expectMediaType: a bot-check or error page served with 200 is refused before registering ---
+
+test('expectMediaType refuses another Content-Type and registers nothing', async (t) => {
+  const { db, dir } = setup(t);
+  const fetchImpl = fakeFetch('<!DOCTYPE html><title>Request Access</title>', { 'content-type': 'text/html; charset=utf-8' });
+  await assert.rejects(
+    archive(db, { url: 'https://example.org/doc.pdf', ...META }, { fetchImpl, resolver: PUBLIC_DNS, evidenceDir: dir, expectMediaType: 'application/pdf' }),
+    /Expected application\/pdf but the server sent text\/html/
+  );
+  assert.equal(count(db), 0);
+  assert.deepEqual(readdirSync(dir), []);
+});
+
+test('expectMediaType application/pdf refuses bytes that are not a PDF, even labelled as one', async (t) => {
+  const { db, dir } = setup(t);
+  const fetchImpl = fakeFetch('<html>bot check</html>');
+  await assert.rejects(
+    archive(db, { url: 'https://example.org/doc.pdf', ...META }, { fetchImpl, resolver: PUBLIC_DNS, evidenceDir: dir, expectMediaType: 'application/pdf' }),
+    /not a PDF/
+  );
+  assert.equal(count(db), 0);
+  assert.deepEqual(readdirSync(dir), []);
+});
+
+test('expectMediaType application/pdf accepts a PDF header split across chunks', async (t) => {
+  const { db, dir } = setup(t);
+  const enc = new TextEncoder();
+  const body = new ReadableStream({
+    start(c) {
+      for (const part of ['%P', 'DF', '-1.7 rest']) c.enqueue(enc.encode(part));
+      c.close();
+    },
+  });
+  const r = await archive(db, { url: 'https://example.org/doc.pdf', ...META }, {
+    fetchImpl: fakeFetch(body), resolver: PUBLIC_DNS, evidenceDir: dir, expectMediaType: 'application/pdf',
+  });
+  assert.equal(r.sha256, sha('%PDF-1.7 rest'));
+  assert.equal(count(db), 1);
+});

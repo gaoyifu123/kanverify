@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>审核台（设计稿）· KANVERIFY</title>
+<!-- Tokens, verdict chip, .quote, .translation, .meta come from the site stylesheet: same palette B,
+     two sizes, two weights. Desk-only layout below. Spec: design/review-desk.md -->
+<link rel="stylesheet" href="kanverify.css">
+<style>
+  .desk { max-width: 84rem; margin: 0 auto; padding: 0 var(--s4); }
+  /* Header: one line, counts only */
+  .desk-head { position: sticky; top: 0; z-index: 2; background: var(--bg); border-bottom: 1px solid var(--rule); }
+  .desk-head .desk { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2) var(--s5); min-height: var(--target); }
+  .desk-head .brand { margin: 0; }
+  .tabs { display: flex; gap: var(--s3); list-style: none; margin: 0; padding: 0; }
+  .tabs a { display: inline-flex; align-items: center; min-height: var(--target); }
+  .tabs a[aria-current] { font-weight: var(--bold); color: var(--ink); text-decoration: none; border-bottom: 3px solid var(--accent); }
+  .today { margin: 0 0 0 auto; color: var(--ink-2); }
+  .today b { color: var(--ink); }
+
+  .screen { padding: var(--s5) 0 var(--s7); }
+  .screen-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s2) var(--s4); margin-bottom: var(--s4); }
+  .screen-title h1 { margin: 0; }
+
+  .cols { display: grid; gap: var(--s4); }
+  @media (min-width: 64rem) {
+    .cols { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; }
+    .cols.wide-left { grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); }
+  }
+  .panel { background: var(--surface); border: 1px solid var(--rule); border-radius: var(--radius-card); padding: var(--s4); }
+  .panel > :last-child { margin-bottom: 0; }
+  .panel h2 { margin-top: 0; }
+
+  /* Flags from the review file: a plain notice, never an alarm */
+  .flags { list-style: none; padding: 0; }
+  .flags li { background: var(--tint); border-left: 3px solid var(--edge); padding: var(--s2) var(--s3); margin-bottom: var(--s2); }
+  .flags .fix { border-left-color: var(--accent); }
+
+  /* Archived source page: their words, serif; the candidate's quote marked */
+  .source-text { font-family: var(--serif); max-height: 26rem; overflow: auto; padding-right: var(--s2); }
+  .source-text p { margin-bottom: var(--s3); }
+  mark { background: var(--tint); color: var(--ink); box-shadow: inset 0 -3px var(--accent); }
+
+  /* Keys on buttons */
+  kbd { display: inline-block; min-width: 1.6em; padding: 0 0.3em; border: 1px solid var(--edge); border-radius: var(--radius); font: inherit; font-weight: var(--bold); text-align: center; background: var(--surface); }
+  .actions { position: sticky; bottom: 0; z-index: 1; background: var(--bg); border-top: 1px solid var(--rule); padding: var(--s3) 0; margin-top: var(--s4);
+             display: flex; flex-wrap: wrap; gap: var(--s2) var(--s3); align-items: center; }
+  .actions button { min-height: var(--target); padding: 0 var(--s3); border: 1px solid var(--edge); border-radius: var(--radius); background: var(--surface); cursor: pointer; display: inline-flex; align-items: center; gap: var(--s2); }
+  .actions button.primary { border: 2px solid var(--accent); font-weight: var(--bold); }
+  .actions button:disabled { color: var(--ink-2); border-style: dashed; cursor: not-allowed; }
+  .actions .spacer { margin-left: auto; }
+
+  .toast { border: 1px solid var(--edge); border-radius: var(--radius); background: var(--tint); padding: var(--s2) var(--s3); margin-bottom: var(--s4); }
+  .warn { border: 2px solid var(--ink); border-radius: var(--radius); background: var(--surface); padding: var(--s3) var(--s4); margin-bottom: var(--s4); }
+  .warn b { display: block; }
+
+  /* Reject reasons: a short numbered list */
+  .reasons ol { margin: 0 0 var(--s3); padding-left: var(--s5); }
+  .reasons input[type=text], .edit textarea, .edit input, .edit select { width: 100%; min-height: var(--target); border: 1px solid var(--edge); border-radius: var(--radius); background: var(--surface); padding: var(--s1) var(--s2); }
+
+  /* Evidence pack and votes */
+  .excerpts { list-style: none; padding: 0; counter-reset: none; }
+  .excerpts > li { border-top: 1px solid var(--rule); padding: var(--s3) 0; }
+  .excerpts > li:first-child { border-top: 0; padding-top: 0; }
+  .excerpts .n { font-weight: var(--bold); }
+  .judges { display: grid; gap: var(--s3); }
+  @media (min-width: 64rem) { .judges { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  .judge { background: var(--surface); border: 1px solid var(--rule); border-radius: var(--radius-card); padding: var(--s3); }
+  .judge.adopted { border: 2px solid var(--accent); }
+  .judge p { margin-bottom: var(--s2); }
+  .judge details { margin-top: var(--s2); }
+  .agree { display: inline-block; border: 1px solid var(--edge); border-radius: var(--radius); padding: 0 var(--s2); font-weight: var(--bold); background: var(--surface); }
+  .ok-line { border-left: 3px solid var(--edge); padding-left: var(--s3); }
+  .variant { margin: var(--s7) 0 var(--s4); padding: var(--s2) var(--s3); border: 1px dashed var(--edge); color: var(--ink-2); }
+</style>
+</head>
+<body>
+
+<p class="sample">设计稿 · 全部为虚构示例数据（人物、文件、数字都不存在），不是真实记录 · 审核台只在本机 127.0.0.1 运行</p>
+
+<!-- =============================================================== HEADER (both queues) -->
+<header class="desk-head">
+  <div class="desk">
+    <span class="brand">KANVERIFY 审核台</span>
+    <nav aria-label="队列">
+      <ul class="tabs">
+        <li><a href="#candidates" aria-current="page">候选 · 剩 63</a></li>
+        <li><a href="#verdicts">结论 · 剩 18</a></li>
+      </ul>
+    </nav>
+    <p class="today">今天：自动收录 <b>354</b> · 接受 <b>19</b> · 拒绝 <b>8</b> · 确认发布 <b>7</b> · 驳回 <b>1</b> · 人工用时 <b>31 分</b>（候选平均 11 秒，结论平均 92 秒）</p>
+  </div>
+</header>
+
+<main>
+<!-- =============================================================== A. CANDIDATE QUEUE -->
+<section class="screen desk" id="candidates" aria-labelledby="a-title">
+  <div class="screen-title">
+    <h1 id="a-title">带标记的候选 4 / 21</h1>
+    <span class="muted">来源 4：Programme Horizon 2030（虚构）· 全部剩余 63 · 没有标记的已自动收录 · 本条 0:06</span>
+  </div>
+
+  <p class="toast" role="status">已接受 s4-26 → 工作区条目 #212。<kbd>Z</kbd> 撤销</p>
+
+  <div class="cols">
+    <!-- left: the candidate -->
+    <div class="panel">
+      <ul class="flags" aria-label="复查标记">
+        <li>可能重复：与 s4-12（第 4 页）措辞相近 ——
+          <span class="quote-inline" lang="fr" style="font-family: var(--serif)">« 200 maisons de santé en cinq ans »</span>。
+          <span class="muted">不同时接受两条；若是同一项承诺，拒绝其一，理由选 1。</span></li>
+        <li class="fix">建议修正：领域 社会保障 → 卫生。
+          <span class="muted" lang="en">“The quote is about access to care, not social benefits (one ruler, principle 3).”</span>
+          按 <kbd>F</kbd> 采纳并接受。</li>
+      </ul>
+
+      <div class="quote" lang="fr"><p>Nous ouvrirons 200 maisons de santé pluriprofessionnelles d'ici la fin du quinquennat</p></div>
+      <p class="muted">原文第 9 页 · 程序核对：逐字一致（第 9 页）</p>
+      <div class="translation" lang="en"><span class="label" lang="zh-CN">英文译文</span><p>We will open 200 multi-professional health centres by the end of the five-year term</p></div>
+
+      <dl class="meta">
+        <div><dt>说话人</dt><dd>Claire Vasseur（虚构）· <span lang="fr">Candidate à l'élection présidentielle</span></dd></div>
+        <div><dt>类型</dt><dd>承诺</dd></div>
+        <div><dt>领域</dt><dd>社会保障 <span class="muted">（建议：卫生）</span></dd></div>
+        <div><dt>可验证性</dt><dd>可量化</dd></div>
+        <div><dt>期限</dt><dd>2031-05-13 · 推断（任期结束）</dd></div>
+        <div><dt>判定标准 FR</dt><dd lang="fr">Au moins 200 nouvelles maisons de santé pluriprofessionnelles ouvertes entre mai 2026 et mai 2031, selon les données officielles du ministère de la Santé.</dd></div>
+        <div><dt>判定标准 EN</dt><dd lang="en">At least 200 new multi-professional health centres opened between May 2026 and May 2031, according to official Ministry of Health data.</dd></div>
+      </dl>
+    </div>
+
+    <!-- right: the archived page -->
+    <div class="panel">
+      <h2>原件第 9 页 <span class="muted">（转写，程序核对用的文本）</span></h2>
+      <div class="source-text" lang="fr" tabindex="0" aria-label="原件第 9 页">
+        <p><b>Santé : un médecin pour chaque Français</b></p>
+        <p>Trop de nos concitoyens vivent aujourd'hui dans un désert médical. Nous ferons de l'accès aux soins la priorité du quinquennat.</p>
+        <p><mark>Nous ouvrirons 200 maisons de santé pluriprofessionnelles d'ici la fin du quinquennat</mark>, en priorité dans les communes rurales et les quartiers où un habitant sur dix n'a pas de médecin traitant.</p>
+        <p>Nous doublerons le nombre de places d'internat de médecine générale dans les facultés de province.</p>
+        <p>Nous ferons tout pour que chaque Français trouve un médecin traitant près de chez lui.</p>
+      </div>
+      <p class="muted" style="margin-top: var(--s3)">空格键滚动 · <kbd>O</kbd> 打开本机存档原件（PDF，第 9 页）</p>
+    </div>
+  </div>
+
+  <div class="actions" role="toolbar" aria-label="操作">
+    <button class="primary" type="button"><kbd>A</kbd> 接受</button>
+    <button type="button"><kbd>F</kbd> 采纳修正并接受</button>
+    <button type="button"><kbd>E</kbd> 编辑后接受</button>
+    <button type="button"><kbd>R</kbd> 拒绝…</button>
+    <button type="button"><kbd>S</kbd> 跳过</button>
+    <button type="button" class="spacer"><kbd>Z</kbd> 撤销上一步</button>
+    <button type="button"><kbd>?</kbd> 快捷键</button>
+  </div>
+
+  <!-- state: reject panel open -->
+  <p class="variant">状态示例：按 <kbd>R</kbd> 之后（面板出现在操作栏上方，数字选理由，回车完成，Esc 取消）</p>
+  <div class="panel reasons" role="dialog" aria-label="拒绝理由">
+    <h2>拒绝 s4-27，理由：</h2>
+    <ol>
+      <li><b>重复</b> —— 与 s4-12 是同一项（复查标记已预填）</li>
+      <li>不是承诺或预测（只表态度、只说努力、描述现状）</li>
+      <li>原话不对（截断、不在原文、页码错且无法改正）</li>
+      <li>其他（必须写一句）</li>
+    </ol>
+    <label for="r-note" class="label">补充一句（理由 4 必填，其余可空）</label>
+    <input id="r-note" type="text" value="">
+  </div>
+
+  <!-- state: cannot accept -->
+  <p class="variant">状态示例：原话核对没通过时（接受和采纳被停用，只能编辑或拒绝）</p>
+  <div class="panel">
+    <p class="ok-line"><b>不能接受：程序在原件里找不到这句话。</b><br>
+      <span class="muted">候选说在第 11 页，程序在第 9–13 页都没有找到逐字一致的文字。按 <kbd>E</kbd> 改正原话或页码后再核对一次，或按 <kbd>R</kbd> 拒绝（理由 3）。</span></p>
+  </div>
+</section>
+
+<!-- =============================================================== B. VERDICT QUEUE -->
+<section class="screen desk" id="verdicts" aria-labelledby="b-title">
+  <div class="screen-title">
+    <h1 id="b-title">结论 3 / 18</h1>
+    <span class="muted">条目 #87 · 自动收录 · 凭据包 <span class="mono">pack 5e1c…a90b</span> · 首次发布</span>
+  </div>
+
+  <div class="warn" role="note">
+    <b>确认 = 公开发布。</b>
+    写入账本后不能修改或删除，只能撤回，而撤回本身也公开。按 <kbd>C</kbd> 后有 5 秒，期间按 <kbd>Z</kbd> 可以取消，什么都不会写入。
+  </div>
+
+  <!-- the claim -->
+  <div class="panel">
+    <p class="muted">Paul Garnier（虚构）· <span lang="fr">Ministre des Transports</span> · <span lang="fr" style="font-family: var(--serif)">Discours au congrès national des auto-écoles</span>（虚构），2024-09-12，§4</p>
+    <div class="quote" lang="fr"><p>Dès le 1er janvier 2025, le permis de conduire sera gratuit pour tous les apprentis.</p></div>
+    <div class="translation" lang="en" style="margin-top: var(--s3)"><span class="label" lang="zh-CN">英文译文</span><p>From 1 January 2025, the driving licence will be free for all apprentices.</p></div>
+    <dl class="meta">
+      <div><dt>类型 · 领域</dt><dd>承诺 · 交通</dd></div>
+      <div><dt>可验证性 · 期限</dt><dd>可量化 · 2025-01-01，原话写明</dd></div>
+      <div><dt>判定标准 FR</dt><dd lang="fr">Le permis de conduire de catégorie B est entièrement pris en charge pour tous les apprentis à partir du 1er janvier 2025, selon les textes officiels.</dd></div>
+      <div><dt>判定标准 EN</dt><dd lang="en">The category B driving licence is fully paid for, for all apprentices, from 1 January 2025, according to official texts.</dd></div>
+    </dl>
+    <details>
+      <summary>原件这一段（<kbd>P</kbd>）· 自动收录的条目，这是第一次有人看它</summary>
+      <div class="source-text" lang="fr" style="margin-top: var(--s3)">
+        <p>§4 — Nous avons entendu les jeunes. <mark>Dès le 1er janvier 2025, le permis de conduire sera gratuit pour tous les apprentis.</mark> C'est une question de liberté et d'accès à l'emploi.</p>
+      </div>
+    </details>
+  </div>
+
+  <div class="cols wide-left" style="margin-top: var(--s4)">
+    <!-- evidence pack -->
+    <div class="panel">
+      <h2>凭据包：3 段摘录</h2>
+      <ol class="excerpts">
+        <li id="x1"><span class="n">[1]</span> 官方公报 · <span lang="fr" style="font-family: var(--serif)">Décret relatif à l'aide au permis de conduire des apprentis</span>（虚构），<span lang="fr">Journal officiel</span>，2024-12-20，Art. 1
+          <div class="quote" lang="fr"><p>Une aide de 500 euros est versée à tout apprenti majeur pour le financement du permis de conduire de catégorie B.</p></div></li>
+        <li id="x2"><span class="n">[2]</span> 官方统计 · <span lang="fr" style="font-family: var(--serif)">Bilan annuel de l'aide au permis des apprentis 2025</span>（虚构），<span lang="fr">Ministère du Travail</span>，2026-03-15，p. 4
+          <div class="quote" lang="fr"><p>Le coût moyen d'une formation au permis B s'élevait à 1 800 euros en 2025.</p></div></li>
+        <li id="x3"><span class="n">[3]</span> 同上，p. 6
+          <div class="quote" lang="fr"><p>En 2025, 112 000 apprentis ont bénéficié de l'aide, pour un montant moyen de 500 euros.</p></div></li>
+      </ol>
+      <details>
+        <summary>看过未用：1 段（<kbd>U</kbd>）</summary>
+        <p>新闻报道 · <span lang="fr">Le Quotidien du Centre</span>（虚构），2024-09-13 —— <span lang="en">“Repeats the minister's announcement; a statement, not evidence.”</span></p>
+      </details>
+      <p class="muted" style="margin-top: var(--s3)">剪辑者：claude-sonnet-5-5（订阅）· 缺口：无</p>
+    </div>
+
+    <!-- votes side by side -->
+    <div>
+      <p><span class="agree">2 : 1 分歧</span> <span class="muted">两票“部分成真”，一票“未成真”。当前采用多数票；按 <kbd>1</kbd>–<kbd>3</kbd> 改采另一票。</span></p>
+      <div class="judges">
+        <article class="judge adopted" aria-label="评审 1，当前采用">
+          <p><b>1</b> · <span class="mono">claude-opus-5-5</span> <span class="muted">订阅</span></p>
+          <p><span class="verdict" data-v="partly_came_true">部分成真</span></p>
+          <p class="muted">引用 <a href="#x1">[1]</a> <a href="#x2">[2]</a> <a href="#x3">[3]</a> · 当前采用</p>
+          <p lang="fr">Depuis le 20 décembre 2024, une aide de 500 euros est versée aux apprentis majeurs. Le permis B coûtait en moyenne 1 800 euros en 2025 : il n'est pas gratuit, une partie du coût est prise en charge.</p>
+          <p lang="en" class="muted">Since 20 December 2024, apprentices aged 18 or over receive 500 euros. A category B licence cost 1,800 euros on average in 2025: it is not free; part of the cost is covered.</p>
+          <details><summary>理由（工作笔记，不公开）</summary><p lang="en">The criteria require full coverage. Excerpts 1–3 show partial coverage for adult apprentices only.</p></details>
+        </article>
+        <article class="judge" aria-label="评审 2">
+          <p><b>2</b> · <span class="mono">gpt-6.2-sol</span> <span class="muted">订阅</span></p>
+          <p><span class="verdict" data-v="partly_came_true">部分成真</span></p>
+          <p class="muted">引用 <a href="#x1">[1]</a> <a href="#x3">[3]</a></p>
+          <p lang="fr">Une aide de 500 euros existe depuis décembre 2024 et a été versée à 112 000 apprentis en 2025. Elle ne couvre pas l'intégralité du permis et exclut les apprentis mineurs.</p>
+          <p lang="en" class="muted">A 500-euro aid exists since December 2024 and was paid to 112,000 apprentices in 2025. It does not cover the full licence and excludes apprentices under 18.</p>
+          <details><summary>理由（工作笔记，不公开）</summary><p lang="en">Aid exists and was paid; "free for all" not met.</p></details>
+        </article>
+        <article class="judge" aria-label="评审 3">
+          <p><b>3</b> · <span class="mono">gemini（示例）</span> <span class="muted">API</span></p>
+          <p><span class="verdict" data-v="not_came_true">未成真</span></p>
+          <p class="muted">引用 <a href="#x1">[1]</a> <a href="#x2">[2]</a></p>
+          <p lang="fr">Le permis n'est pas gratuit : l'aide de 500 euros, réservée aux apprentis majeurs, couvre une partie d'un coût moyen de 1 800 euros.</p>
+          <p lang="en" class="muted">The licence is not free: the 500-euro aid, for adult apprentices only, covers part of an average cost of 1,800 euros.</p>
+          <details><summary>理由（工作笔记，不公开）</summary><p lang="en">The promise was "free"; it is not free, so not met.</p></details>
+        </article>
+      </div>
+    </div>
+  </div>
+
+  <!-- what would be published -->
+  <div class="panel" style="margin-top: var(--s4)">
+    <h2>按 C 将要发布的内容</h2>
+    <p><span class="verdict" data-v="partly_came_true">部分成真</span> <span class="muted">采用评审 1 · 凭据 [1] [2] [3]</span></p>
+    <p lang="fr">Depuis le 20 décembre 2024, une aide de 500 euros est versée aux apprentis majeurs. Le permis B coûtait en moyenne 1 800 euros en 2025 : il n'est pas gratuit, une partie du coût est prise en charge.</p>
+    <p lang="en" class="muted">Since 20 December 2024, apprentices aged 18 or over receive 500 euros. A category B licence cost 1,800 euros on average in 2025: it is not free; part of the cost is covered.</p>
+    <p class="ok-line">发布检查：全部通过（来源、凭据、说明、双语）。</p>
+  </div>
+
+  <div class="actions" role="toolbar" aria-label="操作">
+    <button class="primary" type="button"><kbd>C</kbd> 确认并发布</button>
+    <button type="button"><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> 采用第几票</button>
+    <button type="button"><kbd>E</kbd> 编辑说明</button>
+    <button type="button"><kbd>B</kbd> 退回…</button>
+    <button type="button"><kbd>X</kbd> 驳回条目…</button>
+    <button type="button"><kbd>S</kbd> 跳过</button>
+    <button type="button" class="spacer"><kbd>Z</kbd> 撤销</button>
+    <button type="button"><kbd>?</kbd> 快捷键</button>
+  </div>
+
+  <!-- state: the 5-second window -->
+  <p class="variant">状态示例：按 <kbd>C</kbd> 之后（页面已显示下一条；这一行留在顶部 5 秒）</p>
+  <p class="toast" role="status">条目 #87 将在 4 秒后写入账本。<kbd>Z</kbd> 取消（不会写入任何东西）</p>
+  <p class="toast" role="status">条目 #87 已写入账本，记录 #1043（用时 81 秒）。之后只能撤回，撤回也公开。</p>
+
+  <!-- state: blocked -->
+  <p class="variant">状态示例：发布检查没通过时（确认按钮停用，原因按修改顺序列出）</p>
+  <div class="panel">
+    <p class="ok-line"><b>还不能确认：</b></p>
+    <ul>
+      <li>凭据摘录 [2] 缺少英文译文（双语规则）。</li>
+    </ul>
+    <p class="muted">这类问题审核台改不了。按 <kbd>B</kbd> 退回（理由 4：翻译），或 <kbd>S</kbd> 跳过。</p>
+  </div>
+
+  <!-- state: send back -->
+  <p class="variant">状态示例：按 <kbd>B</kbd> 之后</p>
+  <div class="panel reasons" role="dialog" aria-label="退回理由">
+    <h2>退回条目 #87，退给谁：</h2>
+    <ol>
+      <li>剪凭据包（摘录不够、选错、漏了关键段落）</li>
+      <li>重新评审（凭据够，判定或说明有问题）</li>
+      <li>条目本身（原话、判定标准、期限要改）</li>
+      <li>翻译</li>
+    </ol>
+    <label for="b-note" class="label">说一句缺什么（必填）</label>
+    <input id="b-note" type="text" value="需要 2025 年起是否覆盖未成年学徒的官方文件">
+  </div>
+
+  <!-- state: reject the claim itself -->
+  <p class="variant">状态示例：按 <kbd>X</kbd> 之后（这条本不该收录；只对从未公开过的条目可用）</p>
+  <div class="panel reasons" role="dialog" aria-label="驳回理由">
+    <h2>驳回条目 #87，从工作区删除，理由：</h2>
+    <ol>
+      <li>不是承诺或预测</li>
+      <li>抽取有误（原话截错、页码错、拆错或合错）</li>
+      <li>与另一条重复（填编号）</li>
+      <li>其他（必须写一句）</li>
+    </ol>
+    <label for="x-note" class="label">补充一句（理由 3 填编号，理由 4 必填）</label>
+    <input id="x-note" type="text" value="">
+    <p class="muted" style="margin-top: var(--s3)">这条的原话、结论、凭据和三张评审票都存进审核记录，<kbd>Z</kbd> 可以放回。</p>
+  </div>
+
+  <!-- state: empty -->
+  <p class="variant">状态示例：队列清空</p>
+  <div class="panel">
+    <p>没有待确认的结论。今天确认发布 7 条，退回 2 条。</p>
+    <p class="muted">带标记的候选还剩 63 条：按 <kbd>Q</kbd> 切换。</p>
+  </div>
+</section>
+</main>
+</body>
+</html>
