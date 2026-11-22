@@ -57,11 +57,17 @@ test('voteProblems: verdict values, deadlines, open question, summaries, vague c
   const texts = new Map([[1, UNITS]]);
   const d = [doc(1, 'law')];
   assert.deepEqual(voteProblems({ verdict: 'kept' }, CLAIM, d, texts, '2026-11-22'), ['verdict is not one of the six']);
-  // Before the deadline: (partly) came true may be given early (standard v0.3);
-  // not_came_true and to_evaluate wait for the deadline.
+  // Before the deadline only came_true may be given early; partly_came_true, not_came_true
+  // and to_evaluate wait for the deadline (standard section 5, as amended).
   const early = { ...CLAIM, deadline: '2029-01-20', deadline_basis: 'inferred' };
   assert.deepEqual(voteProblems(okVote(), early, d, texts, '2026-11-22'), []);
-  assert.deepEqual(voteProblems(okVote({ verdict: 'partly_came_true' }), early, d, texts, '2026-11-22'), []);
+  assert.match(voteProblems(okVote({ verdict: 'partly_came_true' }), early, d, texts, '2026-11-22').join(), /not reached, but verdict is partly_came_true/);
+  assert.deepEqual(voteProblems(okVote({ verdict: 'partly_came_true' }), CLAIM, d, texts, '2026-11-22'), []);
+  // A renunciation lets only not_came_true skip the deadline, never partly_came_true.
+  const renEarly = okVote({ verdict: 'partly_came_true', evidence: [{ source_id: 3, excerpt: 'Article 16', locator: '§1' }] });
+  assert.match(voteProblems(renEarly, early, [doc(3, 'renunciation')], new Map([[3, UNITS]]), '2026-11-22').join(), /not reached, but verdict is partly_came_true/);
+  // Before the deadline, part done is pending: the summary says what has been done so far.
+  assert.deepEqual(voteProblems({ verdict: 'pending', reasoning: 'r', summary_fr: 'f', summary_en: 'e', evidence: [] }, early, d, texts, '2026-11-22'), []);
   assert.match(voteProblems(okVote({ verdict: 'not_came_true' }), early, d, texts, '2026-11-22').join(), /not reached/);
   const teEarly = { verdict: 'to_evaluate', reasoning: 'r', summary_fr: 'f', summary_en: 'e', evidence: [], open_question_fr: 'q', open_question_en: 'q' };
   assert.match(voteProblems(teEarly, early, d, texts, '2026-11-22').join(), /not reached/);

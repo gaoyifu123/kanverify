@@ -12,7 +12,7 @@
   "meta": {
     "day": 1,
     "totalDays": 14,
-    "updated": "2026-11-22 20:59:27",
+    "updated": "2026-11-22 21:01:58",
     "launch": "Dec 5",
     "headline": "New pipeline dry run on 10 real claims: the two judges agree on 7, at zero API cost. The 3 splits share one rule question for you."
   },
@@ -54,7 +54,6 @@
   "needs": [
     {"id":"codex","t":"Jury moves to three vendors: install Codex?","d":"As you said: the Claude and OpenAI reviews use subscriptions, only Gemini goes through the API, under 1 cent per promise (decision 0010). The OpenAI vote needs the Codex command-line tool, signed in with your ChatGPT subscription. Needed: 1) you have a ChatGPT subscription; 2) you agree to install Codex (third-party software) on this computer. Before installing I will check whether it can be called automatically by a program and whether the terms allow it. The Gemini key also has to go into .env.","options":["Have a subscription, agree to install","No ChatGPT subscription"],"placeholder":"Extra notes, optional"},
     {"id":"confirm-plan","t":"What you will need to confirm from now on: where and how","d":"You only confirm two kinds of things: 1) Candidate promises we are unsure about (may be duplicates, may not be promises, disputed category), about 90 today; the other candidates that passed the exact-quote check go into the workspace automatically, no need to look at each. 2) The final verdict of each promise, which is published only after you confirm. Both live in a separate local web page, the \"review desk\", operated by keyboard, a few seconds per item; the board only shows how many are left. The review desk is being designed; until it is built you do not need to confirm anything.","options":["This works","Needs changes"],"placeholder":"Extra notes, optional"},
-    {"id":"early-partial","t":"Before the deadline: may a verdict be \"partly came true\"?","d":"Dry run of the new pipeline on 10 real claims: the two judges agreed on 7. All 3 disagreements have the same cause: before the deadline, one judge said \"partly came true\" because part of the promise has been done; the other said \"pending\" because the term is not over and more may still be done. Our rule allows early \"came true\" and \"partly came true\". Recommendation: only \"came true\" (fully met) may be given early; \"partly came true\" waits for the deadline, because a partial state can still change. The summary can still say what has been done so far.","options":["Early: only came true","Keep: partly may be early too"],"placeholder":"Anything to add"},
     { "id": "note", "t": "Anything else to tell me", "d": "Any thought, change request or new requirement can go here.", "options": [], "placeholder": "Write whatever comes to mind" }
   ],
   "phases": [
@@ -180,6 +179,7 @@
     { "id": "—", "t": "Deadline reading: \"before 2027\" means end of 2027, \"by the end of this decade\" means end of 2030; a bundled promise counts as kept only if all of it is done", "by": "You decided", "s": "done" },
     { "id": "0011", "t": "Verdicts and data on the site use CC BY-NC-SA 4.0: may be quoted and reposted, must credit the source, no commercial use", "by": "You decided", "s": "done" },
     { "id": "0011", "t": "Open source: github.com/gaoyifu123/kanverify, code AGPL v3, docs CC BY 4.0; data and unconfirmed verdicts not public", "by": "You decided", "s": "done" },
+    { "id": "0008", "t": "Before the deadline only \"came true\" may be given early; \"partly came true\" waits for the deadline", "by": "Your call", "s": "done" },
     { "id": "0008", "t": "A person's own public renunciation can be the sole evidence for a \"not kept\" verdict, in this one case only", "by": "You decided", "s": "done" },
     { "id": "0008", "t": "Six verdicts: cannot verify, pending, to be assessed, kept, partly kept, not kept; quantifiable partly kept states the data; if achieved, may be judged kept early", "by": "You decided", "s": "done" },
     { "id": "—", "t": "Model keys: only Anthropic's is in so far, the rest to be added over time", "by": "You", "s": "done" },

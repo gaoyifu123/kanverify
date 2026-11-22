@@ -62,3 +62,7 @@
 2. **已经做到的可以提前判“成真”或“部分成真”**，不必等到期。“未成真”仍要等到期，或本人公开明确放弃。
 
 依据：原则 1、2（结论写清凭据显示了什么）、原则 3（同一组数字只能有一种结论）。
+
+## Amendment 2026-11-22 (founder, board item `early-partial`)
+
+Before the deadline only `came_true` may be given early. `partly_came_true` waits for the deadline (a partial state can still change); until then the verdict is `pending` and the summary may say what has been done so far. `not_came_true` still waits for the deadline or a public renunciation. Cause: 3 of 10 dry-run splits came from this ambiguity.

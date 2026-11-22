@@ -328,7 +328,9 @@ export function voteProblems(vote, claim, docs, texts, today) {
   if (verdict === 'to_evaluate' && !(filled(vote.open_question_fr) && filled(vote.open_question_en))) problems.push('to_evaluate without an open question in both languages');
   const renounced = verdict === 'not_came_true' && claim.type === 'promise'
     && evidence.some((e) => byId.get(e?.source_id)?.meta.kind === 'renunciation');
-  if (claim.deadline && today < claim.deadline && ['to_evaluate', 'not_came_true'].includes(verdict) && !renounced) {
+  // Before the deadline only came_true may be given early (verdict standard section 5, as
+  // amended); partly_came_true waits like not_came_true, which only a renounced promise skips.
+  if (claim.deadline && today < claim.deadline && ['to_evaluate', 'partly_came_true', 'not_came_true'].includes(verdict) && !renounced) {
     problems.push(`deadline ${claim.deadline} not reached, but verdict is ${verdict}`);
   }
   if (claim.deadline && today >= claim.deadline && verdict === 'pending') problems.push(`deadline ${claim.deadline} passed, but verdict is pending`);
