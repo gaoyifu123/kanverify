@@ -80,3 +80,18 @@ Agent 分成两组。建造组把系统搭出来，运行组每天产出内容�
 | 熔断后的回头看 | `team/templates/step-back.md` |
 | 记一个决定 | `team/templates/decision.md` |
 | 每日进度摘要 | `team/templates/daily-log.md` |
+
+## How Fable 5.2 fits the workflow (2026-11-22)
+
+- **No agent switches models.** Every agent keeps one model for its whole life. The coordinator and builders run on Opus 5.5;
+  Fable 5.2 is only ever a separate, fresh reviewer agent. A fresh reviewer is also what independence requires (rule 3).
+- **One Fable reviewer per area, reused for its re-checks.** When a Fable review sends work back, the fix is re-checked by
+  messaging the *same* reviewer (it keeps its context), not by starting a new one. This is cheaper and it remembers its own findings.
+- **Opus first, Fable last.** Opus reviews each step as it is built and catches the ordinary problems; Fable reviews the
+  combined result once, at the end of an area, for the items in `team/README.md` "When to use Fable 5.2".
+- **Give Fable the change, not the conclusions.** Brief it with the list of changes and the git range to read
+  (`git diff <last-fable-tag>..HEAD -- <files>`), never with the Opus reviewers' verdicts, so it is not anchored.
+- **Mark what Fable has passed.** After an area passes, tag the commit `fable-<area>-<date>`; the next Fable review of that
+  area reads only the diff since that tag.
+- **Queue, not ad hoc.** Pending Fable work lives in `docs/review-queue-fable.md`, ordered by risk; when the quota runs out,
+  the queue stops and resumes after the reset. Never fall back to another model silently.

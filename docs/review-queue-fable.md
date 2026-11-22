@@ -40,3 +40,10 @@ report "pass / send back" with ranked findings and reproductions. The reviewer w
 ## Not for Fable (Opus is enough)
 
 Site generator, extraction prompt (its output is reviewed before use), design, docs, board.
+
+## Workflow notes for this run
+
+- One reviewer per item; if an item is sent back, its re-check is done later by messaging the same reviewer.
+- There is no earlier git history for these areas (the repo starts at the first commit), so this run reads the
+  current files. After each item passes, tag the commit `fable-<area>-2026-11-23` so later reviews read only the diff.
+- Briefs list what changed; they do not include the Opus reviews' findings or verdicts.
