@@ -130,6 +130,7 @@ test('checkCandidatesFile: the program recomputes verbatim and problems, whateve
   };
   const record = {
     kind: 'kanverify-extraction-candidates', provider: 'anthropic', model: 'claude-opus-5-5', channel: 'subscription', prompt_version: 'extract-0.3',
+    subject_id: 1,
     source: { id: s.ids.origin, sha256: s.db.prepare('SELECT sha256 FROM sources WHERE id = ?').get(s.ids.origin).sha256 },
     candidates: [
       { ...base },
@@ -147,6 +148,10 @@ test('checkCandidatesFile: the program recomputes verbatim and problems, whateve
   assert.equal(checked.counts.verbatim_ok, 2);
   const wrong = checkCandidatesFile(s.db, { ...record, source: { id: s.ids.law, sha256: 'x' } }, s.opts);
   assert.match(wrong.problems.join(), /not the speaker's own words/);
+  // The speaker is required at file level, and must exist.
+  const { subject_id: _s, ...noSubject } = record;
+  assert.match(checkCandidatesFile(s.db, noSubject, s.opts).problems.join(), /subject_id is missing/);
+  assert.match(checkCandidatesFile(s.db, { ...record, subject_id: 99 }, s.opts).problems.join(), /subject 99 is not in the database/);
 });
 
 function voteFor(s, packSha256, over = {}) {

@@ -3,7 +3,9 @@
 // and writes plain files; this module only checks those files against the archived originals.
 // It calls no model and writes nothing to the database.
 //
-//   candidates file   the shape src/extract.js writes (kind kanverify-extraction-candidates);
+//   candidates file   the shape src/extract.js writes (kind kanverify-extraction-candidates),
+//                     plus subject_id at file level: the subjects.id of the speaker, filled in
+//                     by the extraction role (design/review-desk.md, coordinator decision 1);
 //                     the program recomputes verbatim, verbatim_unit, duplicate_of and problems,
 //                     whatever the file says about them.
 //   evidence pack     one claim, its criteria, 1..N verbatim excerpts {source_id, locator, text}
@@ -152,6 +154,9 @@ export function checkCandidatesFile(db, record, opts = {}) {
   const problems = [];
   if (record?.kind !== 'kanverify-extraction-candidates') problems.push('kind is not kanverify-extraction-candidates');
   for (const field of ['provider', 'model', 'prompt_version']) if (!filled(record?.[field])) problems.push(`${field} is empty`);
+  // The speaker: without it no candidate can become a claims row (claims.subject_id is required).
+  if (!Number.isInteger(record?.subject_id)) problems.push('subject_id is missing: the subjects.id of the speaker');
+  else if (!db.prepare('SELECT 1 FROM subjects WHERE id = ?').get(record.subject_id)) problems.push(`subject ${record.subject_id} is not in the database`);
   const source = sourceRow(db, record?.source?.id);
   if (!source) return { problems: [...problems, `source ${JSON.stringify(record?.source?.id ?? null)} is not in the database`], record };
   if (!ORIGIN_KINDS.includes(source.kind)) problems.push(`source ${source.id} is a ${source.kind}, not the speaker's own words`);

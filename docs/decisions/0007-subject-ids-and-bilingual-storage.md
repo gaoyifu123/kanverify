@@ -42,3 +42,10 @@
 - 原则 2（无源不录）：原文保留原语言，译文另存，不替换。
 - 原则 3（一把尺子）：两个站点给出同样完整的信息。
 - 原则 5（最简方案）：用已有的编号；答辩等到需要时再做。
+
+## Addendum 2026-11-22 (founder): full language switch on the site
+
+The site has a language switch; whichever language the reader picks (English or French), **everything** is shown in that language.
+For quotes and evidence excerpts whose original is in the other language: the translation is shown as the main text,
+and the original wording sits directly under it, labelled "Original (French)" / "Original (anglais)" — the original is never hidden (principle 2).
+The review desk is different: the founder reads English and French, so originals in either language are shown without translation.
