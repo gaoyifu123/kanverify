@@ -22,3 +22,9 @@ npm run db:init   # 在 data/kanverify.db 建立本地数据库
 
 第 1 天（2026-11-22）：项目骨架、原则、团队分工、记录格式和本地数据库已建。
 AI 接口层、获取与抽取流水线、审核台、公开网站都还没有做。进度以看板为准。
+
+## 许可证 / Licence
+
+- 代码：见 [LICENSE](LICENSE)。
+- 文档、方法和判定标准（`docs/`、`team/`、`PRINCIPLES.md`、`design/`）：CC BY 4.0，引用请注明出处 KANVERIFY。
+- 数据库、存证原件和候选数据不在仓库里，只保存在维护者本机。
