@@ -41,3 +41,6 @@ docs/research/
 
 # Dry-run results about real people (unconfirmed)
 docs/log/*-dryrun-*.md
+
+# Local handoff between the Fable and Opus senior sessions
+senior-handoff.md

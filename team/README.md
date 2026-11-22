@@ -102,3 +102,16 @@ High-level design (architecture, pipeline shape, jury design, method rules) is d
 then **critiqued by Fable 5.2 before the founder decides** — Fable reviewing a draft costs far less than Fable writing it,
 and the critique is what catches the expensive mistakes. Fable drafts only when a problem is genuinely open and Opus has
 already failed at it (circuit breaker / step-back).
+
+### Long Fable work: two sessions and a handoff note (founder, 2026-11-22)
+
+For long work by a senior role on Fable 5.2 (e.g. a senior developer), so that running out of Fable quota mid-task never
+forces a model switch or a costly handover:
+
+- **Two sessions for the role, only one working at a time:** a Fable session works while Fable has quota; an Opus session
+  (the older one) takes over when Fable runs out, and hands back after the reset.
+- **One shared handoff note, `senior-handoff.md` (project root, local only).** Whoever is working updates it at the end of
+  every step: what it is doing, which branch, what is committed and pushed, where tests and reviews stand, and the next steps.
+  The other session resumes from the note alone, without rereading old transcripts.
+- **Switch only between steps, never in the middle of one.** A step is small enough to finish within a quota window.
+- Short Fable jobs (one review) don't need this; they run as a single reviewer agent from `docs/review-queue-fable.md`.
