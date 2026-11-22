@@ -1,216 +1,217 @@
-<title>KANVERIFY 看板</title>
+<title>KANVERIFY Board</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600&display=swap">
 
 <!--
-  看板数据。每天收工时只改这一块，然后重新发布到同一个地址。
-  状态只有四种，全站通用：done 已完成 · doing 进行中 · todo 未开始 · wait 等你
-  创始人在“等你做的事”里填写的回复不在这里，存在看板的数据库里（集合 answers，文档名是事项的 id）。
+  Board data. Each day at wrap-up, edit only this block, then republish to the same address.
+  There are only four statuses, used site-wide: done · doing · todo (not started) · wait (waiting for you)
+  The founder's replies under "Waiting on you" are not here; they live in the board's database (collection answers, document name is the item id).
 -->
 <script type="application/json" id="board-data">
 {
   "meta": {
     "day": 1,
     "totalDays": 14,
-    "updated": "2026-11-22 20:41:52",
-    "launch": "12 月 5 日",
-    "headline": "项目已开源到 GitHub（AGPL v3）。明早 Fable 审查今天的改动，8:30 收邮箱链接。"
+    "updated": "2026-11-22 20:59:27",
+    "launch": "Dec 5",
+    "headline": "New pipeline dry run on 10 real claims: the two judges agree on 7, at zero API cost. The 3 splits share one rule question for you."
   },
   "counts": [
-    { "label": "已收录的承诺", "value": "0", "target": "候选 427 条（去重后）待确认；上线目标 100 至 200 条" },
-    { "label": "已完成的国家", "value": "0", "target": "先做法国和美国" },
-    { "label": "测试", "value": "195", "target": "全部通过；今天的改动明早交 Fable 审查" },
-    { "label": "评审团模型", "value": "2", "target": "三家：Claude、Codex 已通（订阅）；Gemini 等密钥" }
+    { "label": "Promises recorded", "value": "0", "target": "427 candidates (deduplicated) awaiting confirmation; launch target 100 to 200" },
+    { "label": "Countries completed", "value": "0", "target": "France and the US first" },
+    { "label": "Tests", "value": "195", "target": "All passing; today's changes go to Fable for review tomorrow morning" },
+    { "label": "Jury models", "value": "2", "target": "Three vendors: Claude and Codex connected (subscriptions); Gemini waiting for a key" }
   ],
   "done": [
-    "项目骨架：原则文件、项目指令、目录结构、版本管理",
-    "团队：3 个建造组 agent、5 个运行组角色、5 份协作模板",
-    "两轮独立审查都找到了数据库规则的漏洞，于是停下来回头看",
-    "你确认后，数据库规则改成“工作区和账本分开”，规则从 24 条降到 7 条",
-    "第三轮独立审查：设计站得住，找到 1 个严重问题和几个中等问题，已修",
-    "第四轮复查：修复有效，账本经 32 种编号攻击仍然守住；剩下的问题都在边界之外",
-    "来源规则 0.2 版：一份官方文件，或两家不同的独立来源；数据库已照此执行",
-    "评审团放开条件按你的定：10 条、30 条、100 条，正确率 99%",
-    "模型定为四家：Anthropic、Gemini、OpenAI、Mistral",
-    "技术选型、设计 skill 方案、撤回的显示方式都已定",
-    "两个设计插件已安装（你装的）",
-    "各 agent 的模型已分配：默认 Opus 5.5，关键审查和路线决定才请 Fable 5.2",
-    "6 份决策记录",
-    "这块看板，可以直接回复，点刷新就能通知我",
-    "设计简报和信息架构（design 文件夹），你回答了其中三个问题",
-    "数据库保护的边界已定：防写错代码，不防故意关安全开关",
-    "来源规则 0.3：官方机构评价自己的工作不算凭据",
-    "评审团放开条件的算法已确认，开启后保留每周抽查"
+    "Project skeleton: principles file, project instructions, directory layout, version control",
+    "Team: 3 build-group agents, 5 run-group roles, 5 collaboration templates",
+    "Two independent reviews both found holes in the database rules, so we stopped and stepped back",
+    "After your confirmation, the database rules became \"workspace and ledger kept separate\"; rules cut from 24 to 7",
+    "Third independent review: the design holds; found 1 severe and a few medium issues, fixed",
+    "Fourth review: the fixes work; the ledger held against 32 kinds of ID attack; remaining issues are outside the boundary",
+    "Source rule v0.2: one official document, or two different independent sources; the database enforces it",
+    "Jury unlock conditions as you set them: 10, 30, 100 items, 99% accuracy",
+    "Models set to four vendors: Anthropic, Gemini, OpenAI, Mistral",
+    "Tech stack, design skill plan and the way withdrawals are displayed are all decided",
+    "Two design plugins installed (by you)",
+    "Models assigned to each agent: Opus 5.5 by default, Fable 5.2 only for key reviews and route decisions",
+    "6 decision records",
+    "This board: you can reply directly, and the refresh button notifies me",
+    "Design brief and information architecture (design folder); you answered three of its questions",
+    "Database protection boundary set: guards against code mistakes, not against deliberately switching safety off",
+    "Source rule 0.3: an official body assessing its own work does not count as evidence",
+    "Jury unlock algorithm confirmed; weekly spot checks stay after it is turned on"
   ],
   "next": [
-    "记录格式 6：五种结论、本人公开放弃（只限承诺）、可量化的“无法验证”也要凭据，审查通过",
-    "记录格式 5：双语、结论必须附说明、原话不重复存、隐形字符算空白，两轮审查都通过；数据库边界的收尾检查通过",
-    "人物编号的保护已按你的决定修好，日常审查通过；记录格式 5 完成",
-    "撤回原因已改为法语和英语两个版本（记录格式 7），审查通过",
-    "存证脚本：安全审查三轮后通过（今天由 Opus 5.5 代审），可以用来下载外部链接了；还没对真实网址跑过",
-        "下载一份竞选纲领并抽成带页码的条目",
-    "第一版视觉稿已出（首页、人物页、条目页、方法页，法语和英语），等你看；之后做设计评审和无障碍检查"
+    "Record format 6: five verdicts, the person's own public renunciation (promises only), quantifiable \"cannot verify\" also needs evidence; review passed",
+    "Record format 5: bilingual, verdict must carry an explanation, quotes not stored twice, invisible characters count as blank; both reviews passed; database boundary final check passed",
+    "Person ID protection fixed as you decided, routine review passed; record format 5 complete",
+    "Withdrawal reasons now in French and English (record format 7), review passed",
+    "Evidence archive script: passed security review after three rounds (reviewed today by Opus 5.5); can be used to download external links; not yet run against a real URL",
+    "Download a campaign manifesto and extract it into items with page numbers",
+    "First visual draft is out (home, person page, item page, method page, in French and English), waiting for you; then design review and accessibility check"
   ],
   "needs": [
-    {"id":"codex","t":"评审团改三家：要装 Codex 吗","d":"按你说的：Claude 和 OpenAI 的评审用订阅，只有 Gemini 走 API，每条承诺不到 1 美分（决策 0010）。OpenAI 这一票要用 Codex 命令行工具，靠你的 ChatGPT 订阅登录。需要：1) 你有 ChatGPT 订阅；2) 同意在这台电脑上装 Codex（第三方软件）。装之前我会先核实它能不能被程序自动调用、条款是否允许。Gemini 的密钥也要放进 .env。","options":["有订阅，同意装","没有 ChatGPT 订阅"],"placeholder":"补充说明，可以不填"},
-    {"id":"confirm-plan","t":"以后要你确认的事，放在哪里、怎么做","d":"你要确认的只有两类：1) 拿不准的候选承诺（可能重复、可能不是承诺、分类有争议），今天大约 90 条；其余通过了原话核对的候选自动进入工作区，不用你逐条看。2) 每条承诺的最终结论，确认后才会公开。两类都放在一个单独的本地网页“审核台”上，用键盘操作，几秒一条；看板上只显示还剩多少条。审核台正在设计，做好之前你不用确认任何东西。","options":["这样可以","要改"],"placeholder":"补充说明，可以不填"},
-    { "id": "note", "t": "其他想告诉我的", "d": "任何想法、修改意见或新的要求，都可以写在这里。", "options": [], "placeholder": "想到什么写什么" }
+    {"id":"codex","t":"Jury moves to three vendors: install Codex?","d":"As you said: the Claude and OpenAI reviews use subscriptions, only Gemini goes through the API, under 1 cent per promise (decision 0010). The OpenAI vote needs the Codex command-line tool, signed in with your ChatGPT subscription. Needed: 1) you have a ChatGPT subscription; 2) you agree to install Codex (third-party software) on this computer. Before installing I will check whether it can be called automatically by a program and whether the terms allow it. The Gemini key also has to go into .env.","options":["Have a subscription, agree to install","No ChatGPT subscription"],"placeholder":"Extra notes, optional"},
+    {"id":"confirm-plan","t":"What you will need to confirm from now on: where and how","d":"You only confirm two kinds of things: 1) Candidate promises we are unsure about (may be duplicates, may not be promises, disputed category), about 90 today; the other candidates that passed the exact-quote check go into the workspace automatically, no need to look at each. 2) The final verdict of each promise, which is published only after you confirm. Both live in a separate local web page, the \"review desk\", operated by keyboard, a few seconds per item; the board only shows how many are left. The review desk is being designed; until it is built you do not need to confirm anything.","options":["This works","Needs changes"],"placeholder":"Extra notes, optional"},
+    {"id":"early-partial","t":"Before the deadline: may a verdict be \"partly came true\"?","d":"Dry run of the new pipeline on 10 real claims: the two judges agreed on 7. All 3 disagreements have the same cause: before the deadline, one judge said \"partly came true\" because part of the promise has been done; the other said \"pending\" because the term is not over and more may still be done. Our rule allows early \"came true\" and \"partly came true\". Recommendation: only \"came true\" (fully met) may be given early; \"partly came true\" waits for the deadline, because a partial state can still change. The summary can still say what has been done so far.","options":["Early: only came true","Keep: partly may be early too"],"placeholder":"Anything to add"},
+    { "id": "note", "t": "Anything else to tell me", "d": "Any thought, change request or new requirement can go here.", "options": [], "placeholder": "Write whatever comes to mind" }
   ],
   "phases": [
-    { "name": "1a 技术最小可用版", "dates": "11/22 至 11/28", "line": "获取、分析、呈现跑通", "s": "doing" },
-    { "name": "1b 三个数据集", "dates": "11/29 至 12/5", "line": "两到三位领导人的竞选纲领", "s": "todo" },
-    { "name": "上线", "dates": "12/5", "line": "每条都有来源，上线清单通过", "s": "todo", "gate": true },
-    { "name": "2 静默打磨", "dates": "12 月起", "line": "每周至少 3 个人物，不推广", "s": "todo" },
-    { "name": "3 扩展", "dates": "时间待定", "line": "推广、捐赠和广告、中文；向读者开放投稿链接", "s": "todo" }
+    { "name": "1a Minimum technical version", "dates": "11/22 to 11/28", "line": "Fetch, analyse and present working end to end", "s": "doing" },
+    { "name": "1b Three datasets", "dates": "11/29 to 12/5", "line": "Campaign manifestos of two to three leaders", "s": "todo" },
+    { "name": "Launch", "dates": "12/5", "line": "Every item has a source; launch checklist passed", "s": "todo", "gate": true },
+    { "name": "2 Quiet polishing", "dates": "from December", "line": "At least 3 people per week, no promotion", "s": "todo" },
+    { "name": "3 Expansion", "dates": "date to be decided", "line": "Promotion, donations and ads, Chinese; open the submission link to readers", "s": "todo" }
   ],
   "packages": [
-    { "from": 1, "to": 1, "dates": "11/22", "title": "建项目和团队", "tasks": [
-      { "t": "网站名定为 KANVERIFY", "s": "done" },
-      { "t": "第三个国家：英国或德国，上线后看流量再定", "s": "done" },
-      { "t": "项目骨架和本地数据库", "s": "done" },
-      { "t": "原则文件和各 agent 的职责文件", "s": "done" },
-      { "t": "记录格式：按“工作区和账本分开”重做", "s": "done" },
-      { "t": "记录格式的第三轮独立审查", "s": "done" },
-      { "t": "修掉第三轮的发现，第四轮复查", "s": "done" },
-      { "t": "定下数据库保护的边界", "s": "done" },
-      { "t": "记录格式 5：人物编号、双语存储", "s": "done" },
-      { "t": "选定设计类 skill", "s": "done" },
-      { "t": "安装两个设计插件", "s": "done" },
-      { "t": "给各 agent 分配模型", "s": "done" }
+    { "from": 1, "to": 1, "dates": "11/22", "title": "Set up the project and team", "tasks": [
+      { "t": "Site name set: KANVERIFY", "s": "done" },
+      { "t": "Third country: UK or Germany, decided after launch based on traffic", "s": "done" },
+      { "t": "Project skeleton and local database", "s": "done" },
+      { "t": "Principles file and each agent's role file", "s": "done" },
+      { "t": "Record format: redone as \"workspace and ledger kept separate\"", "s": "done" },
+      { "t": "Third independent review of the record format", "s": "done" },
+      { "t": "Fix the third round's findings, fourth round re-check", "s": "done" },
+      { "t": "Set the database protection boundary", "s": "done" },
+      { "t": "Record format 5: person IDs, bilingual storage", "s": "done" },
+      { "t": "Choose the design skill", "s": "done" },
+      { "t": "Install two design plugins", "s": "done" },
+      { "t": "Assign models to each agent", "s": "done" }
     ]},
-    { "from": 2, "to": 3, "dates": "11/23 至 11/24", "title": "AI 接口层，纲领下载与抽取", "tasks": [
-      { "t": "AI 接口层：四家模型可互换（完成，审查通过）", "s": "done" },
-      { "t": "下载纲领并存证（马克龙 2022、特朗普 2024）", "s": "done" },
-      { "t": "抽成带页码的条目，逐字校验（492 条候选）", "s": "done" },
-      { "t": "链接收件箱跑通：你转发链接 → 存证 → AI 抽出承诺和预测 → 你确认", "s": "todo" }
+    { "from": 2, "to": 3, "dates": "11/23 to 11/24", "title": "AI interface layer, manifesto download and extraction", "tasks": [
+      { "t": "AI interface layer: four vendors' models interchangeable (done, review passed)", "s": "done" },
+      { "t": "Download manifestos and archive them (Macron 2022, Trump 2024)", "s": "done" },
+      { "t": "Extract into items with page numbers, verbatim check (492 candidates)", "s": "done" },
+      { "t": "Link inbox working end to end: you forward a link → archive → AI extracts promises and predictions → you confirm", "s": "todo" }
     ]},
-    { "from": 4, "to": 5, "dates": "11/25 至 11/26", "title": "凭据来源清单，评审团初判，审核台", "tasks": [
-      { "t": "第一个国家的凭据来源清单", "s": "todo" },
-      { "t": "评审团初判流水线", "s": "todo" },
-      { "t": "审核台，20 条完成初判并确认", "s": "todo" }
+    { "from": 4, "to": 5, "dates": "11/25 to 11/26", "title": "Evidence source list, jury first-pass verdicts, review desk", "tasks": [
+      { "t": "Evidence source list for the first country", "s": "todo" },
+      { "t": "Jury first-pass verdict pipeline", "s": "todo" },
+      { "t": "Review desk, 20 items given a first-pass verdict and confirmed", "s": "todo" }
     ]},
-    { "from": 6, "to": 7, "dates": "11/27 至 11/28", "title": "界面设计和静态网站", "check": "第 7 天检查点：技术版本跑通", "tasks": [
-      { "t": "设计 agent 出界面稿（MVP 定稿）", "s": "done" },
-      { "t": "按稿实现静态网站（完成，审查通过）", "s": "done" },
-      { "t": "导出和每日备份", "s": "todo" }
+    { "from": 6, "to": 7, "dates": "11/27 to 11/28", "title": "Interface design and static site", "check": "Day 7 checkpoint: technical version runs end to end", "tasks": [
+      { "t": "Design agent produces interface drafts (MVP finalised)", "s": "done" },
+      { "t": "Implement the static site from the drafts (done, review passed)", "s": "done" },
+      { "t": "Export and daily backup", "s": "todo" }
     ]},
-    { "from": 8, "to": 10, "dates": "11/29 至 12/1", "title": "第一个国家全部条目", "tasks": [
-      { "t": "第一个国家的全部承诺", "s": "todo" },
-      { "t": "和现有追踪器对照，判定标准升到 1.0", "s": "todo" }
+    { "from": 8, "to": 10, "dates": "11/29 to 12/1", "title": "All items for the first country", "tasks": [
+      { "t": "All promises of the first country", "s": "todo" },
+      { "t": "Compare with existing trackers, raise the verdict criteria to 1.0", "s": "todo" }
     ]},
-    { "from": 11, "to": 13, "dates": "12/2 至 12/4", "title": "第二个国家，译文，中立性检查", "tasks": [
-      { "t": "第二个国家的全部承诺", "s": "todo" },
-      { "t": "法语和英语译文", "s": "todo" },
-      { "t": "中立性检查", "s": "todo" }
+    { "from": 11, "to": 13, "dates": "12/2 to 12/4", "title": "Second country, translations, neutrality check", "tasks": [
+      { "t": "All promises of the second country", "s": "todo" },
+      { "t": "French and English translations", "s": "todo" },
+      { "t": "Neutrality check", "s": "todo" }
     ]},
-    { "from": 14, "to": 14, "dates": "12/5", "title": "上线", "check": "第 14 天检查点：上线清单通过", "tasks": [
-      { "t": "上线前最低清单", "s": "todo" },
-      { "t": "部署", "s": "todo" }
+    { "from": 14, "to": 14, "dates": "12/5", "title": "Launch", "check": "Day 14 checkpoint: launch checklist passed", "tasks": [
+      { "t": "Minimum pre-launch checklist", "s": "todo" },
+      { "t": "Deploy", "s": "todo" }
     ]}
   ],
   "components": {
-    "fetch": { "name": "来源获取", "line": "下载纲领和原始凭据，存原件和哈希；纲领已存证", "s": "doing" },
-    "extract": { "name": "AI 抽取", "line": "逐条抽出承诺，附原文页码；第一次真实运行完成", "s": "done" },
-    "jury": { "name": "AI 评审团", "line": "四家模型各自独立初判，引用凭据原文；可行性试跑中（只有 Anthropic）", "s": "doing" },
-    "layer": { "name": "AI 接口层", "line": "Anthropic、Gemini、OpenAI、Mistral，可以互换；已完成并审查通过，接真实模型时再要密钥", "s": "done" },
-    "desk": { "name": "审核台", "line": "中立性检查；你逐条确认；显示哪些有未确认的改动", "s": "todo" },
-    "workspace": { "name": "工作区", "line": "承诺、结论、证据、来源、评审团投票。可以随便改", "s": "done" },
-    "ledger": { "name": "账本", "line": "你每确认一次，存一份完整快照。只能增加，不能修改。法语英语双语", "s": "done" },
-    "evidence": { "name": "本地存证", "line": "纲领原件和凭据原件，文件名就是它的哈希；存证脚本审查通过", "s": "done" },
-    "backup": { "name": "每日备份", "line": "加密备份到另一块硬盘或云端", "s": "todo" },
-    "site": { "name": "公开网站", "line": "只从账本生成的静态页面，法语和英语；生成器完成并审查通过，还没部署", "s": "done" }
+    "fetch": { "name": "Source fetching", "line": "Download manifestos and original evidence, keep originals and hashes; manifestos already archived", "s": "doing" },
+    "extract": { "name": "AI extraction", "line": "Extracts promises one by one with source page; first real run completed", "s": "done" },
+    "jury": { "name": "AI jury", "line": "Four vendors' models each give an independent first-pass verdict, quoting the evidence text; feasibility trial running (Anthropic only)", "s": "doing" },
+    "layer": { "name": "AI interface layer", "line": "Anthropic, Gemini, OpenAI, Mistral, interchangeable; built and review passed, keys requested when real models are connected", "s": "done" },
+    "desk": { "name": "Review desk", "line": "Neutrality check; you confirm item by item; shows which items have unconfirmed changes", "s": "todo" },
+    "workspace": { "name": "Workspace", "line": "Promises, verdicts, evidence, sources, jury votes. Freely editable", "s": "done" },
+    "ledger": { "name": "Ledger", "line": "Each time you confirm, a full snapshot is stored. Append-only, never modified. Bilingual French and English", "s": "done" },
+    "evidence": { "name": "Local evidence archive", "line": "Original manifestos and evidence, file name is its hash; archive script passed review", "s": "done" },
+    "backup": { "name": "Daily backup", "line": "Encrypted backup to another disk or the cloud", "s": "todo" },
+    "site": { "name": "Public site", "line": "Static pages generated only from the ledger, French and English; generator built and review passed, not yet deployed", "s": "done" }
   },
   "stack": [
-    { "part": "语言和运行环境", "choice": "Node.js，纯 JavaScript，无构建步骤", "s": "done" },
-    { "part": "数据库", "choice": "SQLite，一个文件，只在你的电脑上；工作区和账本分开", "s": "done" },
-    { "part": "第三方依赖", "choice": "零", "s": "done" },
-    { "part": "公开网站", "choice": "程序生成静态 HTML，放到静态托管", "s": "todo" },
-    { "part": "模型", "choice": "经统一接口调用：Anthropic、Gemini、OpenAI、Mistral；接模型时再要密钥", "s": "todo" }
+    { "part": "Language and runtime", "choice": "Node.js, plain JavaScript, no build step", "s": "done" },
+    { "part": "Database", "choice": "SQLite, a single file, only on your computer; workspace and ledger kept separate", "s": "done" },
+    { "part": "Third-party dependencies", "choice": "Zero", "s": "done" },
+    { "part": "Public site", "choice": "Program generates static HTML, put on static hosting", "s": "todo" },
+    { "part": "Models", "choice": "Called through one common interface: Anthropic, Gemini, OpenAI, Mistral; keys requested when models are connected", "s": "todo" }
   ],
   "team": {
     "build": [
-      { "name": "总协调", "does": "拆任务、派活、汇总进度、守住原则", "gives": "任务单、进度摘要、看板", "s": "done" },
-      { "name": "设计", "does": "信息架构、视觉稿、组件规范、文案语气", "gives": "设计稿和规范", "s": "done" },
-      { "name": "开发", "does": "按设计稿和记录格式实现", "gives": "代码和测试", "s": "done" },
-      { "name": "代码审查", "does": "独立检查开发的产出，只退回不动手", "gives": "问题清单", "s": "done" }
+      { "name": "Coordinator", "does": "Splits tasks, assigns work, summarises progress, guards the principles", "gives": "Task tickets, progress summaries, the board", "s": "done" },
+      { "name": "Design", "does": "Information architecture, visual drafts, component specs, copy tone", "gives": "Design drafts and specs", "s": "done" },
+      { "name": "Development", "does": "Implements from the design drafts and record format", "gives": "Code and tests", "s": "done" },
+      { "name": "Code review", "does": "Independently checks development output, only sends back, never edits", "gives": "List of issues", "s": "done" }
     ],
     "run": [
-      { "name": "获取", "does": "找并下载原始凭据", "gives": "原件、哈希", "s": "done" },
-      { "name": "抽取", "does": "从纲领逐条抽出承诺", "gives": "带原文和页码的条目", "s": "done" },
-      { "name": "评审团", "does": "多个模型各自独立初判", "gives": "结论、凭据段落、理由", "s": "done" },
-      { "name": "中立性审查", "does": "检查选材、措辞、证据，只退回不改", "gives": "通过或退回", "s": "done" },
-      { "name": "翻译", "does": "法语和英语译文", "gives": "译文", "s": "done" }
+      { "name": "Fetching", "does": "Finds and downloads original evidence", "gives": "Originals, hashes", "s": "done" },
+      { "name": "Extraction", "does": "Extracts promises one by one from manifestos", "gives": "Items with original text and page numbers", "s": "done" },
+      { "name": "Jury", "does": "Several models each give an independent first-pass verdict", "gives": "Verdict, evidence passage, reasons", "s": "done" },
+      { "name": "Neutrality review", "does": "Checks selection, wording and evidence, only sends back, never edits", "gives": "Pass or send back", "s": "done" },
+      { "name": "Translation", "does": "French and English translations", "gives": "Translations", "s": "done" }
     ],
-    "note": "这里的“已完成”指职责文件已经写好。运行组要等流水线建好才会真正开工。代码审查已经实际工作了四轮。模型：总协调、设计、开发和日常审查用 Opus 5.5；只有关键改动的审查、回头看和路线决定才请 Fable 5.2；查资料用更便宜的模型。运行组用的是另外四家的模型。",
+    "note": "\"Done\" here means the role files are written. The run group only starts real work once the pipeline is built. Code review has actually worked for four rounds. Models: coordinator, design, development and routine review use Opus 5.5; Fable 5.2 is called only for reviews of key changes, step-backs and route decisions; research uses a cheaper model. The run group uses models from the other four vendors.",
     "rules": [
-      "所有 agent 读同一份原则",
-      "交接靠文件和数据库，不靠对话记忆",
-      "做事和检查分开",
-      "检查方只退回，不动手改",
-      "设计先于开发",
-      "分歧上报给你",
-      "每份产出可追溯到角色、模型和提示词版本"
+      "All agents read the same principles",
+      "Handoffs go through files and the database, not conversation memory",
+      "Doing and checking are separate",
+      "The checker only sends back, never edits",
+      "Design comes before development",
+      "Disagreements are escalated to you",
+      "Every output is traceable to a role, model and prompt version"
     ]
   },
   "principles": [
-    { "n": 1, "name": "问题和结论一样重要", "gloss": "给不出真相，也要给出一个好问题。", "how": "“无法判定”的结论不写明还缺什么，数据库拒绝保存", "s": "done" },
-    { "n": 2, "name": "无源不录", "gloss": "没有来源，不收录，不下结论。", "how": "没有来源的条目存不进去；没有原始凭据的结论进不了账本。经过四轮独立审查；保护的边界等你定", "s": "wait" },
-    { "n": 3, "name": "一把尺子", "gloss": "对所有人用同一套规则；只说结果，不猜动机。", "how": "中立性审查每条必查；每周统计各国结论分布", "s": "doing" },
-    { "n": 4, "name": "想清再写", "gloss": "Think, then code. 卡住了先回头看，不硬改。", "how": "熔断规则：同一问题改两次未解决就停手，先写回头看记录。已经用过一次", "s": "doing" },
-    { "n": 5, "name": "最简方案，敢于取舍", "gloss": "Keep it simple.", "how": "新增部件或依赖前，先写一句为什么现有的不够", "s": "doing" },
-    { "n": 6, "name": "有话直说", "gloss": "Have backbone. 敢提意见，守住职责，不迎合。", "how": "每份产出固定有“异议与风险”一栏，不能空着", "s": "doing" },
-    { "n": 7, "name": "能自动就不手动", "gloss": "人只做机器做不了的那一步。", "how": "审核台记录每条人工用时，每周出报表", "s": "todo" },
-    { "n": 8, "name": "不受制于人", "gloss": "不绑定 AI 供应商，数据在本地，资金自筹。", "how": "业务代码只能经 AI 接口层调用模型；数据库只在本机", "s": "doing" }
+    { "n": 1, "name": "A good question matters as much as an answer", "gloss": "If the truth cannot be given, give a good question.", "how": "A \"cannot determine\" verdict that does not say what is missing is rejected by the database", "s": "done" },
+    { "n": 2, "name": "No source, no record", "gloss": "No source, no entry, no verdict.", "how": "Items without a source cannot be stored; verdicts without original evidence cannot enter the ledger. Four independent reviews done; boundary of protection decided", "s": "wait" },
+    { "n": 3, "name": "One yardstick", "gloss": "The same rules for everyone; state results, do not guess motives.", "how": "Neutrality review checks every item; weekly count of verdict distribution by country", "s": "doing" },
+    { "n": 4, "name": "Think, then code", "gloss": "Think, then code. When stuck, step back, do not force a fix.", "how": "Circuit breaker: if one problem is not solved after two fixes, stop and write a step-back note first. Already used once", "s": "doing" },
+    { "n": 5, "name": "Simplest solution, dare to cut", "gloss": "Keep it simple.", "how": "Before adding a component or dependency, write one sentence on why the existing ones are not enough", "s": "doing" },
+    { "n": 6, "name": "Speak plainly", "gloss": "Have backbone. Dare to give opinions, hold your role, do not flatter.", "how": "Every output has a fixed \"objections and risks\" field that cannot be left empty", "s": "doing" },
+    { "n": 7, "name": "Automate what can be automated", "gloss": "People only do the step machines cannot.", "how": "The review desk records human time per item and produces a weekly report", "s": "todo" },
+    { "n": 8, "name": "Not at anyone's mercy", "gloss": "No lock-in to an AI vendor, data stays local, self-funded.", "how": "Business code may call models only through the AI interface layer; the database stays on this machine", "s": "doing" }
   ],
-  "principlesNote": "已完成：程序已经强制执行，有测试，并通过了独立审查。进行中：规则已经写好，靠每天执行，或还在审查中。未开始：对应的部件还没建。",
+  "principlesNote": "Done: the program already enforces it, with tests, and it passed independent review. In progress: the rule is written and relies on daily practice, or is still under review. Not started: the component does not exist yet.",
   "decisions": [
-    { "id": "0001", "t": "技术选型：零依赖 Node.js、SQLite、静态 HTML", "by": "我提议，你同意", "s": "done" },
-    { "id": "0002", "t": "来源规则：一份官方文件，或两家不同的独立来源各自确认", "by": "你定的", "s": "done" },
-    { "id": "0002", "t": "官方机构评价自己的工作不算凭据，要有数据或法律文本（来源规则 0.3）", "by": "我建议，你同意", "s": "done" },
-    { "id": "0003", "t": "AI 评审团：10 条、30 条、100 条，正确率 99% 就开启自动审核", "by": "你定的", "s": "done" },
-    { "id": "0003", "t": "10 条全对、30 条全对、100 条最多错 1 条；开启后保留每周抽查", "by": "我的理解，你确认", "s": "done" },
-    { "id": "0007", "t": "人物用内部编号，可加 Wikidata 编号；法语和英语是存储语言；答辩以后再加", "by": "你定的", "s": "done" },
-    { "id": "—", "t": "视觉稿第二轮方向通过：字号和粗细尽量少，照顾电脑宽屏，先做成 MVP", "by": "你定的", "s": "done" },
-    { "id": "—", "t": "专用邮箱已接好，每天 8:30 读你发来的链接", "by": "你接的，我设的", "s": "done" },
-    { "id": "—", "t": "申请更正先用 kanverify@gmail.com", "by": "你定的", "s": "done" },
-    { "id": "—", "t": "法国法律接口 PISTE 正式环境已开通（你注册的），开发在接进存证流程", "by": "你", "s": "done" },
-    { "id": "—", "t": "配色选 B：柔和多色（无红绿，保留花纹和文字标签）", "by": "你定的", "s": "done" },
-    { "id": "—", "t": "法国法律原文用 Légifrance 官方接口数据，网站标注“官方数据库”", "by": "你定的", "s": "done" },
-    { "id": "—", "t": "期限读法：2027 年前按 2027 年底，本十年末按 2030 年底；打包承诺全部做到才算成真", "by": "你定的", "s": "done" },
-    { "id": "0011", "t": "网站上的结论和数据用 CC BY-NC-SA 4.0：可引用转载，须注明出处，不得商用", "by": "你定的", "s": "done" },
-    { "id": "0011", "t": "开源：github.com/gaoyifu123/kanverify，代码 AGPL v3，文档 CC BY 4.0；数据和未确认结论不公开", "by": "你定的", "s": "done" },
-    { "id": "0008", "t": "本人公开放弃的原话可以作为判“未成真”的唯一凭据，只限这一种情况", "by": "你定的", "s": "done" },
-    { "id": "0008", "t": "结论六种：无法验证、待定、待评估、成真、部分成真、未成真；可量化的部分成真写明数据；做到了可以提前判成真", "by": "你定的", "s": "done" },
-    { "id": "—", "t": "模型密钥：先放了 Anthropic 一家，其余陆续补", "by": "你", "s": "done" },
-    { "id": "0007", "t": "政策领域固定清单 20 个", "by": "我提议，你同意", "s": "done" },
-    { "id": "—", "t": "撤回的条目在人物页上不留痕迹，只在条目页和更正页上说明", "by": "你定的", "s": "done" },
-    { "id": "—", "t": "熔断：人物编号的保护改一行修好，改完只做日常审查", "by": "我建议，你同意", "s": "done" },
-    { "id": "—", "t": "下了结论的条目必须附法语和英语说明", "by": "我建议，你同意", "s": "done" },
-    { "id": "—", "t": "设计方向通过；更正用邮箱、存证原件不公开、撤回只显示说明、照实显示模型、首页按时间排", "by": "我给默认做法，你同意", "s": "done" },
-    { "id": "0004", "t": "设计类 skill：用 frontend-design，加自己的设计简报", "by": "我提议，你同意", "s": "done" },
-    { "id": "0004", "t": "两个设计插件都安装；design 插件不连接任何外部服务", "by": "你装的", "s": "done" },
-    { "id": "—", "t": "模型：默认 Opus 5.5，关键审查和路线决定才请 Fable 5.2", "by": "你定的方向，我分配", "s": "done" },
-    { "id": "0006", "t": "模型用四家：Anthropic、Gemini、OpenAI、Mistral", "by": "你定的", "s": "done" },
-    { "id": "—", "t": "撤回的条目：页面保留并注明已撤回和原因", "by": "你定的", "s": "done" },
-    { "id": "0005", "t": "数据库：工作区和账本分开，网站只从账本生成", "by": "我提议，你确认", "s": "done" },
-    { "id": "0005", "t": "数据库保护的边界：防写错代码，不防故意关安全开关", "by": "我提议，你接受", "s": "done" },
-    { "id": "—", "t": "网站名 KANVERIFY，首发法语和英语", "by": "你定的", "s": "done" },
-    { "id": "—", "t": "两周内上线，上线后不推广", "by": "你定的", "s": "done" },
-    { "id": "—", "t": "数据库只放在你的电脑上，公开网站是只读副本", "by": "你定的", "s": "done" },
-    { "id": "—", "t": "人审环节由你和你邀请的审核人来做，不是公开读者", "by": "你定的", "s": "done" },
-    { "id": "—", "t": "第三个国家：英国或德国，上线后看流量", "by": "你定的", "s": "done" }
+    { "id": "0001", "t": "Tech stack: zero-dependency Node.js, SQLite, static HTML", "by": "I proposed, you agreed", "s": "done" },
+    { "id": "0002", "t": "Source rule: one official document, or two different independent sources each confirming", "by": "You decided", "s": "done" },
+    { "id": "0002", "t": "An official body assessing its own work does not count as evidence; data or legal text is required (source rule 0.3)", "by": "I recommended, you agreed", "s": "done" },
+    { "id": "0003", "t": "AI jury: 10, 30, 100 items, 99% accuracy turns on automatic review", "by": "You decided", "s": "done" },
+    { "id": "0003", "t": "10 of 10 correct, 30 of 30 correct, at most 1 error in 100; weekly spot checks stay after it is on", "by": "My reading, you confirmed", "s": "done" },
+    { "id": "0007", "t": "People use internal IDs, Wikidata ID optional; French and English are the storage languages; rebuttals added later", "by": "You decided", "s": "done" },
+    { "id": "—", "t": "Second round of visual drafts approved: as few font sizes and weights as possible, suited to wide desktop screens, built as an MVP first", "by": "You decided", "s": "done" },
+    { "id": "—", "t": "Dedicated mailbox connected; reads the links you send every day at 8:30", "by": "You connected it, I set it up", "s": "done" },
+    { "id": "—", "t": "Correction requests use kanverify@gmail.com for now", "by": "You decided", "s": "done" },
+    { "id": "—", "t": "French legal API PISTE production environment is open (you registered); development is wiring it into the evidence flow", "by": "You", "s": "done" },
+    { "id": "—", "t": "Colour scheme B: soft multi-colour (no red or green, keeping patterns and text labels)", "by": "You decided", "s": "done" },
+    { "id": "—", "t": "French legal text comes from the official Légifrance API data, the site labels it \"official database\"", "by": "You decided", "s": "done" },
+    { "id": "—", "t": "Deadline reading: \"before 2027\" means end of 2027, \"by the end of this decade\" means end of 2030; a bundled promise counts as kept only if all of it is done", "by": "You decided", "s": "done" },
+    { "id": "0011", "t": "Verdicts and data on the site use CC BY-NC-SA 4.0: may be quoted and reposted, must credit the source, no commercial use", "by": "You decided", "s": "done" },
+    { "id": "0011", "t": "Open source: github.com/gaoyifu123/kanverify, code AGPL v3, docs CC BY 4.0; data and unconfirmed verdicts not public", "by": "You decided", "s": "done" },
+    { "id": "0008", "t": "A person's own public renunciation can be the sole evidence for a \"not kept\" verdict, in this one case only", "by": "You decided", "s": "done" },
+    { "id": "0008", "t": "Six verdicts: cannot verify, pending, to be assessed, kept, partly kept, not kept; quantifiable partly kept states the data; if achieved, may be judged kept early", "by": "You decided", "s": "done" },
+    { "id": "—", "t": "Model keys: only Anthropic's is in so far, the rest to be added over time", "by": "You", "s": "done" },
+    { "id": "0007", "t": "Fixed list of 20 policy areas", "by": "I proposed, you agreed", "s": "done" },
+    { "id": "—", "t": "Withdrawn items leave no trace on the person page, only explained on the item page and the corrections page", "by": "You decided", "s": "done" },
+    { "id": "—", "t": "Circuit breaker: person ID protection fixed with a one-line change, only routine review afterwards", "by": "I recommended, you agreed", "s": "done" },
+    { "id": "—", "t": "Items with a verdict must carry French and English explanations", "by": "I recommended, you agreed", "s": "done" },
+    { "id": "—", "t": "Design direction approved; corrections by email, archived originals not public, withdrawal shows only an explanation, models shown as they are, home page sorted by time", "by": "I gave defaults, you agreed", "s": "done" },
+    { "id": "0004", "t": "Design skill: use frontend-design, plus our own design brief", "by": "I proposed, you agreed", "s": "done" },
+    { "id": "0004", "t": "Both design plugins installed; the design plugin connects to no external service", "by": "You installed", "s": "done" },
+    { "id": "—", "t": "Models: Opus 5.5 by default, Fable 5.2 only for key reviews and route decisions", "by": "You set the direction, I assigned", "s": "done" },
+    { "id": "0006", "t": "Models from four vendors: Anthropic, Gemini, OpenAI, Mistral", "by": "You decided", "s": "done" },
+    { "id": "—", "t": "Withdrawn items: the page stays, marked as withdrawn with the reason", "by": "You decided", "s": "done" },
+    { "id": "0005", "t": "Database: workspace and ledger kept separate, the site is generated only from the ledger", "by": "I proposed, you confirmed", "s": "done" },
+    { "id": "0005", "t": "Database protection boundary: guards against code mistakes, not against deliberately switching safety off", "by": "I proposed, you accepted", "s": "done" },
+    { "id": "—", "t": "Site name KANVERIFY, launching in French and English", "by": "You decided", "s": "done" },
+    { "id": "—", "t": "Launch within two weeks, no promotion after launch", "by": "You decided", "s": "done" },
+    { "id": "—", "t": "The database lives only on your computer; the public site is a read-only copy", "by": "You decided", "s": "done" },
+    { "id": "—", "t": "The human review step is done by you and the reviewers you invite, not public readers", "by": "You decided", "s": "done" },
+    { "id": "—", "t": "Third country: UK or Germany, decided by traffic after launch", "by": "You decided", "s": "done" }
   ],
   "open": [
-    { "t": "“非新闻”定位的法律后果", "d": "诽谤规则不看网站自称什么；数据保护法上稳妥的依据是新闻豁免。推广和扩到更多人物之前要问律师。" },
-    { "t": "预测类条目怎么判", "d": "基准线和最小样本数都没有定。第一层只做承诺，暂不涉及。" },
-    { "t": "静态托管放在哪里", "d": "上线前要定。" }
+    { "t": "Legal consequences of the \"not news\" positioning", "d": "Defamation rules do not look at what a site calls itself; the safe basis under data protection law is the journalism exemption. Ask a lawyer before promoting or extending to more people." },
+    { "t": "How to judge prediction items", "d": "Neither the baseline nor the minimum sample size is set. The first layer covers promises only, so this is not involved yet." },
+    { "t": "Where to host the static site", "d": "To be decided before launch." }
   ]
 }
 </script>
 
 <style>
-/* 布局：顶部一条固定的视图切换栏，下面一次只显示一个视图；每个视图是一张图加少量文字。
-   全站只有一种状态语言：圆点的形状和颜色。 */
+/* Layout: a fixed view-switch bar on top, one view shown at a time below; each view is a diagram plus a little text.
+   The whole site has one status language: the shape and colour of the dot. */
 :root {
   --bg: #f4f6f9;
   --surface: #ffffff;
@@ -260,7 +261,7 @@ ul, ol { list-style: none; }
   display: flex; flex-direction: column; gap: 20px;
 }
 
-/* 页头 */
+/* Header */
 .top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px; }
 .brand { font-family: var(--font-display); font-weight: 600; font-size: 22px; letter-spacing: 0.04em; }
 .brand span { color: var(--ink-3); font-weight: 500; letter-spacing: 0; margin-left: 8px; font-family: var(--font-text); font-size: 15px; }
@@ -273,7 +274,7 @@ ul, ol { list-style: none; }
 .refresh:disabled { opacity: 0.5; cursor: default; }
 .refresh-state { font-size: 13px; color: var(--ink-2); background: var(--sunken); border-radius: 8px; padding: 8px 12px; margin-top: -8px; }
 
-/* 视图切换 */
+/* View switcher */
 .tabs {
   position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5;
   background: var(--bg); border-bottom: 1px solid var(--line);
@@ -288,7 +289,7 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 .tabs a[aria-current="page"] { background: var(--ink); color: var(--bg); }
 .tabs a:focus-visible, button:focus-visible, textarea:focus-visible { outline: 2px solid var(--doing); outline-offset: 2px; }
 
-/* 状态语言：全站唯一 */
+/* Status language: the only one site-wide */
 .s { flex: none; display: inline-block; width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--todo); background: transparent; }
 .s.done { border-color: var(--done); background: var(--done); }
 .s.doing { border-color: var(--doing); background: linear-gradient(90deg, var(--doing) 50%, transparent 50%); }
@@ -308,13 +309,13 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 .g4 { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
 .stack { display: flex; flex-direction: column; gap: 10px; }
 
-/* 条目：状态点 + 一句话 */
+/* Item: status dot + one sentence */
 .items { display: flex; flex-direction: column; gap: 8px; }
 .item { display: flex; gap: 10px; align-items: flex-start; }
 .item .s { margin-top: 6px; }
 .item small { display: block; color: var(--ink-2); font-size: 13px; }
 
-/* 今日 */
+/* Today */
 .days { display: grid; grid-template-columns: repeat(14, minmax(0, 1fr)); gap: 4px; }
 .days i { height: 10px; border-radius: 3px; background: var(--sunken); }
 .days i.past { background: var(--done); }
@@ -327,7 +328,7 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 .count .l { font-weight: 600; }
 .count .t { color: var(--ink-3); font-size: 13px; }
 
-/* 等你做的事：可以直接填写 */
+/* Waiting on you: can be filled in directly */
 .card.waitc { border-color: var(--wait); background: var(--wait-bg); }
 .needs { display: flex; flex-direction: column; gap: 0; }
 .needs-head { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; margin-bottom: 4px; }
@@ -362,7 +363,7 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 .state.bad { color: var(--wait); font-weight: 500; }
 .chip { display: inline-block; font-size: 12px; padding: 1px 9px; border-radius: 999px; border: 1px solid var(--done); color: var(--done); background: var(--done-bg); font-weight: 500; }
 
-/* 执行：阶段条 + 工作包 */
+/* Plan: phase strip + work packages */
 .phases { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 8px; }
 .phase { border: 1px solid var(--line); border-radius: var(--r); padding: 12px; background: var(--surface); display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .phase.gate { border-style: dashed; border-color: var(--line-strong); }
@@ -379,7 +380,7 @@ body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-a
 .check .s.wait { background: transparent; }
 .pkg.cur { border-color: var(--doing); }
 
-/* 技术：架构图 */
+/* Tech: architecture diagram */
 .arch { display: flex; flex-direction: column; gap: 0; }
 .row { display: flex; gap: 0; align-items: stretch; }
 .node { flex: 1 1 0; min-width: 0; background: var(--surface); border: 1.5px solid var(--line-strong); border-radius: var(--r); padding: 12px 14px; }
@@ -409,7 +410,7 @@ th { font-size: 13px; color: var(--ink-3); font-weight: 600; }
 td:last-child, th:last-child { width: 1%; white-space: nowrap; }
 .scroll { overflow-x: auto; }
 
-/* 团队 */
+/* Team */
 .founder { align-self: center; text-align: center; border: 2px solid var(--ink); }
 .founder b { font-family: var(--font-display); font-size: 16px; }
 .tm { display: flex; flex-direction: column; gap: 2px; }
@@ -423,7 +424,7 @@ td:last-child, th:last-child { width: 1%; white-space: nowrap; }
 .rules li { counter-increment: r; display: flex; gap: 10px; align-items: baseline; }
 .rules li::before { content: counter(r); font-family: var(--font-display); font-weight: 600; color: var(--ink-3); }
 
-/* 原则 */
+/* Principles */
 .pr { display: flex; flex-direction: column; gap: 6px; }
 .pr .hd { display: flex; gap: 10px; align-items: baseline; }
 .pr .n { font-family: var(--font-display); font-weight: 600; font-size: 22px; color: var(--ink-3); line-height: 1; font-variant-numeric: tabular-nums; }
@@ -432,7 +433,7 @@ td:last-child, th:last-child { width: 1%; white-space: nowrap; }
 .pr .how { display: flex; gap: 10px; align-items: flex-start; font-size: 13px; color: var(--ink-2); border-top: 1px solid var(--line); padding-top: 8px; margin-top: 2px; }
 .pr .how .s { margin-top: 5px; }
 
-/* 决策 */
+/* Decisions */
 .dec { display: flex; gap: 12px; align-items: flex-start; padding-block: 10px; border-top: 1px solid var(--line-strong); }
 .card:not(.waitc) .dec { border-top-color: var(--line); }
 .dec:first-of-type { border-top: 0; padding-top: 0; }
@@ -455,29 +456,29 @@ td:last-child, th:last-child { width: 1%; white-space: nowrap; }
 
 <div class="wrap">
   <header class="top">
-    <div class="brand">KANVERIFY<span>项目看板</span></div>
+    <div class="brand">KANVERIFY<span>Project Board</span></div>
     <div class="updated">
       <span id="updated"></span>
       <span id="read-at"></span>
-      <button type="button" class="refresh" id="refresh">刷新</button>
+      <button type="button" class="refresh" id="refresh">Refresh</button>
     </div>
   </header>
   <p class="refresh-state" id="refresh-state" aria-live="polite" hidden></p>
 
-  <nav class="tabs" aria-label="视图">
-    <a href="#today">今日</a>
-    <a href="#plan">执行</a>
-    <a href="#tech">技术</a>
-    <a href="#team">团队</a>
-    <a href="#principles">原则</a>
-    <a href="#decisions">决策</a>
+  <nav class="tabs" aria-label="Views">
+    <a href="#today">Today</a>
+    <a href="#plan">Plan</a>
+    <a href="#tech">Tech</a>
+    <a href="#team">Team</a>
+    <a href="#principles">Principles</a>
+    <a href="#decisions">Decisions</a>
   </nav>
 
-  <ul class="legend" aria-label="状态图例">
-    <li><span class="s done"></span>已完成</li>
-    <li><span class="s doing"></span>进行中</li>
-    <li><span class="s"></span>未开始</li>
-    <li><span class="s wait"></span>等你</li>
+  <ul class="legend" aria-label="Status legend">
+    <li><span class="s done"></span>Done</li>
+    <li><span class="s doing"></span>In progress</li>
+    <li><span class="s"></span>Not started</li>
+    <li><span class="s wait"></span>Waiting on you</li>
   </ul>
 
   <main id="views"></main>
@@ -486,16 +487,16 @@ td:last-child, th:last-child { width: 1%; white-space: nowrap; }
 <script>
 (function () {
   var D = JSON.parse(document.getElementById('board-data').textContent);
-  var LABEL = { done: '已完成', doing: '进行中', todo: '未开始', wait: '等你' };
+  var LABEL = { done: 'Done', doing: 'In progress', todo: 'Not started', wait: 'Waiting on you' };
 
-  // 创始人的回复。saved 来自看板的数据库；drafts 是还没保存的输入，切换视图时不丢。
+  // The founder's replies. saved comes from the board's database; drafts are unsaved input, kept when switching views.
   var saved = {};
   var drafts = {};
   var store = { db: null, state: 'loading' }; // loading | ready | slow | off
   var saving = {};
   var failed = {};
-  var readAt = null;          // 最近一次从数据库读到回复的时间
-  var room = null;            // 用来把“我填好了”发到你和 Claude 的对话里
+  var readAt = null;          // time of the last read of replies from the database
+  var room = null;            // used to send "I have filled it in" into the conversation with Claude
   var canSend = 'off';
 
   function clock(d) {
@@ -506,9 +507,9 @@ td:last-child, th:last-child { width: 1%; white-space: nowrap; }
     return !!room && (canSend === 'available' || canSend === 'available_if_summoned' || canSend === 'available_if_opened');
   }
   function paintHeader() {
-    document.getElementById('updated').textContent = '看板更新于 ' + D.meta.updated;
-    document.getElementById('read-at').textContent = readAt ? '回复读取于 ' + clock(readAt) : '';
-    document.getElementById('refresh').textContent = sendable() ? '刷新并通知 Claude' : '刷新';
+    document.getElementById('updated').textContent = 'Board updated ' + D.meta.updated;
+    document.getElementById('read-at').textContent = readAt ? 'Replies read at ' + clock(readAt) : '';
+    document.getElementById('refresh').textContent = sendable() ? 'Refresh and notify Claude' : 'Refresh';
   }
   function tell(text) {
     var el = document.getElementById('refresh-state');
@@ -532,7 +533,7 @@ td:last-child, th:last-child { width: 1%; white-space: nowrap; }
     var d = new Date(iso);
     if (isNaN(d)) return '';
     function two(n) { return (n < 10 ? '0' : '') + n; }
-    return (d.getMonth() + 1) + ' 月 ' + d.getDate() + ' 日 ' + two(d.getHours()) + ':' + two(d.getMinutes());
+    return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()] + ' ' + d.getDate() + ' ' + two(d.getHours()) + ':' + two(d.getMinutes());
   }
   function current(id) {
     var a = drafts[id] || saved[id] || {};
@@ -553,19 +554,19 @@ td:last-child, th:last-child { width: 1%; white-space: nowrap; }
       '<p class="need-desc">' + esc(n.d) + '</p>' +
       (n.warn ? '<p class="need-warn">' + esc(n.warn) + '</p>' : '') +
       (opts ? '<div class="opts" role="group" aria-label="' + esc(n.t) + '">' + opts + '</div>' : '') +
-      '<textarea id="answer-' + esc(n.id) + '" aria-label="' + esc(n.t) + '：回复" placeholder="' + esc(n.placeholder || '') + '"></textarea>' +
-      '<div class="need-foot"><button type="button" class="save" data-save>保存</button><span class="state" aria-live="polite"></span></div>' +
+      '<textarea id="answer-' + esc(n.id) + '" aria-label="' + esc(n.t) + ': reply" placeholder="' + esc(n.placeholder || '') + '"></textarea>' +
+      '<div class="need-foot"><button type="button" class="save" data-save>Save</button><span class="state" aria-live="polite"></span></div>' +
     '</div>';
   }
 
-  // 把数据库里的回复和未保存的输入填回表单，并更新每一项的状态文字。不重画表单，所以不会打断正在输入的内容。
+  // Fill replies from the database and unsaved input back into the form, and update each item's status text. The form is not redrawn, so typing is not interrupted.
   function paintAnswers() {
     var note = document.getElementById('store-note');
     if (note) {
-      note.textContent = store.state === 'ready' ? '在这里直接回复，保存后我能读到。'
-        : store.state === 'loading' ? '正在读取你之前的回复…'
-        : store.state === 'slow' ? '暂时连不上保存回复的地方，下面显示的可能不是最新的。'
-        : '这次打开的方式保存不了回复。请在 Claude 里打开看板再填写。';
+      note.textContent = store.state === 'ready' ? 'Reply here directly; once saved I can read it.'
+        : store.state === 'loading' ? 'Loading your earlier replies…'
+        : store.state === 'slow' ? 'Cannot reach the place where replies are stored for now; what is shown below may be out of date.'
+        : 'Replies cannot be saved the way this page was opened. Please open the board inside Claude to fill it in.';
     }
     var blocks = document.querySelectorAll('[data-need]');
     for (var i = 0; i < blocks.length; i++) {
@@ -579,18 +580,18 @@ td:last-child, th:last-child { width: 1%; white-space: nowrap; }
       var dirty = isDirty(id), btn = el.querySelector('[data-save]'), st = el.querySelector('.state');
       btn.disabled = !store.db || !!saving[id] || !dirty;
       st.className = 'state';
-      if (saving[id]) st.textContent = '正在保存…';
+      if (saving[id]) st.textContent = 'Saving…';
       else if (failed[id]) { st.textContent = failed[id]; st.className = 'state bad'; }
-      else if (dirty) st.textContent = '有未保存的修改';
-      else if (saved[id] && (saved[id].choice || saved[id].text)) { st.textContent = '已保存 · ' + when(saved[id].at); st.className = 'state ok'; }
-      else st.textContent = '还没有回复';
+      else if (dirty) st.textContent = 'Unsaved changes';
+      else if (saved[id] && (saved[id].choice || saved[id].text)) { st.textContent = 'Saved · ' + when(saved[id].at); st.className = 'state ok'; }
+      else st.textContent = 'No reply yet';
     }
     var marks = document.querySelectorAll('[data-answer-of]');
     for (var k = 0; k < marks.length; k++) {
       var a = saved[marks[k].getAttribute('data-answer-of')];
       marks[k].innerHTML = a && (a.choice || a.text)
-        ? '<span class="chip">你已回复</span> ' + esc(a.choice || '') + (a.choice && a.text ? '：' : '') + esc(a.text || '')
-        : '<a href="#today">去“今日”回复</a>';
+        ? '<span class="chip">You replied</span> ' + esc(a.choice || '') + (a.choice && a.text ? ': ' : '') + esc(a.text || '')
+        : '<a href="#today">Reply under "Today"</a>';
     }
   }
 
@@ -599,25 +600,25 @@ td:last-child, th:last-child { width: 1%; white-space: nowrap; }
     for (var i = 1; i <= m.totalDays; i++) {
       var c = i < m.day ? 'past' : (i === m.day ? 'now' : '');
       if (i === 7 || i === m.totalDays) c += ' gate';
-      cells += '<i class="' + c + '" title="第 ' + i + ' 天"></i>';
+      cells += '<i class="' + c + '" title="Day ' + i + '"></i>';
     }
     return '<h2>' + esc(m.headline) + '</h2>' +
       '<div class="card stack">' +
-        '<div class="dayline"><span>两周上线计划 <strong>第 ' + m.day + ' 天 / 共 ' + m.totalDays + ' 天</strong></span>' +
-        '<span>检查点在第 7 天和第 14 天，目标上线日 ' + esc(m.launch) + '</span></div>' +
+        '<div class="dayline"><span>Two-week launch plan <strong>Day ' + m.day + ' of ' + m.totalDays + '</strong></span>' +
+        '<span>Checkpoints on day 7 and day 14, target launch date ' + esc(m.launch) + '</span></div>' +
         '<div class="days" aria-hidden="true">' + cells + '</div>' +
       '</div>' +
       '<div class="grid g4">' + D.counts.map(function (c) {
         return '<div class="card count"><div class="v">' + esc(c.value) + '</div><div class="l">' + esc(c.label) +
           '</div><div class="t">' + esc(c.target) + '</div></div>';
       }).join('') + '</div>' +
-      '<div class="card waitc needs"><div class="needs-head"><p class="h3">等你做的 ' + D.needs.length + ' 件事</p>' +
+      '<div class="card waitc needs"><div class="needs-head"><p class="h3">Waiting on you: ' + D.needs.length + ' items</p>' +
         '<span class="store-note" id="store-note"></span></div>' +
         D.needs.map(needBlock).join('') + '</div>' +
       '<div class="grid g2">' +
-        '<div class="card stack"><p class="h3">已完成</p><ul class="items">' +
+        '<div class="card stack"><p class="h3">Done</p><ul class="items">' +
           D.done.map(function (t) { return item(t, 'done'); }).join('') + '</ul></div>' +
-        '<div class="card stack"><p class="h3">下一步</p><ul class="items">' +
+        '<div class="card stack"><p class="h3">Next</p><ul class="items">' +
           D.next.map(function (t) { return item(t, 'todo'); }).join('') + '</ul></div>' +
       '</div>';
   }
@@ -636,17 +637,17 @@ td:last-child, th:last-child { width: 1%; white-space: nowrap; }
       }
       var cur = m.day >= p.from && m.day <= p.to;
       return '<div class="card pkg' + (cur ? ' cur' : '') + '">' +
-        '<div class="when"><b>' + (p.from === p.to ? '第 ' + p.from + ' 天' : '第 ' + p.from + ' 至 ' + p.to + ' 天') +
+        '<div class="when"><b>' + (p.from === p.to ? 'Day ' + p.from : 'Days ' + p.from + ' to ' + p.to) +
           '</b><span>' + esc(p.dates) + '</span><div class="days" aria-hidden="true">' + cells + '</div></div>' +
         '<div><h3>' + esc(p.title) + '</h3><ul class="items">' +
           p.tasks.map(function (t) { return item(t.t, t.s); }).join('') + '</ul>' +
           (p.check ? '<div class="check"><span class="s wait"></span>' + esc(p.check) + '</div>' : '') +
         '</div></div>';
     }).join('');
-    return '<h2>两周内上线，上线后不推广、持续打磨</h2>' +
-      '<p class="h3">阶段</p><div class="phases">' + phases + '</div>' +
-      '<p class="h3">两周的七个工作包</p><div class="stack">' + pk + '</div>' +
-      '<p class="note">时间不够时按顺序取舍：先砍结论不砍来源，再砍第三个国家，再砍第二批功能。</p>';
+    return '<h2>Launch within two weeks; no promotion after launch, keep polishing</h2>' +
+      '<p class="h3">Phases</p><div class="phases">' + phases + '</div>' +
+      '<p class="h3">The seven work packages of the two weeks</p><div class="stack">' + pk + '</div>' +
+      '<p class="note">If time runs short, cut in this order: verdicts before sources, then the third country, then second-batch features.</p>';
   }
 
   function node(key, extra) {
@@ -656,7 +657,7 @@ td:last-child, th:last-child { width: 1%; white-space: nowrap; }
   }
   function viewTech() {
     var L = D.components.layer;
-    return '<h2>AI 做获取、抽取和初判；你确认一次，存一份快照；网站只从账本生成</h2>' +
+    return '<h2>AI does fetching, extraction and first-pass verdicts; you confirm once, one snapshot is stored; the site is generated only from the ledger</h2>' +
       '<div class="arch">' +
         '<div class="row">' + node('fetch') + '<div class="arr"></div>' +
           '<div class="group ' + (L.s === 'wait' ? 'wait' : '') + '"><div class="hd">' + dot(L.s) + '<b>' + esc(L.name) + '</b><span>' + esc(L.line) + '</span></div>' +
@@ -665,14 +666,14 @@ td:last-child, th:last-child { width: 1%; white-space: nowrap; }
         '<div class="down"><span></span></div>' +
         '<div class="row">' + node('workspace') + '<div class="gap"></div>' + node('evidence') + '</div>' +
         '<div class="down"><span></span></div>' +
-        '<div class="row">' + node('desk', 'key') + '<div class="arr" data-l="你确认"></div>' + node('ledger', 'key') + '</div>' +
-        '<div class="down"><span data-l="静态导出，只读账本"></span></div>' +
+        '<div class="row">' + node('desk', 'key') + '<div class="arr" data-l="You confirm"></div>' + node('ledger', 'key') + '</div>' +
+        '<div class="down"><span data-l="Static export, reads the ledger only"></span></div>' +
         '<div class="row">' + node('site') + '</div>' +
         '<div class="vgap"></div>' +
         '<div class="row">' + node('backup') + '</div>' +
       '</div>' +
-      '<p class="note">工作区里的东西再怎么改，公开的内容都不会变，直到你再确认一次。线上没有数据库，所以首批没有登录、提交和投票功能。</p>' +
-      '<p class="h3">选型</p><div class="card scroll"><table><thead><tr><th>部件</th><th>选型</th><th>状态</th></tr></thead><tbody>' +
+      '<p class="note">No matter how the workspace changes, public content does not change until you confirm again. There is no database online, so the first release has no login, submission or voting.</p>' +
+      '<p class="h3">Stack</p><div class="card scroll"><table><thead><tr><th>Part</th><th>Choice</th><th>Status</th></tr></thead><tbody>' +
         D.stack.map(function (r) {
           return '<tr><td>' + esc(r.part) + '</td><td>' + esc(r.choice) + '</td><td>' + dot(r.s) + ' ' + LABEL[r.s] + '</td></tr>';
         }).join('') + '</tbody></table></div>';
@@ -680,28 +681,28 @@ td:last-child, th:last-child { width: 1%; white-space: nowrap; }
 
   function member(a) {
     return '<div class="card tm"><div class="hd">' + dot(a.s) + '<span>' + esc(a.name) + '</span></div><p>' + esc(a.does) +
-      '</p><p class="gv">交出：' + esc(a.gives) + '</p></div>';
+      '</p><p class="gv">Delivers: ' + esc(a.gives) + '</p></div>';
   }
   function viewTeam() {
     var T = D.team;
-    return '<h2>做事的不检查自己，检查的不动手改</h2>' +
-      '<div class="card founder"><b>你</b><p class="note">确认结论、处理分歧、修改原则和路线</p></div>' +
-      '<p class="h3">建造组：把系统搭出来</p><div class="grid g4">' + T.build.map(member).join('') + '</div>' +
-      '<p class="h3">运行组：每天产出内容</p><div class="grid g3">' + T.run.map(member).join('') + '</div>' +
+    return '<h2>Those who do the work do not check it; those who check do not edit</h2>' +
+      '<div class="card founder"><b>You</b><p class="note">Confirm verdicts, resolve disagreements, change principles and route</p></div>' +
+      '<p class="h3">Build group: builds the system</p><div class="grid g4">' + T.build.map(member).join('') + '</div>' +
+      '<p class="h3">Run group: produces content every day</p><div class="grid g3">' + T.run.map(member).join('') + '</div>' +
       '<p class="note">' + esc(T.note) + '</p>' +
-      '<p class="h3">谁检查谁</p><div class="pairs">' +
-        '<span class="pair"><b>开发</b> 由 <b>代码审查</b> 检查</span>' +
-        '<span class="pair"><b>评审团</b> 由 <b>中立性审查</b> 检查</span>' +
-        '<span class="pair"><b>评审团成员</b> 互相看不到结论</span>' +
-        '<span class="pair"><b>设计</b> 定稿后 <b>开发</b> 才动工</span>' +
-        '<span class="pair">分歧都交给 <b>你</b></span>' +
+      '<p class="h3">Who checks whom</p><div class="pairs">' +
+        '<span class="pair"><b>Development</b> is checked by <b>Code review</b></span>' +
+        '<span class="pair"><b>The jury</b> is checked by <b>Neutrality review</b></span>' +
+        '<span class="pair"><b>Jury members</b> cannot see each other&rsquo;s verdicts</span>' +
+        '<span class="pair"><b>Development</b> starts only after <b>Design</b> is finalised</span>' +
+        '<span class="pair">Disagreements go to <b>you</b></span>' +
       '</div>' +
-      '<p class="h3">七条协作机制</p><div class="card"><ol class="rules">' +
+      '<p class="h3">Seven collaboration rules</p><div class="card"><ol class="rules">' +
         T.rules.map(function (r) { return '<li><span>' + esc(r) + '</span></li>'; }).join('') + '</ol></div>';
   }
 
   function viewPrinciples() {
-    return '<h2>八条最高原则，所有决定、开发和协作都围绕它们</h2>' +
+    return '<h2>Eight top principles; all decisions, development and collaboration revolve around them</h2>' +
       '<div class="grid g2">' + D.principles.map(function (p) {
         return '<div class="card pr"><div class="hd"><span class="n">' + p.n + '</span><h3>' + esc(p.name) + '</h3></div>' +
           '<p class="gl">' + esc(p.gloss) + '</p><div class="how">' + dot(p.s) + '<span>' + esc(p.how) + '</span></div></div>';
@@ -717,14 +718,14 @@ td:last-child, th:last-child { width: 1%; white-space: nowrap; }
     }
     var waiting = D.decisions.filter(function (d) { return d.s === 'wait'; });
     var decided = D.decisions.filter(function (d) { return d.s === 'done'; });
-    return '<h2>' + decided.length + ' 项已定，' + waiting.length + ' 项等你确认</h2>' +
+    return '<h2>' + decided.length + ' decided, ' + waiting.length + ' waiting for your confirmation</h2>' +
       '<div class="grid g2">' +
-        '<div class="card waitc"><p class="h3" style="margin-bottom:10px">等你确认</p>' + waiting.map(dec).join('') + '</div>' +
-        '<div class="card"><p class="h3" style="margin-bottom:10px">已定</p>' + decided.map(dec).join('') + '</div>' +
+        '<div class="card waitc"><p class="h3" style="margin-bottom:10px">Waiting for your confirmation</p>' + waiting.map(dec).join('') + '</div>' +
+        '<div class="card"><p class="h3" style="margin-bottom:10px">Decided</p>' + decided.map(dec).join('') + '</div>' +
       '</div>' +
-      '<p class="h3">还悬着的问题</p><div class="card"><ul class="items">' +
+      '<p class="h3">Open questions</p><div class="card"><ul class="items">' +
         D.open.map(function (o) { return item(o.t, 'todo', o.d); }).join('') + '</ul></div>' +
-      '<p class="note">带编号的决定在项目的 docs/decisions 文件夹里各有一份记录，写明依据哪条原则、放弃了什么。</p>';
+      '<p class="note">Each numbered decision has a record in the project&rsquo;s docs/decisions folder, stating which principle it rests on and what was given up.</p>';
   }
 
   var VIEWS = { today: viewToday, plan: viewPlan, tech: viewTech, team: viewTeam, principles: viewPrinciples, decisions: viewDecisions };
@@ -741,7 +742,7 @@ td:last-child, th:last-child { width: 1%; white-space: nowrap; }
     paintAnswers();
   }
 
-  // 输入：选项按钮、文字框、保存。事件挂在容器上，视图重画后仍然有效。
+  // Input: option buttons, text box, save. Events are attached to the container, so they still work after a view is redrawn.
   var views = document.getElementById('views');
   function needOf(target) {
     var el = target.closest ? target.closest('[data-need]') : null;
@@ -782,13 +783,13 @@ td:last-child, th:last-child { width: 1%; white-space: nowrap; }
     }, function (err) {
       delete saving[id];
       failed[id] = err && err.code === 'invalid_argument'
-        ? '没有保存上：这次打开的身份没有写入权限。'
-        : '没有保存上，请稍后再点一次保存。你写的内容还在。';
+        ? 'Not saved: this way of opening the page has no write permission.'
+        : 'Not saved; please click Save again in a moment. What you wrote is still here.';
       paintAnswers();
     });
   }
 
-  // 只订阅一次。之后每次有变化（包括我在另一边处理了你的回复）都会自动更新。
+  // Subscribe only once. After that every change (including me handling your reply on the other side) updates automatically.
   function connect() {
     var c = window.claude;
     if (!c || typeof c.use !== 'function') { store.state = 'off'; paintAnswers(); return; }
@@ -812,23 +813,23 @@ td:last-child, th:last-child { width: 1%; white-space: nowrap; }
     }, function () { store.state = 'off'; paintAnswers(); });
   }
 
-  // 刷新：重新读一遍你的回复；能通知时，同时把“哪些事项有回复”发到你和 Claude 的对话里。
-  // 发送必须在点击的当下直接发出，所以放在最前面，前面不等任何东西。
+  // Refresh: re-read your replies; when notifying is possible, also send "which items have replies" into the conversation with Claude.
+  // Sending must happen directly at the moment of the click, so it goes first and waits for nothing.
   document.getElementById('refresh').addEventListener('click', function () {
     var answered = Object.keys(saved).filter(function (id) { return saved[id] && (saved[id].choice || saved[id].text); });
     var unsaved = D.needs.filter(function (n) { return isDirty(n.id); }).length;
-    var warn = unsaved ? '有 ' + unsaved + ' 项还没点保存，没保存的我读不到。' : '';
+    var warn = unsaved ? unsaved + ' item(s) not saved yet; I cannot read unsaved ones.' : '';
     if (sendable()) {
       room.sendToClaudeSession(
-        { label: '看板上的回复', action: 'read_board_answers', answered: answered.slice(0, 60) },
+        { label: 'Replies on the board', action: 'read_board_answers', answered: answered.slice(0, 60) },
         { deliver: 'send', attachPresence: false }
       ).then(function () {
-        tell('已交给 Claude。如果弹出了确认窗口，点发送即可。' + warn);
+        tell('Handed to Claude. If a confirmation window pops up, just click send. ' + warn);
       }, function () {
-        tell('这次没能自动通知 Claude。请在对话里说一声“看板填好了”。' + warn);
+        tell('Could not notify Claude automatically this time. Please say "board filled in" in the conversation. ' + warn);
       });
     } else {
-      tell('已刷新。这里没法自动通知 Claude，请在对话里说一声“看板填好了”。' + warn);
+      tell('Refreshed. Claude cannot be notified automatically from here; please say "board filled in" in the conversation. ' + warn);
     }
     if (store.db) {
       store.db.collection('answers').get().then(function (snap) {
@@ -839,7 +840,7 @@ td:last-child, th:last-child { width: 1%; white-space: nowrap; }
         paintAnswers();
         paintHeader();
       }, function () {
-        tell('没能读到最新的回复，请稍后再点一次刷新。');
+        tell('Could not read the latest replies; please click Refresh again in a moment.');
       });
     }
     checkSend();

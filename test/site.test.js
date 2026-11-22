@@ -224,14 +224,39 @@ test('both sites are built in their own language', () => {
   assert.match(fr, /Résumé du résultat\./);
 });
 
-test('quotes keep their language; translations are labelled and only shown in the other language', () => {
+test('the page is in its own language: translation first, the original under it, labelled (decision 0007 addendum)', () => {
   const en = page(`en/claim/${ids.cameTrue}/index.html`);
   const fr = page(`fr/claim/${ids.cameTrue}/index.html`);
-  assert.match(en, /<blockquote class="quote" lang="fr"><p>Nous ferons X avant 2027\.<\/p><\/blockquote>/);
-  assert.match(en, /<span class="label">Translation from French<\/span><p>We will do X before 2027\.<\/p>/);
-  assert.match(fr, /<blockquote class="quote" lang="fr"><p>Nous ferons X avant 2027\.<\/p><\/blockquote>/);
-  assert.doesNotMatch(fr, /class="translation"/);
-  assert.match(page('en/topic/economy/index.html'), /<span class="row-quote" lang="fr">Nous ferons X avant 2027\.<\/span>/);
+  // Item page, English: the translation is the main text, the French original follows, labelled and with its lang.
+  // Typography (components.md "Translated quote"): .translated = our translation (sans, labelled),
+  // .original = their words (serif, full ink, labelled), and only their own words use the serif .quote.
+  assert.ok(en.includes('<div class="translated" lang="en"><span class="label">Translation</span><p>We will do X before 2027.</p></div>\n' +
+    '<div class="original"><span class="label">Original (French)</span><p lang="fr">Nous ferons X avant 2027.</p></div>'));
+  assert.doesNotMatch(en, /<blockquote class="quote" lang="en">/);
+  // The evidence excerpt follows the same rule.
+  assert.ok(en.includes('<div class="translated" lang="en"><span class="label">Translation</span><p>Article 1: X enters into force on 1 January 2025.</p></div>'));
+  assert.ok(en.includes('<div class="original"><span class="label">Original (French)</span><p lang="fr">Article 1 : X entre en vigueur le 1er janvier 2025.</p></div>'));
+  // Already in the page language: shown as before (serif quote), no translation block.
+  assert.ok(fr.includes('<blockquote class="quote" lang="fr"><p>Nous ferons X avant 2027.</p></blockquote>'));
+  assert.doesNotMatch(fr, /class="(translated|original)"/);
+  // An English original on the French site.
+  const frG2 = page(`fr/claim/${ids.g2}/index.html`);
+  assert.ok(frG2.includes('<div class="translated" lang="fr"><span class="label">Traduction</span><p>Nous baisserons l’impôt Y.</p></div>\n' +
+    '<div class="original"><span class="label">Original (anglais)</span><p lang="en">We will cut tax Y.</p></div>'));
+  // Rows and cards: translation (sans) then the original (serif) with an inline label.
+  assert.ok(page('en/topic/economy/index.html').includes(
+    '<span class="row-translated" lang="en"><span class="visually-hidden">Translation: </span>We will do X before 2027.</span>' +
+    '<span class="row-original"><span class="label-inline">Original (French): </span><span lang="fr">Nous ferons X avant 2027.</span></span>'));
+  const nb = String.fromCharCode(160);
+  assert.ok(page('fr/index.html').includes(
+    `<p class="card-translated" lang="fr"><span class="visually-hidden">Traduction${nb}: </span>Nous baisserons l’impôt Y.</p>` +
+    `<p class="card-original"><span class="label-inline">Original (anglais)${nb}: </span><span lang="en">We will cut tax Y.</span></p>`));
+  // The original is never dropped: every published quote appears verbatim on both sites' item pages.
+  for (const lang of ['en', 'fr']) {
+    for (const item of JSON.parse(page(`${lang}/index.json`)).items) {
+      assert.ok(page(`${lang}/claim/${item.id}/index.html`).includes(`lang="${item.lang}">`), `${lang} ${item.id}`);
+    }
+  }
 });
 
 test('counts per verdict on subject and topic pages match the current published set', () => {

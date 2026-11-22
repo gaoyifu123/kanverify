@@ -82,3 +82,15 @@ test('an empty topic list under a country filter says so', () => {
   assert.equal(el.innerHTML, '<li><p class="empty">No items from Canada on this topic.</p></li>');
   assert.equal(loadViews('fr').S.emptyText('CA'), 'Aucune fiche pour ce pays (Canada) sur ce thème.');
 });
+
+test('rows show the translation first and the labelled original under it (decision 0007 addendum)', () => {
+  const { S, window, element } = loadViews('en');
+  window.KV = { subjects: { 1: { id: 1, name: 'A', kind: 'person', country: 'FR', slug: 'a' } } };
+  const el = element();
+  S.rows(el, [item(1, 'pending'), item(2, 'pending', { lang: 'en', q: 'Said in English', en: null, fr: 'Dit en anglais' })], false);
+  // Translation in sans (.row-translated), original in serif (.row-original) with its inline label.
+  assert.ok(el.innerHTML.includes('<span class="row-translated" lang="en"><span class="visually-hidden">Translation: </span>Quote 1</span>' +
+    '<span class="row-original"><span class="label-inline">Original (French): </span><span lang="fr">Citation 1</span></span>'));
+  // Said in the page language: the serif quote alone, as before.
+  assert.ok(el.innerHTML.includes('<span class="row-quote" lang="en">Said in English</span><span class="row-meta">'));
+});

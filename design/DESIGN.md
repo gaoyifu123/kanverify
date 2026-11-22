@@ -64,7 +64,11 @@ The site shows only the ledger: the snapshot JSON (`publishable` view, record fo
    true "\" carry the same ink. Each verdict also has a muted hue of similar lightness (no green, no
    red); the pattern and the label are always there, so colour is never the only cue.
 3. **"What is missing" is never collapsed** for To be assessed (principle 1).
-4. **Original words first**, in their own `lang`; the page-language translation follows, labelled.
+4. **Translation first, original directly underneath, never hidden** (decision 0007 addendum, founder,
+   2026-11-22). Words said in the page language: the quote alone, serif. Said in another language: our
+   translation as the main text (sans, label "Translation" / « Traduction »), then their words in their
+   own `lang` (serif, full ink, label "Original (French)" / « Original (anglais) »). Serif always means
+   their actual words, so the translation is never serif and the original is never greyed out.
 5. **Every item shows where it came from** (detail layer): title, publisher, locator, date, URL,
    retrieval date, SHA-256. Archived files are not public.
 6. **Deadlines say whose they are**: "Deadline inferred: end of term" / "Échéance déduite : fin du mandat".

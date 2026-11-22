@@ -18,8 +18,11 @@
 - Internal, never output: `publications.confirmed_by`, `publications.review_seconds`.
 - `{lang}` = `fr` on `/fr/`, `en` on `/en/`. For a pair `x_fr`/`x_en`, show `x_{lang}`. Blank = absent;
   absent = the block and its heading are not output.
-- Quoted text: show `quote_original` (or `excerpt`) with `lang` = `claim.lang` (or `evidence[].lang`);
-  then, only if `lang ≠ {lang}`, show `quote_{lang}` (or `excerpt_{lang}`) labelled as a translation.
+- Quoted text (decision 0007 addendum): if `claim.lang` (or `evidence[].lang`) = `{lang}`, show
+  `quote_original` (or `excerpt`) alone. Otherwise show `quote_{lang}` (or `excerpt_{lang}`) as the main
+  text, labelled "Translation" / « Traduction », and directly underneath `quote_original` (or `excerpt`)
+  with its own `lang`, labelled "Original ({language})" / « Original ({langue}) ». The original is never
+  hidden or collapsed. Typography: `components.md`, "Translated quote".
 - Codes are never shown raw: domain, kind, type, verifiability, verdict and country use the label
   tables in `DESIGN.md`. The order of the domain codes in those tables is not significant (the
   generator lists `security` before `defence`; either is fine). Topic lists sort by label.
@@ -75,7 +78,7 @@ page). The index roughly doubles in size; at 1,000 items that is still well unde
 - Tagline (static).
 - Timeline (script): items of the current published set placed by `claim.deadline` (default) or
   `claim.said_on`; current year by default; filters basis, type, period.
-- Cards: `subject.name`, the chosen date, `quote_original` (+ translation), verdict label, type label,
+- Cards: `subject.name`, the chosen date, the quoted text (translation first, as above), verdict label, type label,
   summary line (see Row); link to the claim page. No-JS default: the cards of the current calendar year
   by deadline, printed.
 - People and parties: every subject with ≥ 1 published item: `name`, `kind`, `country`, item count;
@@ -115,7 +118,7 @@ page). The index roughly doubles in size; at 1,000 items that is still well unde
 ### Row (used on topic and subject pages)
 
 A `<details>` accordion. Closed: `subject.name` and domain label (topic page only); `quote_original`
-(+ translation); verdict label; type label; `said_on` and `speaker_role_{lang}`; `deadline` with basis
+(translation first when said in another language); verdict label; type label; `said_on` and `speaker_role_{lang}`; `deadline` with basis
 label if present; summary line = `summary_{lang}` (2 lines), or for `to_evaluate` "What is missing:" +
 `open_question_{lang}`; none for pending. Open: for `to_evaluate` also `summary_{lang}`; "Based on":
 each `evidence[]` title · kind label, publisher (or "the wording itself · {verifiability}" for vague and
@@ -128,7 +131,7 @@ Summary layer:
 
 1. claim.id · type label · domain label (link to topic).
 2. Heading: `subject.name` (link), `said_on`.
-3. `quote_original` (+ translation).
+3. The quoted text: translation first, original directly underneath (see §1).
 4. Verdict label; `verdict.summary_{lang}` (required for all but pending).
 5. If `to_evaluate`: heading "What is missing / Ce qui manque" + `open_question_{lang}`. Otherwise, if
    present: "Open question / Question en suspens" + `open_question_{lang}`.
@@ -149,7 +152,7 @@ Summary layer:
 Detail layer ("Full record"), one `<details>` each, in this order, omitted when empty:
 
 - Evidence n (`id="ev-{claim.id}-{n}"`): summary line kind · publisher · published_on; body: `excerpt`
-  (+ `excerpt_{lang}`), `title`, `locator`, `url`, `retrieved_on`, `sha256`.
+  (translation first when in another language, see §1), `title`, `locator`, `url`, `retrieved_on`, `sha256`.
 - Where it was said (`id="src-{claim.id}"`): `subject.name`, `speaker_role_{lang}`, `origin.title`,
   `origin.publisher`, `origin.published_on`, `claim.source_locator`, `origin.url`,
   `origin.retrieved_on`, `origin.sha256`; the fixed line about copies not being published.

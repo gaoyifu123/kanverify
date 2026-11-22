@@ -68,6 +68,7 @@ const T = {
     sameAsTable: 'The same counts as a table', allFive: 'All six verdicts, zeros included',
     itemNo: (id) => `Item ${id}`, by: (type, name, date) => `${type} by ${name}, ${date}`,
     translFrom: (name) => `Translation from ${name}`,
+    original: (name) => `Original (${name})`,
     missing: 'What is missing', openQuestion: 'Open question',
     basedOn: 'Based on', and: 'and', wording: 'the wording itself', noDeadline: 'No deadline',
     confirmedOn: (d) => `Confirmed by a person on ${d}`,
@@ -139,6 +140,7 @@ const T = {
     sameAsTable: 'Les mêmes nombres en tableau', allFive: 'Les six verdicts, zéros compris',
     itemNo: (id) => `Fiche n°${NB}${id}`, by: (type, name, date) => `${type} de ${name}, ${date}`,
     translFrom: (name) => `Traduction ${/^[aeiouéèêâîôûy]/i.test(name) ? 'de l’' : 'du '}${name}`,
+    original: (name) => `Original (${name})`,
     missing: 'Ce qui manque', openQuestion: 'Question en suspens',
     basedOn: 'Fondé sur', and: 'et', wording: 'la formulation elle-même', noDeadline: 'Pas d’échéance',
     confirmedOn: (d) => `Confirmé par une personne le ${d}`,
@@ -504,12 +506,18 @@ function claimHref(up, lang, id) {
 
 // Rows, cards and groups mirror design/mockups/stats.js, so the page reads the same before and
 // after the scripts replace the printed lists. tag: 'p' in cards, 'span' inside a row's <summary>.
+// Founder, decision 0007 addendum: the page is entirely in the reader's language. Typography
+// (design/components.md, "Translated quote"): serif = their actual words only; the translation is sans.
+// A quote in the
+// other language shows its translation first and the original right under it, labelled, never hidden.
+// Without a translation the original is the main text, as before.
 function quoteLines(it, cls, lang, tag = 'p') {
   const L = T[lang];
   const tr = it[lang];
+  if (!tr) return `<${tag} class="${cls}-quote" lang="${esc(it.lang)}">${esc(it.q)}</${tag}>`;
   return (
-    `<${tag} class="${cls}-quote" lang="${esc(it.lang)}">${esc(it.q)}</${tag}>` +
-    (tr ? `<${tag} class="${cls}-translation"><span class="visually-hidden">${L.transl}: </span>${esc(tr)}</${tag}>` : '')
+    `<${tag} class="${cls}-translated" lang="${lang}"><span class="visually-hidden">${L.transl}${L.colon}</span>${esc(tr)}</${tag}>` +
+    `<${tag} class="${cls}-original"><span class="label-inline">${esc(L.original(languageName(it.lang, lang)))}${L.colon}</span><span lang="${esc(it.lang)}">${esc(it.q)}</span></${tag}>`
   );
 }
 
@@ -884,11 +892,11 @@ function entryLabel(e, lang) {
 
 function quoteBlock(text, textLang, translation, lang) {
   const L = T[lang];
+  if (!translation) return `<blockquote class="quote" lang="${esc(textLang)}"><p>${esc(text)}</p></blockquote>`;
   return (
-    `<blockquote class="quote" lang="${esc(textLang)}"><p>${esc(text)}</p></blockquote>` +
-    (translation
-      ? `\n<div class="translation"><span class="label">${esc(L.translFrom(languageName(textLang, lang)))}</span><p>${esc(translation)}</p></div>`
-      : '')
+    `<div class="translated" lang="${lang}"><span class="label">${L.transl}</span><p>${esc(translation)}</p></div>` +
+    `
+<div class="original"><span class="label">${esc(L.original(languageName(textLang, lang)))}</span><p lang="${esc(textLang)}">${esc(text)}</p></div>`
   );
 }
 

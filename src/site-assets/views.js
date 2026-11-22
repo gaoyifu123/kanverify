@@ -32,7 +32,7 @@
       noDate: function (n) { return n === 0 ? '' : (n === 1 ? '1 item has' : n + ' items have') + ' no deadline and ' + (n === 1 ? 'is' : 'are') + ' not on the timeline.'; },
       heading: function (b) { return b === 'deadline' ? 'Promises and predictions falling due' : 'Promises and predictions made'; },
       noneTopic: 'No items on this topic: ',
-      transl: 'Translation', as: 'as', due: 'due', made: 'said',
+      transl: 'Translation', original: 'Original', colon: ': ', as: 'as', due: 'due', made: 'said',
       k: { platform: 'Platform', statement: 'Statement' },
       missing: 'What is missing:', basedOn: 'Based on', wording: 'the wording itself', vf: { vague: 'vague', hedged: 'hedged' },
       noDeadline: 'No deadline', confirmed: 'Confirmed by a person on',
@@ -55,7 +55,7 @@
       noDate: function (n) { return n === 0 ? '' : (n === 1 ? '1 fiche n’a pas' : n + ' fiches n’ont pas') + ' d’échéance et ' + (n === 1 ? 'n’est pas placée' : 'ne sont pas placées') + ' sur la frise.'; },
       heading: function (b) { return b === 'deadline' ? 'Promesses et prévisions arrivant à échéance' : 'Promesses et prévisions formulées'; },
       noneTopic: 'Aucune fiche sur ce thème : ',
-      transl: 'Traduction', as: 'en tant que', due: 'échéance', made: 'dite le',
+      transl: 'Traduction', original: 'Original', colon: String.fromCharCode(160) + ': ', as: 'en tant que', due: 'échéance', made: 'dite le',
       k: { platform: 'Programme', statement: 'Déclaration' },
       missing: 'Ce qui manque' + String.fromCharCode(160) + ':', basedOn: 'Fondé sur', wording: 'la formulation elle-même', vf: { vague: 'imprécise', hedged: 'assortie de réserves' },
       noDeadline: 'Pas d’échéance', confirmed: 'Confirmé par une personne le',
@@ -71,6 +71,9 @@
   try { regions = new Intl.DisplayNames([lang], { type: 'region' }); } catch (e) {}
   L.country = function (code) { try { return (regions && regions.of(code)) || code; } catch (e) { return code; } };
 
+  var langNames = null;
+  try { langNames = new Intl.DisplayNames([lang], { type: 'language' }); } catch (e) {}
+  function langName(code) { try { return (langNames && langNames.of(code)) || code; } catch (e) { return code; } }
   function KV() { return window.KV; }
   function root() { return document.body.getAttribute('data-root') || ''; }
   function today() { var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
@@ -117,9 +120,12 @@
   // tag: 'p' in cards (block content), 'span' in rows (inside <summary>, which takes phrasing content).
   function quoteBlock(it, cls, tag) {
     tag = tag || 'p';
+    // Decision 0007 addendum: translation first, the original under it, labelled, never hidden.
     var tr = lang === it.lang ? null : it[lang];
-    return '<' + tag + ' class="' + cls + '-quote" lang="' + esc(it.lang) + '">' + esc(it.q) + '</' + tag + '>' +
-      (tr ? '<' + tag + ' class="' + cls + '-translation"><span class="visually-hidden">' + L.transl + ': </span>' + esc(tr) + '</' + tag + '>' : '');
+    if (!tr) return '<' + tag + ' class="' + cls + '-quote" lang="' + esc(it.lang) + '">' + esc(it.q) + '</' + tag + '>';
+    // Translation: ours, so sans (cls-translated); the original stays serif (their words), full ink.
+    return '<' + tag + ' class="' + cls + '-translated" lang="' + lang + '"><span class="visually-hidden">' + L.transl + L.colon + '</span>' + esc(tr) + '</' + tag + '>' +
+      '<' + tag + ' class="' + cls + '-original"><span class="label-inline">' + esc(L.original + ' (' + langName(it.lang) + ')') + L.colon + '</span><span lang="' + esc(it.lang) + '">' + esc(it.q) + '</span></' + tag + '>';
   }
   // Two lines of the summary under the chip; "What is missing" for to_evaluate; none for pending.
   function summaryLine(it, cls, tag) {

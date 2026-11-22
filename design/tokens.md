@@ -21,9 +21,10 @@ told apart by colour (`--ink-2`), never by a smaller size.
 
 Families:
 
-- `--sans` (system UI stack): everything we write.
-- `--serif` (system serif stack): the words someone else said (the quote, evidence excerpts, their
-  lines in rows and cards, the titles of their documents as group headings), at `--text`, regular.
+- `--sans` (system UI stack): everything we write, including translations of someone's words.
+- `--serif` (system serif stack): only the actual words someone else said, in their own language (the
+  quote, evidence excerpts, the original under a translation, their lines in rows and cards, the titles
+  of their documents as group headings), at `--text`, regular, always in `--ink`. Never a translation.
   It separates "their words" from "our words" (principle 2).
   **Round 4: also the display style** — the page title (h1) and the timeline year, at `--large`, bold.
   The founder liked serif display headings on the reference site. This adds no size and no weight:

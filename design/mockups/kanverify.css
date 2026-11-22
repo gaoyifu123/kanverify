@@ -136,8 +136,18 @@ main { padding-top: var(--s5); }
 /* ---------- Quoted words: serif, indented, ruled ---------- */
 .quote { padding-left: var(--s4); border-left: 3px solid var(--edge); font-family: var(--serif); }
 .quote p { margin: 0; }
-.translation { padding-left: var(--s4); border-left: 3px solid var(--rule); color: var(--ink-2); margin-bottom: var(--s4); }
-.translation p { margin: 0; }
+/* Decision 0007 addendum (founder): when the words were said in another language, the translation is the
+   main text and the original sits directly under it, always visible.
+   Typography keeps the meaning of the serif = their actual words:
+   - .translated: our translation. Sans, full ink, the main rule (--edge), label "Translation" / « Traduction ».
+   - .original:   their words. Serif, full ink (never greyed), lighter rule (--rule),
+                  label "Original (French)" / « Original (anglais) ». Labels are sans, --ink-2. */
+.translated { padding-left: var(--s4); border-left: 3px solid var(--edge); font-family: var(--sans); margin-bottom: var(--s4); }
+.translated p { margin: 0; }
+.original { padding-left: var(--s4); border-left: 3px solid var(--rule); color: var(--ink); margin-bottom: var(--s4); font-family: var(--serif); }
+.original p { margin: 0; }
+.translated .label, .original .label { font-family: var(--sans); color: var(--ink-2); }
+.translated + .original { margin-top: calc(var(--s2) - var(--s4)); }
 .label { display: block; color: var(--ink-2); }
 
 /* ---------- Key–value lists ---------- */
@@ -223,7 +233,10 @@ details[open] > summary { margin-bottom: var(--s2); }
 .row-basis { list-style: none; padding: 0; margin: 0 0 var(--s2); }
 .row-basis li { padding: var(--s1) 0; }
 .row-quote, .card-quote { font-family: var(--serif); display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden; -webkit-line-clamp: 3; }
-.row-translation, .card-translation { color: var(--ink-2); display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden; -webkit-line-clamp: 2; }
+/* Rows and cards: translation (sans, 3 lines) then original (serif, full ink, 2 lines, sans label in --ink-2). */
+.row-translated, .card-translated { font-family: var(--sans); display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden; -webkit-line-clamp: 3; }
+.row-original, .card-original { font-family: var(--serif); color: var(--ink); display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden; -webkit-line-clamp: 2; }
+.label-inline { font-family: var(--sans); color: var(--ink-2); }
 .row-meta, .card-meta { display: flex; flex-wrap: wrap; gap: 0 var(--s3); color: var(--ink-2); }
 /* The verdict's basis, under the chip: our words, so sans and full ink; two lines at most. */
 .row-summary, .card-summary { color: var(--ink); display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden; -webkit-line-clamp: 2; }

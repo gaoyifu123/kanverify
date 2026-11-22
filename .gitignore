@@ -35,3 +35,6 @@ docs/log/2026-11-22-candidate-review.md
 docs/log/2026-11-22-pipeline-0010-output.md
 docs/log/2026-11-22-open-source-scan.md
 docs/research/
+
+# Dry-run results about real people (unconfirmed)
+docs/log/*-dryrun-*.md

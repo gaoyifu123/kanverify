@@ -11,7 +11,8 @@
     en: {
       v: { unverifiable: 'Unverifiable', pending: 'Pending', to_evaluate: 'To be assessed', came_true: 'Came true', partly_came_true: 'Partly came true', not_came_true: 'Did not come true' },
       k: { platform: 'Platform', statement: 'Statement' },
-      missing: 'What is missing:',
+      missing: 'What is missing:', colon: ': ',
+      original: function (l) { return 'Original (' + ({ fr: 'French', en: 'English' }[l] || l) + ')'; },
       basedOn: 'Based on', wording: 'the wording itself', vf: { vague: 'vague', hedged: 'hedged' },
       noDeadline: 'No deadline', confirmed: 'Confirmed by a person on',
       full: function (id) { return 'Full record, item ' + id; },
@@ -32,7 +33,8 @@
     fr: {
       v: { unverifiable: 'Invérifiable', pending: 'En attente', to_evaluate: 'À évaluer', came_true: 'Réalisée', partly_came_true: 'Partiellement réalisée', not_came_true: 'Non réalisée' },
       k: { platform: 'Programme', statement: 'Déclaration' },
-      missing: 'Ce qui manque :',
+      missing: 'Ce qui manque :', colon: ' : ',
+      original: function (l) { return 'Original (' + ({ fr: 'français', en: 'anglais' }[l] || l) + ')'; },
       basedOn: 'Fondé sur', wording: 'la formulation elle-même', vf: { vague: 'imprécise', hedged: 'assortie de réserves' },
       noDeadline: 'Pas d’échéance', confirmed: 'Confirmé par une personne le',
       full: function (id) { return 'Dossier complet, fiche n° ' + id; },
@@ -99,11 +101,16 @@
   // The chip carries its verdict's pattern as a small icon (CSS, from data-v): the same mark as the charts.
   function chip(it) { return '<span class="verdict" data-v="' + it.verdict + '">' + esc(lab(it.verdict)) + '</span>'; }
   // tag: 'p' in cards (block content), 'span' in rows (inside <summary>, which takes phrasing content).
+  // Decision 0007 addendum: said in another language → the translation is the main text, the original
+  // follows directly underneath, labelled "Original (French)" / « Original (anglais) », never hidden.
   function quoteBlock(it, cls, tag) {
     tag = tag || 'p';
     var tr = lang === it.lang ? null : it[lang];
-    return '<' + tag + ' class="' + cls + '-quote" lang="' + it.lang + '">' + esc(it.q) + '</' + tag + '>' +
-      (tr ? '<' + tag + ' class="' + cls + '-translation"><span class="visually-hidden">' + L.transl + ': </span>' + esc(tr) + '</' + tag + '>' : '');
+    if (!tr) return '<' + tag + ' class="' + cls + '-quote" lang="' + it.lang + '">' + esc(it.q) + '</' + tag + '>';
+    // Translation: ours, so sans (cls-translated); the original stays serif (their words), full ink.
+    return '<' + tag + ' class="' + cls + '-translated" lang="' + lang + '"><span class="visually-hidden">' + L.transl + L.colon + '</span>' + esc(tr) + '</' + tag + '>' +
+      '<' + tag + ' class="' + cls + '-original"><span class="label-inline">' + esc(L.original(it.lang)) + L.colon + '</span>' +
+      '<span lang="' + it.lang + '">' + esc(it.q) + '</span></' + tag + '>';
   }
   // The verdict's basis travels with it: up to two lines of the summary, right under the chip.
   // "To be assessed" shows what is missing instead (principle 1). "Pending" has no summary.
