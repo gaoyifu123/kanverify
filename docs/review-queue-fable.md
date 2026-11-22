@@ -47,3 +47,12 @@ Site generator, extraction prompt (its output is reviewed before use), design, d
 - There is no earlier git history for these areas (the repo starts at the first commit), so this run reads the
   current files. After each item passes, tag the commit `fable-<area>-2026-11-23` so later reviews read only the diff.
 - Briefs list what changed; they do not include the Opus reviews' findings or verdicts.
+
+## 5. Top-level design critique (if quota remains after 1–4)
+
+- Files: `docs/decisions/0010-subscription-vs-api.md` (two layers; three judges: Claude and Codex on subscription,
+  Gemini on API), `docs/decisions/0003-ai-jury.md`, `team/run/judge-subscription.md`, `src/pack.js` (pack format),
+  `docs/decisions/0008-five-verdicts.md`.
+- Questions: are the judges independent enough (same vendor cuts the evidence and votes; one layer-1 agent chooses what the
+  judges see)? Can the evidence pack be gamed or bias the verdicts? Does the 10/30/100 calibration still mean something
+  with these judges? What is the biggest design risk before launch on 2026-12-05?

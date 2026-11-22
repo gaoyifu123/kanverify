@@ -95,3 +95,10 @@ Agent 分成两组。建造组把系统搭出来，运行组每天产出内容�
   area reads only the diff since that tag.
 - **Queue, not ad hoc.** Pending Fable work lives in `docs/review-queue-fable.md`, ordered by risk; when the quota runs out,
   the queue stops and resumes after the reset. Never fall back to another model silently.
+
+### Top-level design and Fable (2026-11-22)
+
+High-level design (architecture, pipeline shape, jury design, method rules) is drafted by the coordinator on Opus 5.5 and
+then **critiqued by Fable 5.2 before the founder decides** — Fable reviewing a draft costs far less than Fable writing it,
+and the critique is what catches the expensive mistakes. Fable drafts only when a problem is genuinely open and Opus has
+already failed at it (circuit breaker / step-back).
