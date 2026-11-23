@@ -197,6 +197,106 @@ belongs to its queue and is not shown on the other one. Votes are numbered in fi
 (columns, keys, pre-selection text); I found no second numbering. New: `--db <file>` and `--log <file>`
 start the desk (or `auto-import`) on another database and log; default stays `data/`. Tests: 235 pass.
 
+## Fable review 2 send-back (2026-11-23): Coordinator decision 9 implemented
+
+Report: `docs/log/2026-11-23-fable-review-2.md`. Rule: `design/review-desk.md`, "Coordinator decision 9".
+
+- **Rounds.** A round is one pack (sha256) plus its set of vote files. The first time the desk sees one,
+  on any request, it writes the round's valid votes to `jury_votes` with round = previous max + 1 and logs a
+  `round_ingested` line (claim id, quote hash, round, pack and votes sha256). Nothing deletes a round. When
+  several unseen packs exist for one claim, the oldest files get the lower round number. A round with no valid
+  vote is logged but writes no row.
+- **Verdicts tied to a round.** Adopt, edit and confirm log the round they acted on. The "verdict round" of a
+  claim is the round of its last effective adopt, edit or confirm; undo takes that line out. If it is not the
+  newest round, the verdict is stale. The item then returns to queue B with a banner: "New votes since your
+  last decision", or "Re-check of a published item…" when it has a ledger entry. Confirming writes a new
+  ledger entry as usual. A stale verdict is never shown as adopted. The newest round's unanimous vote is
+  pre-selected, and on a split C stays off until a vote is adopted or the verdict edited. Editing on a stale
+  split starts from nothing, so `decided_by = human` and no evidence is kept from the old round.
+- **Only the newest round** is shown. Older packs of the same claim are not listed. The page carries
+  `data-round`, and adopt, edit and confirm must send it; a different round is refused ("new votes arrived").
+  Every commit re-scans and is refused if the newest round, pack or votes changed after C, whether or not a
+  vote was pre-selected. This covers both routes in finding 1.
+- **Undo** puts back only the verdict and its evidence; the restore function no longer touches `jury_votes`.
+  The test that asserted deletion now asserts the opposite. Exception, unchanged: rejecting an item (decision 5)
+  deletes the item with its rounds. They are kept in the log, and Z restores them under the same numbers.
+- **Speed (index).** Packs are re-read only when the file's size or mtime changes. That covers the pack, its
+  votes, its judge input, the judge prompt, `PRINCIPLES.md` and the sources table. Each item's computed view
+  is cached until something it depends on changes. Measured on a scratch database with 500 packs × 2 votes and
+  tiny sources: warm page 165–220 ms; skip 166 ms; C 165 ms; page during the window 186 ms; commit 86 ms;
+  candidate page 179 ms (it builds the verdict count too). Before the cache: about 2.6 s each. The first
+  read of 500 packs takes about 12 s. `npm run desk` now does it before printing the address.
+- **judge-0.5.** `loadPack` uses `voteContext(path, packSha256)` from `src/jury.js`, as `tallyPack` does:
+  the date comes from the judge input header, and the system text hash is checked. Test fixtures now write a
+  judge input and `system_sha256`. The four real packs from 2026-11-22 have no judge-0.5 input, so their
+  votes are correctly not counted.
+- **Small items.** U+180E, U+2800, U+115F and U+3164 (with the zero-width family, soft hyphen and BOM) count as
+  blank in the desk's edit check and in its check of any workspace verdict. Every log line about a claim
+  carries `quote_sha256` next to `claim_id`. The reject-item log line is written after the delete, in the
+  same transaction, so if either fails neither is kept.
+- Tests: `npm test` 247 pass. New: both finding-1 routes, finding 2 (published pending → new round →
+  re-check → second ledger entry), undo keeping rounds, ingest-once with quote hash, blank characters.
+
+Objections and risks for this round:
+- **The round mapping lives in the desk log, not the database** (I may not change `db/schema.sql`). If
+  `data/desk/actions.jsonl` is lost, every pack is ingested again as a new round. Every verdict then looks
+  stale and comes back to queue B. That is the safe direction, but noisy, and it adds duplicate rounds to
+  `jury_votes`. Backups must include the log (decision 4 already says so).
+- **Ingesting happens on page loads** too ("as soon as the desk first ingests it"). That is a write caused by a
+  GET, which the first review asked me to avoid. Decision 9 asks for it; it only appends votes.
+- A claim whose newest round's pack file was deleted is listed under "packs without a workspace item" and
+  leaves the queue. It does not fall back to an older round.
+- Not addressed (low, not in decision 9): undo still cannot go back past a confirmation. Changing the verdict
+  after adopting still keeps the adopted vote's evidence. Claim ids can still be reused; log lines now carry
+  the quote hash, so lookups no longer confuse two claims.
+- No browser test of this round's changes. The page changes are the banner and `data-round`.
+
+## Record format 10 and decision 0012 A (2026-11-23)
+
+- **Rounds now live in the database.** Each ingested vote row carries `jury_votes.pack_sha256`. A round is
+  identified by its pack sha256 plus its counted votes, read back from `jury_votes`. Every verdict the desk
+  writes sets `verdicts.based_on_round` (adopt, edit, a pre-selected vote at commit; null for vague and
+  hedged items). Undo restores it with the verdict. `round_ingested` and the other log lines stay as an
+  audit trail only. Deleting the log no longer re-ingests anything or makes verdicts stale (tested). This
+  removes last round's main risk. A pack with no counted vote now makes no round: there is nothing to
+  record. The item shows that pack, with C off.
+- **Deadline rule.** The desk passes its local date to `publicationBlockers` and `confirm()`; the
+  "deadline … not over" reason is shown in the blockers.
+- **A2, session.** New `sameSessionProblem` and `sessionsRecorded` in `src/rules.js`, so `tally` can use the
+  same rule. A Claude subscription vote is not counted when `vote.made_by.session` equals the pack's
+  `made_by.session`. If either is not recorded the vote counts, and its column says the program could not
+  check it.
+- **A3, PDF figures.** If an evidence excerpt that would be published contains a digit and comes from a PDF,
+  C stays off until that PDF was fetched through a link on this item's page. Each link carries a random
+  per-page nonce; another site's request (`Sec-Fetch-Site: cross-site`) or a request without the nonce marks
+  nothing. The record is kept per claim, round and source for this desk run, and logged as `opened_original`.
+  O opens the PDF still needed, then the page redraws.
+- **A4, labels.** Kind and publisher are shown in bold beside every excerpt. K opens a list of the pack's
+  sources; a digit and Enter send the pack back (reason 1) with `wrong_kind_source` and a note. A source of
+  kind `official` whose publisher (`publisherKey`) has never been ticked blocks C until T. The tick is logged
+  as `tick_publisher`, kept across restarts (read from the log) and can be undone.
+- **A5, vague and hedged.** Every vague or hedged claim is an item in queue B, with no pack and no jury; a
+  pack that links to one is listed as not needed. The page shows the quote and the source passage. E asks
+  only for the summary in French and English. The verdict is forced to "unverifiable", `decided_by = human`,
+  no evidence. Blank-looking text is refused. Then C as usual.
+- Tests: `npm test` 280 pass (desk 38). Speed at 500 packs (scratch): warm page 260–350 ms, actions about
+  270 ms, commit 117 ms. The first read takes about 12 s and is done at startup.
+
+Objections and risks:
+- **Session fields don't exist yet in any instruction.** `team/run/judge-subscription.md` and the pack-cutting
+  instructions must tell agents to write `made_by.session`. Until then the A2 check cannot fire; the page says
+  so on every Claude vote. I did not edit `team/run/`.
+- **A3 counts "opened" as "fetched".** A PDF is served as a download, so the desk knows it was saved, not
+  that the founder looked at page n. "Contains figures" means any digit in the excerpt, so dates count too:
+  more opening than strictly needed, which is the safe direction.
+- **A4 ticks live in the desk log.** If the log is lost, each `official` publisher must be ticked again. Safe,
+  but a column would be sturdier.
+- **A5.** A vague item that was published and is later changed comes back like any other.
+  "Send back" for vague items has its own four reasons (the first: "not vague after all"); the designer may
+  want different ones.
+- No browser test of this round. New on the page: the bold kind/publisher line, PDF links, K/T/O, and the
+  vague-item page.
+
 ## Not done and not verified
 
 - Not opened in a real browser: layout, focus order, 200 % zoom, keyboard flow and the countdown are

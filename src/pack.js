@@ -26,7 +26,7 @@ import { DEFAULT_EVIDENCE_DIR, evidencePath } from './archive.js';
 import { openDatabase } from './db.js';
 import { candidateProblems, checkVerbatim, htmlToParagraphs, normalizeForMatch } from './extract.js';
 import { isLegifranceSource, legifranceToUnits } from './legifrance.js';
-import { deadlineProblem, filled, renunciationCounts, twoIndependent } from './rules.js';
+import { deadlineProblem, filled, renunciationCounts, renunciationEndsWait, twoIndependent } from './rules.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 export const DEFAULT_TEXT_DIR = resolve(here, '../data/candidates');
@@ -320,8 +320,10 @@ export function checkPack(db, pack, opts = {}) {
  * withinUnit: each quote must lie inside one unit (one excerpt of a pack), never run across two.
  *
  * Deadlines (team/run/judge-prompt.md, step 2): the deadline day is still inside the deadline.
- * On or before it, only came_true, pending, unverifiable on a vague or hedged claim, and
- * not_came_true on a renounced promise; after it, never pending.
+ * On or before it, only came_true, pending, and unverifiable on a vague or hedged claim; after it,
+ * never pending. A public renunciation among the given documents (docs) ends the wait whatever the
+ * verdict (founder, 2026-11-23): the claim is then judged as if its deadline had passed. As the only
+ * evidence, a renunciation still counts for not_came_true alone.
  */
 export function voteProblems(vote, claim, docs, texts, today, { withinUnit = false } = {}) {
   const problems = [];
@@ -337,7 +339,8 @@ export function voteProblems(vote, claim, docs, texts, today, { withinUnit = fal
   // claim carries the day it was said as its origin's publication date.
   const said = { type: claim.type, said_on: claim.said_on ?? claim.origin?.published_on ?? null };
   const renounced = evidence.some((e) => renunciationCounts(byId.get(e?.source_id)?.meta, said, verdict));
-  const late = deadlineProblem(claim, verdict, today, renounced);
+  const waitEnded = docs.some((d) => renunciationEndsWait(d.meta, said, today));
+  const late = deadlineProblem(claim, verdict, today, waitEnded);
   if (late) problems.push(late);
   for (const e of evidence) {
     const doc = byId.get(e?.source_id);

@@ -4,20 +4,20 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { request } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { storeEvidenceBytes } from '../src/archive.js';
-import { autoImport, candidateKey, createDesk, readActions, startDeskServer } from '../src/desk.js';
+import { evidencePath, storeEvidenceBytes } from '../src/archive.js';
+import { autoImport, candidateKey, claimQuoteSha, createDesk, hasFigures, readActions, startDeskServer } from '../src/desk.js';
 import { renderCandidatePage } from '../src/desk-view.js';
-import { loadPrompt } from '../src/extract.js';
+import { closeRound, judgeInputText, voteContext } from '../src/jury.js';
 import { withdraw } from '../src/ledger.js';
 import { sha256Of } from '../src/pack.js';
-import { addSource, freshDb } from './helpers.js';
+import { sameSessionProblem } from '../src/rules.js';
+import { addClaim, addSource, freshDb } from './helpers.js';
 
-const JUDGE_VERSION = loadPrompt(new URL('../team/run/judge-prompt.md', import.meta.url)).version;
 const ORIGIN_HTML = '<html><body><p>Préambule.</p><p>Nous ferons X avant 2027. Nous baisserons Y.</p><p>Nous continuerons Z.</p></body></html>';
 const LAW_HTML = '<html><body><p>Article 1.</p><p>X est en vigueur depuis 2025.</p></body></html>';
 
@@ -33,7 +33,7 @@ const CANDIDATES = [
   { ...base, quote_original: 'Nous inventerons W.', quote_en: 'We will invent W.', unit: 3, locator: '§3' },
 ];
 
-function setup(t, { subjectInFile = true } = {}) {
+function setup(t, { subjectInFile = true, pdfLaw = false, lawKind = 'law' } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'kv-desk-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const evidenceDir = join(dir, 'evidence');
@@ -46,7 +46,15 @@ function setup(t, { subjectInFile = true } = {}) {
   const store = (text) => storeEvidenceBytes(evidenceDir, Buffer.from(text)).sha256;
   const originSha = store(ORIGIN_HTML);
   const origin = addSource(db, 'platform', { sha256: originSha, media_type: 'text/html', title: 'Programme', published_on: '2022-03-17', url: 'https://example.org/p' });
-  const law = addSource(db, 'law', { sha256: store(LAW_HTML), media_type: 'text/html', title: 'Loi', publisher: 'JO', url: 'https://example.org/l' });
+  // The evidence: a web page by default; a PDF with its saved transcription when pdfLaw is set.
+  const lawSha = store(pdfLaw ? '%PDF-1.4 loi' : LAW_HTML);
+  const law = addSource(db, lawKind, { sha256: lawSha, media_type: pdfLaw ? 'application/pdf' : 'text/html', title: 'Loi', publisher: 'JO', url: 'https://example.org/l' });
+  if (pdfLaw) {
+    writeFileSync(join(textDir, `source-${law}-text.json`), JSON.stringify({
+      source_id: law, sha256: lawSha, unit_kind: 'pdf_page', method: 'model-transcription', model: 'm', missing_units: [],
+      units: [{ unit: 1, text: 'Article 1.' }, { unit: 2, text: 'X est en vigueur depuis 2025.' }],
+    }));
+  }
   const candName = 'source-1-test.json';
   const candPath = join(candDir, candName);
   writeFileSync(candPath, JSON.stringify({
@@ -78,35 +86,47 @@ function setup(t, { subjectInFile = true } = {}) {
   return { db, dir, desk, opts, origin, law, candPath, candName, reviewPath, logPath, packDir, advance, store, key, evidenceDir };
 }
 
-/** A pack for workspace claim `claimId` (candidate 1) and its votes. */
-function writePack(s, verdicts = ['came_true', 'came_true']) {
+/** A pack for workspace claim `claimId` (candidate 1) and its votes; then the jury step closes the round, as tally does (close: false leaves it open). */
+function writePack(s, verdicts = ['came_true', 'came_true'], { claim: claimOver = {}, cutSession = null, sessions = [], close = true } = {}) {
   const c = CANDIDATES[0];
+  const law = s.db.prepare('SELECT * FROM sources WHERE id = ?').get(s.law);
+  const where = law.media_type === 'application/pdf' ? { locator: 'p. 2', pdf_page: 2 } : { locator: '§2', pdf_page: null };
   const pack = {
-    kind: 'kanverify-evidence-pack', format: 1, made_by: { role: 'evidence', channel: 'subscription', provider: 'anthropic', model: 'claude-opus-5-5' },
+    kind: 'kanverify-evidence-pack', format: 1, made_by: { role: 'evidence', channel: 'subscription', provider: 'anthropic', model: 'claude-opus-5-5', ...(cutSession && { session: cutSession }) },
     claim: {
       key: 'C1', speaker: 'Test Subject', origin: { source_id: s.origin, title: 'Programme', published_on: '2022-03-17', locator: '§2' },
       ...Object.fromEntries(['quote_original', 'lang', 'quote_fr', 'quote_en', 'type', 'domain', 'verifiability', 'deadline', 'deadline_basis', 'criteria_fr', 'criteria_en', 'speaker_role_fr', 'speaker_role_en'].map((f) => [f, c[f]])),
+      ...claimOver,
     },
-    sources: [{ source_id: s.law, kind: 'law', title: 'Loi', publisher: 'JO', published_on: '2025-01-01', url: 'https://example.org/l', lang: 'fr' }],
-    excerpts: [{ source_id: s.law, locator: '§2', pdf_page: null, text: 'X est en vigueur depuis 2025.', text_en: 'X has been in force since 2025.' }],
+    sources: [{ source_id: s.law, kind: law.kind, title: 'Loi', publisher: 'JO', published_on: '2025-01-01', url: 'https://example.org/l', lang: 'fr' }],
+    excerpts: [{ source_id: s.law, locator: where.locator, pdf_page: where.pdf_page, text: 'X est en vigueur depuis 2025.', text_en: 'X has been in force since 2025.' }],
     considered_not_used: [], gaps: null,
   };
   const bytes = Buffer.from(JSON.stringify(pack));
-  writeFileSync(join(s.packDir, 'c1.pack.json'), bytes);
+  const packPath = join(s.packDir, 'c1.pack.json');
+  writeFileSync(packPath, bytes);
+  writeFileSync(join(s.packDir, 'c1.judge-input.md'), judgeInputText(pack, sha256Of(bytes), '2026-11-22'));
+  const ctx = voteContext(packPath, sha256Of(bytes));
   const members = [['anthropic', 'subscription'], ['openai', 'subscription'], ['gemini', 'api']];
   verdicts.forEach((verdict, i) => {
     const [provider, channel] = members[i];
     writeFileSync(join(s.packDir, `c1.vote-${provider}-${channel}.json`), JSON.stringify({
       kind: 'kanverify-vote', format: 1, claim: 'C1', pack_file: 'c1.pack.json', pack_sha256: sha256Of(bytes), provider, channel,
-      model: `model-${provider}`, promptVersion: JUDGE_VERSION, created_at: '2026-11-22T09:00:00Z', verdict,
-      evidence: [{ source_id: s.law, excerpt: 'X est en vigueur depuis 2025.', locator: '§2', pdf_page: null }],
+      model: `model-${provider}`, promptVersion: ctx.promptVersion, system_sha256: ctx.systemSha256, verdict,
+      evidence: [{ source_id: s.law, excerpt: 'X est en vigueur depuis 2025.', locator: where.locator, pdf_page: where.pdf_page }],
+      ...(sessions[i] && { made_by: { session: sessions[i] } }),
       reasoning: `reasoning ${i + 1}`, open_question_fr: null, open_question_en: null,
       summary_fr: `X est en vigueur (vote ${i + 1}).`, summary_en: `X is in force (vote ${i + 1}).`,
     }));
   });
+  if (close) closeRound(packPath, { now: () => new Date(Date.now()) });
+  return packPath;
 }
+const packPathOf = (s) => join(s.packDir, 'c1.pack.json');
 
 const claims = (db) => db.prepare('SELECT * FROM claims ORDER BY id').all();
+/** The round the page shows for this item: adopt, edit and confirm must carry it. */
+const roundOf = (s, id) => s.desk.verdictView(id).round;
 const importOne = (s) => autoImport(s.db, s.candPath, s.opts);
 
 test('auto-import: only unflagged candidates that pass the verbatim check, logged as the program, once', (t) => {
@@ -219,14 +239,14 @@ test('queue B: confirm waits for the window, records review_seconds, and Z withi
   assert.equal(s.db.prepare('SELECT count(*) AS n FROM verdicts').get().n, 0, 'rendering writes nothing');
 
   // Cancel within the window: nothing written.
-  s.desk.verdictAction({ item: item.id, action: 'confirm', seconds: 81 });
+  s.desk.verdictAction({ item: item.id, round: roundOf(s, item.id), action: 'confirm', seconds: 81 });
   assert.equal(s.desk.verdictQueue().items.length, 0, 'the pending item leaves the queue');
   s.desk.undo();
   assert.equal(s.db.prepare('SELECT count(*) AS n FROM publications').get().n, 0);
   assert.equal(s.db.prepare('SELECT count(*) AS n FROM verdicts').get().n, 0);
 
   // Confirm again; committing before 5 s is refused.
-  s.desk.verdictAction({ item: item.id, action: 'confirm', seconds: 81 });
+  s.desk.verdictAction({ item: item.id, round: roundOf(s, item.id), action: 'confirm', seconds: 81 });
   const id = s.desk.pending.id;
   const during = s.desk.verdictPage();
   assert.ok(!during.includes(id), 'no page carries the pending id: only the page that pressed C can commit');
@@ -252,7 +272,7 @@ test('queue B: a confirmation that waited too long, or whose claim changed, writ
   importOne(s);
   writePack(s);
   const [item] = s.desk.verdictQueue().items;
-  s.desk.verdictAction({ item: item.id, action: 'confirm', seconds: 5 });
+  s.desk.verdictAction({ item: item.id, round: roundOf(s, item.id), action: 'confirm', seconds: 5 });
   const id1 = s.desk.pending.id;
   // The page was closed: nobody commits within 2 s after the window; a later commit is refused.
   s.advance(7_500);
@@ -261,7 +281,7 @@ test('queue B: a confirmation that waited too long, or whose claim changed, writ
   assert.equal(s.desk.verdictQueue().items.length, 1, 'the item is back in the queue');
   assert.throws(() => s.desk.commit(id1), /abandoned/);
   assert.equal(s.db.prepare('SELECT count(*) AS n FROM publications').get().n, 0);
-  s.desk.verdictAction({ item: item.id, action: 'confirm', seconds: 5 });
+  s.desk.verdictAction({ item: item.id, round: roundOf(s, item.id), action: 'confirm', seconds: 5 });
   s.db.prepare("UPDATE claims SET criteria_en = 'X is in force, really.'").run();
   s.advance(6_000);
   assert.throws(() => s.desk.commit(s.desk.pending.id), /changed during the window/);
@@ -276,8 +296,8 @@ test('queue B: on a split nothing is pre-selected; adopt and edit set decided_by
   let [item] = s.desk.verdictQueue().items;
   assert.equal(item.preselect, null);
   assert.equal(item.canConfirm, false);
-  assert.throws(() => s.desk.verdictAction({ item: item.id, action: 'confirm' }), /cannot confirm/);
-  s.desk.verdictAction({ item: item.id, action: 'adopt', vote: 2, seconds: 10 });
+  assert.throws(() => s.desk.verdictAction({ item: item.id, round: roundOf(s, item.id), action: 'confirm' }), /cannot confirm/);
+  s.desk.verdictAction({ item: item.id, round: roundOf(s, item.id), action: 'adopt', vote: 2, seconds: 10 });
   const v = () => s.db.prepare('SELECT * FROM verdicts').get();
   assert.equal(v().verdict, 'partly_came_true');
   assert.equal(v().decided_by, 'jury');
@@ -286,10 +306,10 @@ test('queue B: on a split nothing is pre-selected; adopt and edit set decided_by
   assert.equal(item.adopted, 2);
   assert.equal(item.canConfirm, true);
   // Text only: still the jury's.
-  s.desk.verdictAction({ item: item.id, action: 'edit', fields: { verdict: 'partly_came_true', summary_fr: 'Autre.', summary_en: 'Other.' } });
+  s.desk.verdictAction({ item: item.id, round: roundOf(s, item.id), action: 'edit', fields: { verdict: 'partly_came_true', summary_fr: 'Autre.', summary_en: 'Other.' } });
   assert.equal(v().decided_by, 'jury');
   // A different verdict: the founder's.
-  s.desk.verdictAction({ item: item.id, action: 'edit', fields: { verdict: 'came_true', summary_fr: 'Autre.', summary_en: 'Other.' } });
+  s.desk.verdictAction({ item: item.id, round: roundOf(s, item.id), action: 'edit', fields: { verdict: 'came_true', summary_fr: 'Autre.', summary_en: 'Other.' } });
   assert.equal(v().decided_by, 'human');
   s.desk.undo();
   assert.equal(v().verdict, 'partly_came_true');
@@ -297,7 +317,7 @@ test('queue B: on a split nothing is pre-selected; adopt and edit set decided_by
   s.desk.undo();
   s.desk.undo();
   assert.equal(v(), undefined, 'back to no verdict');
-  assert.equal(s.db.prepare('SELECT count(*) AS n FROM jury_votes').get().n, 0);
+  assert.equal(s.db.prepare('SELECT count(*) AS n FROM jury_votes').get().n, 2, 'undo never removes votes: round 1 stays');
 });
 
 test('queue B: reject the claim saves everything first, undo restores it; published claims are refused', (t) => {
@@ -305,7 +325,7 @@ test('queue B: reject the claim saves everything first, undo restores it; publis
   importOne(s);
   writePack(s);
   let [item] = s.desk.verdictQueue().items;
-  s.desk.verdictAction({ item: item.id, action: 'adopt', vote: 1 });
+  s.desk.verdictAction({ item: item.id, round: roundOf(s, item.id), action: 'adopt', vote: 1 });
   [item] = s.desk.verdictQueue().items;
   assert.throws(() => s.desk.verdictAction({ item: item.id, action: 'reject_claim', reason: 3 }), /needs a sentence/);
   s.desk.verdictAction({ item: item.id, action: 'reject_claim', reason: 1, seconds: 9 });
@@ -324,7 +344,7 @@ test('queue B: reject the claim saves everything first, undo restores it; publis
 
   // Published once (even if withdrawn since): refused.
   [item] = s.desk.verdictQueue().items;
-  s.desk.verdictAction({ item: item.id, action: 'confirm', seconds: 1 });
+  s.desk.verdictAction({ item: item.id, round: roundOf(s, item.id), action: 'confirm', seconds: 1 });
   s.advance(5_000);
   s.desk.commit(s.desk.pending.id);
   withdraw(s.db, back.id, 'founder', { noteFr: 'Retiré.', noteEn: 'Withdrawn.' });
@@ -425,7 +445,7 @@ test('server: a refused confirmation through HTTP leaves the ledger empty until 
   const port = server.address().port;
   const headers = { Host: `127.0.0.1:${port}`, Origin: origin, 'X-Desk-Token': token, 'Content-Type': 'application/json' };
   const item = s.desk.verdictQueue().items[0].id;
-  const r = await call(port, { method: 'POST', path: '/api/action', headers, body: JSON.stringify({ queue: 'verdict', item, action: 'confirm', seconds: 12 }) });
+  const r = await call(port, { method: 'POST', path: '/api/action', headers, body: JSON.stringify({ queue: 'verdict', item, round: 1, action: 'confirm', seconds: 12 }) });
   assert.equal(r.status, 200);
   const early = await call(port, { method: 'POST', path: '/api/commit', headers, body: JSON.stringify({ id: s.desk.pending.id }) });
   assert.equal(early.status, 409);
@@ -454,7 +474,7 @@ test('review 1: a confirmation whose page went away is never written, even by a 
   const port = server.address().port;
   const headers = { Host: `127.0.0.1:${port}`, Origin: origin, 'X-Desk-Token': token, 'Content-Type': 'application/json' };
   const item = s.desk.verdictQueue().items[0].id;
-  const r = JSON.parse((await call(port, { method: 'POST', path: '/api/action', headers, body: JSON.stringify({ queue: 'verdict', item, action: 'confirm', seconds: 3 }) })).body);
+  const r = JSON.parse((await call(port, { method: 'POST', path: '/api/action', headers, body: JSON.stringify({ queue: 'verdict', item, round: 1, action: 'confirm', seconds: 3 }) })).body);
   assert.ok(r.pending?.id, 'only the response to C carries the pending id');
   // The page is closed. A new page loads after the window: it learns nothing it could commit with.
   s.advance(8_000);
@@ -465,7 +485,7 @@ test('review 1: a confirmation whose page went away is never written, even by a 
   assert.equal(late.status, 409);
   assert.equal(s.db.prepare('SELECT count(*) AS n FROM publications').get().n, 0);
   // Within the window plus 2 s, the page that pressed C can commit.
-  const r2 = JSON.parse((await call(port, { method: 'POST', path: '/api/action', headers, body: JSON.stringify({ queue: 'verdict', item, action: 'confirm', seconds: 3 }) })).body);
+  const r2 = JSON.parse((await call(port, { method: 'POST', path: '/api/action', headers, body: JSON.stringify({ queue: 'verdict', item, round: 1, action: 'confirm', seconds: 3 }) })).body);
   s.advance(6_500);
   const ok = await call(port, { method: 'POST', path: '/api/commit', headers, body: JSON.stringify({ id: r2.pending.id }) });
   assert.equal(ok.status, 200);
@@ -493,19 +513,19 @@ test('review 3: the founder\'s verdict meets the judges\' rules, and every path 
   writePack(s, ['came_true', 'partly_came_true']);
   const [item] = s.desk.verdictQueue().items;
   // Split, nothing adopted: an outcome verdict without evidence is refused, nothing is written.
-  assert.throws(() => s.desk.verdictAction({ item: item.id, action: 'edit', fields: { verdict: 'came_true', summary_fr: 'Fait.', summary_en: 'Done.' } }), /official document/);
+  assert.throws(() => s.desk.verdictAction({ item: item.id, round: roundOf(s, item.id), action: 'edit', fields: { verdict: 'came_true', summary_fr: 'Fait.', summary_en: 'Done.' } }), /official document/);
   assert.equal(s.db.prepare('SELECT count(*) AS n FROM verdicts').get().n, 0);
-  assert.equal(s.db.prepare('SELECT count(*) AS n FROM jury_votes').get().n, 0);
+  assert.equal(s.db.prepare('SELECT count(*) AS n FROM jury_votes').get().n, 2, 'votes are recorded on first sight, before any decision (decision 9)');
   // Summary in one language only: refused as for a judge.
-  assert.throws(() => s.desk.verdictAction({ item: item.id, action: 'edit', fields: { verdict: 'to_evaluate', summary_fr: 'Manque.', open_question_fr: 'Quoi ?', open_question_en: 'What?' } }), /summary missing/);
+  assert.throws(() => s.desk.verdictAction({ item: item.id, round: roundOf(s, item.id), action: 'edit', fields: { verdict: 'to_evaluate', summary_fr: 'Manque.', open_question_fr: 'Quoi ?', open_question_en: 'What?' } }), /summary missing/);
   // A verdict that passes: written, and both valid votes are recorded although none was adopted.
-  s.desk.verdictAction({ item: item.id, action: 'edit', fields: { verdict: 'to_evaluate', summary_fr: 'Manque.', summary_en: 'Missing.', open_question_fr: 'Quoi ?', open_question_en: 'What?' } });
+  s.desk.verdictAction({ item: item.id, round: roundOf(s, item.id), action: 'edit', fields: { verdict: 'to_evaluate', summary_fr: 'Manque.', summary_en: 'Missing.', open_question_fr: 'Quoi ?', open_question_en: 'What?' } });
   assert.equal(s.db.prepare('SELECT decided_by FROM verdicts').get().decided_by, 'human');
   assert.equal(s.db.prepare('SELECT count(*) AS n FROM jury_votes WHERE round = 1').get().n, 2);
   // Before the deadline only came_true may be given: partly_came_true is refused even with evidence.
   s.db.prepare("UPDATE claims SET deadline = '2030-01-01'").run();
-  s.desk.verdictAction({ item: item.id, action: 'adopt', vote: 1 });
-  assert.throws(() => s.desk.verdictAction({ item: item.id, action: 'edit', fields: { verdict: 'partly_came_true', summary_fr: 'En partie.', summary_en: 'In part.' } }), /not reached/);
+  s.desk.verdictAction({ item: item.id, round: roundOf(s, item.id), action: 'adopt', vote: 1 });
+  assert.throws(() => s.desk.verdictAction({ item: item.id, round: roundOf(s, item.id), action: 'edit', fields: { verdict: 'partly_came_true', summary_fr: 'En partie.', summary_en: 'In part.' } }), /not reached/);
   // A verdict that breaks the rules outside the desk blocks C.
   s.db.prepare("UPDATE verdicts SET verdict = 'partly_came_true'").run();
   const again = s.desk.verdictQueue().items[0];
@@ -531,6 +551,7 @@ test('review 5: a duplicate vote of the same model is set aside; jury rounds are
   writePack(s);
   const vote = JSON.parse(readFileSync(join(s.packDir, 'c1.vote-anthropic-subscription.json'), 'utf8'));
   writeFileSync(join(s.packDir, 'c1.vote-anthropic-api.json'), JSON.stringify({ ...vote, channel: 'api', model: '  MODEL-ANTHROPIC ', verdict: 'not_came_true' }));
+  closeRound(packPathOf(s));
   let [item] = s.desk.verdictQueue().items;
   assert.equal(item.valid.length, 1, 'both votes of the duplicated model are set aside; file order picks nothing');
   for (const f of ['anthropic-api.json', 'anthropic-subscription.json']) {
@@ -539,16 +560,18 @@ test('review 5: a duplicate vote of the same model is set aside; jury rounds are
   assert.equal(item.canConfirm, false);
   assert.match(s.desk.verdictPage(item.id), /same provider and model/, 'the page shows it, and does not crash');
   rmSync(join(s.packDir, 'c1.vote-anthropic-api.json'));
+  closeRound(packPathOf(s));
   [item] = s.desk.verdictQueue().items;
-  s.desk.verdictAction({ item: item.id, action: 'adopt', vote: 1 });
-  s.desk.verdictAction({ item: item.id, action: 'adopt', vote: 2 });
-  assert.equal(s.db.prepare('SELECT count(*) AS n FROM jury_votes').get().n, 2, 'the same votes again add no round');
+  s.desk.verdictAction({ item: item.id, round: roundOf(s, item.id), action: 'adopt', vote: 1 });
+  s.desk.verdictAction({ item: item.id, round: roundOf(s, item.id), action: 'adopt', vote: 2 });
+  // Round 1 (one valid vote, the duplicates set aside) and round 2 (closed after the duplicate went); adopting adds none.
+  assert.equal(s.db.prepare('SELECT count(*) AS n FROM jury_votes').get().n, 3, 'adopting twice adds no round');
   // A new vote arrives: a new round is added, the old one stays.
   writePack(s, ['came_true', 'came_true', 'came_true']);
   [item] = s.desk.verdictQueue().items;
-  s.desk.verdictAction({ item: item.id, action: 'adopt', vote: 1 });
+  s.desk.verdictAction({ item: item.id, round: roundOf(s, item.id), action: 'adopt', vote: 1 });
   const rounds = s.db.prepare('SELECT round, count(*) AS n FROM jury_votes GROUP BY round ORDER BY round').all().map((r) => [r.round, r.n]);
-  assert.deepEqual(rounds, [[1, 2], [2, 3]]);
+  assert.deepEqual(rounds, [[1, 1], [2, 2], [3, 3]]);
 });
 
 test('review 6: a language code from a file cannot break out of its attribute', (t) => {
@@ -598,7 +621,7 @@ test('browser test: a page load from anywhere but the committing view cancels th
   const host = `127.0.0.1:${port}`;
   const headers = { Host: host, Origin: origin, 'X-Desk-Token': token, 'Content-Type': 'application/json' };
   const item = s.desk.verdictQueue().items[0].id;
-  const confirmC = async () => JSON.parse((await call(port, { method: 'POST', path: '/api/action', headers, body: JSON.stringify({ queue: 'verdict', item, action: 'confirm', seconds: 2 }) })).body).pending.id;
+  const confirmC = async () => JSON.parse((await call(port, { method: 'POST', path: '/api/action', headers, body: JSON.stringify({ queue: 'verdict', item, round: 1, action: 'confirm', seconds: 2 }) })).body).pending.id;
 
   // The committing view fetches the next page with its view id: the window stays open, no stale toast.
   let id = await confirmC();
@@ -652,4 +675,421 @@ test('browser test: --db and --log start the desk on another database and log', 
   assert.ok(out.includes(dbPath), 'the given database is used');
   assert.ok(out.includes(logPath), 'the given log is used');
   assert.ok(existsSync(dbPath), 'the database was created there, not under data/');
+});
+
+// ---------------------------------------------------------------- coordinator decision 9 (after Fable review 2)
+
+const roundsOf = (db) => db.prepare('SELECT round, count(*) AS n FROM jury_votes GROUP BY round ORDER BY round').all().map((r) => [r.round, r.n]);
+
+test('decision 9: after a second jury round the newest votes are shown, pre-selected and published, never the old decision', (t) => {
+  const s = setup(t);
+  importOne(s);
+  writePack(s, ['came_true', 'partly_came_true']);
+  let [item] = s.desk.verdictQueue().items;
+  assert.equal(item.round, 1);
+  s.desk.verdictAction({ item: item.id, round: 1, action: 'adopt', vote: 1 });
+  s.desk.verdictAction({ item: item.id, action: 'send_back', reason: 2, note: 'Judge again.' });
+  assert.equal(s.desk.verdictQueue().items.length, 0);
+  writePack(s, ['not_came_true', 'not_came_true', 'not_came_true']);
+  [item] = s.desk.verdictQueue().items;
+  assert.equal(item.round, 2, 'the new vote set is round 2');
+  assert.equal(item.stale, true);
+  assert.match(item.recheck, /New votes since your last decision/);
+  assert.equal(item.preselect, 1);
+  assert.equal(item.after.state.verdict.verdict, 'not_came_true', 'what C would publish is the new round');
+  const html = s.desk.verdictPage(item.id);
+  assert.match(html, /New votes since your last decision/);
+  assert.match(html, /vote 1 pre-selected/);
+  assert.match(html, /data-round="2"/);
+  // The page's round goes with every adopt, edit and confirm.
+  assert.throws(() => s.desk.verdictAction({ item: item.id, round: 1, action: 'adopt', vote: 2 }), /new votes arrived/);
+  assert.throws(() => s.desk.verdictAction({ item: item.id, action: 'confirm' }), /new votes arrived/);
+  s.desk.verdictAction({ item: item.id, round: 2, action: 'confirm', seconds: 4 });
+  s.advance(5_200);
+  const { publicationId } = s.desk.commit(s.desk.pending.id);
+  const snap = JSON.parse(s.db.prepare('SELECT snapshot FROM publications WHERE id = ?').get(publicationId).snapshot);
+  assert.equal(snap.verdict.verdict, 'not_came_true');
+  assert.deepEqual(snap.jury.filter((j) => j.round === 2).map((j) => j.verdict), ['not_came_true', 'not_came_true', 'not_came_true']);
+  assert.deepEqual(roundsOf(s.db), [[1, 2], [2, 3]]);
+});
+
+test('decision 9: new votes during the 5-second window stop the commit, even without a pre-selected vote', (t) => {
+  const s = setup(t);
+  importOne(s);
+  writePack(s, ['came_true', 'came_true']);
+  let [item] = s.desk.verdictQueue().items;
+  s.desk.verdictAction({ item: item.id, round: 1, action: 'adopt', vote: 1 });
+  [item] = s.desk.verdictQueue().items;
+  assert.equal(item.preselect, null, 'adopted, so nothing is pre-selected');
+  s.desk.verdictAction({ item: item.id, round: 1, action: 'confirm', seconds: 3 });
+  writePack(s, ['not_came_true', 'not_came_true']);
+  s.advance(5_200);
+  assert.throws(() => s.desk.commit(s.desk.pending.id), /new votes arrived during the window/);
+  assert.equal(s.db.prepare('SELECT count(*) AS n FROM publications').get().n, 0);
+});
+
+test('decision 9: a published item comes back when a new round arrives, labelled as a re-check', (t) => {
+  const s = setup(t);
+  importOne(s);
+  s.db.prepare("UPDATE claims SET deadline = '2027-12-31'").run();
+  const claim = { deadline: '2027-12-31' };
+  writePack(s, ['pending', 'pending'], { claim });
+  let [item] = s.desk.verdictQueue().items;
+  s.desk.verdictAction({ item: item.id, round: 1, action: 'confirm', seconds: 2 });
+  s.advance(5_200);
+  s.desk.commit(s.desk.pending.id);
+  assert.equal(s.desk.verdictQueue().items.length, 0, 'published, nothing new: not in the queue');
+  writePack(s, ['came_true', 'came_true'], { claim });
+  [item] = s.desk.verdictQueue().items;
+  assert.ok(item, 'back in queue B');
+  assert.match(item.recheck, /Re-check of a published item/);
+  assert.match(s.desk.verdictPage(item.id), /Re-check of a published item/);
+  assert.equal(item.canConfirm, true);
+  s.desk.verdictAction({ item: item.id, round: 2, action: 'confirm', seconds: 2 });
+  s.advance(5_200);
+  s.desk.commit(s.desk.pending.id);
+  const verdicts = s.db.prepare('SELECT snapshot FROM publications ORDER BY id').all().map((r) => JSON.parse(r.snapshot).verdict.verdict);
+  assert.deepEqual(verdicts, ['pending', 'came_true'], 'a new ledger entry, as usual');
+});
+
+test('decision 9: undo puts the verdict back and never removes a round', (t) => {
+  const s = setup(t);
+  importOne(s);
+  writePack(s, ['came_true', 'partly_came_true']);
+  let [item] = s.desk.verdictQueue().items;
+  s.desk.verdictAction({ item: item.id, round: 1, action: 'adopt', vote: 2 });
+  writePack(s, ['came_true', 'came_true', 'came_true']);
+  [item] = s.desk.verdictQueue().items;
+  s.desk.verdictAction({ item: item.id, round: 2, action: 'adopt', vote: 1 });
+  assert.deepEqual(roundsOf(s.db), [[1, 2], [2, 3]]);
+  s.desk.undo();
+  assert.equal(s.db.prepare('SELECT verdict FROM verdicts').get().verdict, 'partly_came_true');
+  assert.deepEqual(roundsOf(s.db), [[1, 2], [2, 3]], 'both rounds are still there');
+  [item] = s.desk.verdictQueue().items;
+  assert.equal(item.stale, true, 'the restored verdict is from round 1, so it is stale again');
+  s.desk.undo();
+  assert.equal(s.db.prepare('SELECT count(*) AS n FROM verdicts').get().n, 0);
+  assert.deepEqual(roundsOf(s.db), [[1, 2], [2, 3]]);
+});
+
+test('decision 9: rounds are written once, as soon as the desk sees them, and logged with the quote hash', (t) => {
+  const s = setup(t);
+  importOne(s);
+  writePack(s);
+  s.desk.verdictQueue();
+  s.desk.verdictQueue();
+  s.desk.verdictPage();
+  assert.deepEqual(roundsOf(s.db), [[1, 2]], 'seen three times, written once');
+  const ingested = readActions(s.logPath).filter((e) => e.action === 'round_ingested');
+  assert.equal(ingested.length, 1);
+  const claim = claims(s.db)[0];
+  assert.equal(ingested[0].quote_sha256, claimQuoteSha(claim));
+  const [item] = s.desk.verdictQueue().items;
+  s.desk.verdictAction({ item: item.id, round: 1, action: 'adopt', vote: 1 });
+  assert.equal(readActions(s.logPath).at(-1).quote_sha256, claimQuoteSha(claim));
+  assert.equal(readActions(s.logPath).at(-1).round, 1);
+});
+
+test('decision 9: text that only looks blank counts as missing', (t) => {
+  const s = setup(t);
+  importOne(s);
+  writePack(s, ['came_true', 'partly_came_true']);
+  const [item] = s.desk.verdictQueue().items;
+  for (const blank of ['⠀', '᠎', 'ᅟ', 'ㅤ', ' ​­ ']) {
+    assert.throws(() => s.desk.verdictAction({
+      item: item.id, round: 1, action: 'edit',
+      fields: { verdict: 'to_evaluate', summary_fr: 'Manque.', summary_en: blank, open_question_fr: 'Quoi ?', open_question_en: 'What?' },
+    }), /summary missing/, JSON.stringify(blank));
+  }
+  assert.equal(s.db.prepare('SELECT count(*) AS n FROM verdicts').get().n, 0);
+});
+
+// ---------------------------------------------------------------- record format 10 and decision 0012 (section A)
+
+test('format 10: rounds live in jury_votes.pack_sha256 and verdicts.based_on_round; losing the desk log changes nothing', (t) => {
+  const s = setup(t);
+  importOne(s);
+  writePack(s, ['came_true', 'partly_came_true']);
+  let [item] = s.desk.verdictQueue().items;
+  const sha = item.p.packSha256;
+  assert.deepEqual(s.db.prepare('SELECT DISTINCT pack_sha256 FROM jury_votes').all().map((r) => r.pack_sha256), [sha]);
+  s.desk.verdictAction({ item: item.id, round: 1, action: 'adopt', vote: 2 });
+  assert.equal(s.db.prepare('SELECT based_on_round FROM verdicts').get().based_on_round, 1);
+  // The log is an audit trail only: without it the rounds and the verdict's round are still known.
+  rmSync(s.logPath);
+  const again = createDesk({ db: s.db, packDirs: [s.packDir], ...s.opts });
+  [item] = again.verdictQueue().items;
+  assert.equal(item.round, 1, 'no new round');
+  assert.equal(item.stale, false);
+  assert.equal(item.adopted, 2);
+  assert.deepEqual(roundsOf(s.db), [[1, 2]]);
+});
+
+test('format 10: the deadline rule of confirm() is shown as a reason C is off', (t) => {
+  const s = setup(t);
+  importOne(s);
+  writePack(s);
+  let [item] = s.desk.verdictQueue().items;
+  s.desk.verdictAction({ item: item.id, round: 1, action: 'adopt', vote: 1 });
+  // Outside the desk: a partly_came_true before the deadline.
+  s.db.prepare("UPDATE claims SET deadline = '2030-01-01'").run();
+  s.db.prepare("UPDATE verdicts SET verdict = 'partly_came_true'").run();
+  [item] = s.desk.verdictQueue().items;
+  assert.equal(item.canConfirm, false);
+  assert.match(item.stops.join('\n'), /deadline 2030-01-01 not over/);
+  assert.match(s.desk.verdictPage(item.id), /deadline 2030-01-01 not over/);
+});
+
+test('0012 A2: a Claude subscription vote from the session that cut the pack is refused', (t) => {
+  const s = setup(t);
+  importOne(s);
+  writePack(s, ['came_true', 'came_true'], { cutSession: 'session-7', sessions: ['session-7'] });
+  let [item] = s.desk.verdictQueue().items;
+  const claude = item.p.votes.find((v) => v.vote.provider === 'anthropic');
+  assert.equal(claude.valid, false);
+  assert.match(claude.problems.join(), /session that cut the pack/);
+  assert.equal(item.valid.length, 1);
+  writePack(s, ['came_true', 'came_true'], { cutSession: 'session-7', sessions: ['session-8'] });
+  [item] = s.desk.verdictQueue().items;
+  assert.equal(item.valid.length, 2, 'a fresh session counts');
+  // Not recorded: counted, but the page says the program could not check it.
+  writePack(s, ['came_true', 'came_true']);
+  [item] = s.desk.verdictQueue().items;
+  assert.equal(item.p.votes.find((v) => v.vote.provider === 'anthropic').sessionUnrecorded, true);
+  assert.match(s.desk.verdictPage(item.id), /does not name its session/);
+});
+
+test('0012 A3: figures from a PDF keep C off until the original was opened from this item page', async (t) => {
+  const s = setup(t, { pdfLaw: true });
+  importOne(s);
+  writePack(s);
+  let [item] = s.desk.verdictQueue().items;
+  assert.equal(item.valid.length, 2, 'the PDF fixture passes the vote checks');
+  assert.equal(item.canConfirm, false);
+  assert.match(item.stops.join(), /open the original first \(O\)/);
+  const { server } = await startDeskServer(s.desk, { port: 0, evidenceDir: s.evidenceDir });
+  t.after(() => server.close());
+  const port = server.address().port;
+  const host = `127.0.0.1:${port}`;
+  // Without the page's nonce, or from another site, serving the file proves nothing.
+  await call(port, { path: `/original/${s.law}`, headers: { Host: host } });
+  await call(port, { path: `/original/${s.law}?view=${'0'.repeat(32)}`, headers: { Host: host } });
+  const html = (await call(port, { path: '/verdicts', headers: { Host: host } })).body;
+  const nonce = new RegExp(`/original/${s.law}\\?view=([0-9a-f]{32})`).exec(html)[1];
+  await call(port, { path: `/original/${s.law}?view=${nonce}`, headers: { Host: host, 'Sec-Fetch-Site': 'cross-site' } });
+  [item] = s.desk.verdictQueue().items;
+  assert.equal(item.canConfirm, false, 'still off');
+  const r = await call(port, { path: `/original/${s.law}?view=${nonce}`, headers: { Host: host } });
+  assert.equal(r.headers['content-disposition'], `attachment; filename="source-${s.law}.pdf"`);
+  [item] = s.desk.verdictQueue().items;
+  assert.equal(item.canConfirm, true);
+  assert.equal(readActions(s.logPath).filter((e) => e.action === 'opened_original').length, 1);
+});
+
+test('0012 A4: kind and publisher beside each excerpt; one key sends back "wrong kind"; an official publisher needs a tick once', (t) => {
+  const s = setup(t, { lawKind: 'official' });
+  importOne(s);
+  writePack(s);
+  let [item] = s.desk.verdictQueue().items;
+  const html = s.desk.verdictPage(item.id);
+  assert.match(html, /<b>Official document<\/b> · publisher <b lang="fr">JO<\/b>/);
+  assert.equal(item.canConfirm, false);
+  assert.match(item.stops.join(), /first use of the official publisher “JO”/);
+  s.desk.verdictAction({ item: item.id, action: 'tick_publisher', seconds: 2 });
+  const tick = readActions(s.logPath).at(-1);
+  assert.equal(tick.action, 'tick_publisher');
+  assert.equal(tick.publisher_key, 'jo');
+  [item] = s.desk.verdictQueue().items;
+  assert.equal(item.canConfirm, true);
+  // Kept across a restart (from the log); undo takes the tick back.
+  assert.equal(createDesk({ db: s.db, packDirs: [s.packDir], ...s.opts }).verdictQueue().items[0].canConfirm, true);
+  s.desk.undo();
+  assert.equal(s.desk.verdictQueue().items[0].canConfirm, false);
+  // Wrong kind: one action, the source named, the item leaves until the pack changes.
+  assert.throws(() => s.desk.verdictAction({ item: item.id, action: 'wrong_kind', source: 999 }), /one of the sources/);
+  s.desk.verdictAction({ item: item.id, action: 'wrong_kind', source: s.law, seconds: 1 });
+  const back = readActions(s.logPath).at(-1);
+  assert.equal(back.action, 'send_back');
+  assert.equal(back.reason, 1);
+  assert.equal(back.wrong_kind_source, s.law);
+  assert.match(back.note, /labelled official/);
+  assert.equal(s.desk.verdictQueue().items.length, 0);
+});
+
+test('0012 A5: a vague claim goes to queue B without pack or jury; the founder writes the summary and confirms unverifiable', (t) => {
+  const s = setup(t);
+  const claimId = addClaim(s.db, s.origin, {
+    quote_original: 'Nous baisserons Y.', quote_en: 'We will lower Y.', source_locator: '§2', verifiability: 'vague',
+    criteria_fr: null, criteria_en: null, deadline: null, deadline_basis: null, said_on: '2022-03-17',
+  });
+  let [item] = s.desk.verdictQueue().items;
+  assert.equal(item.claimId, claimId);
+  assert.equal(item.direct, true);
+  assert.equal(item.canConfirm, false);
+  assert.match(item.stops.join(), /write the summary/);
+  assert.match(s.desk.verdictPage(item.id), /no evidence pack, no jury/);
+  assert.throws(() => s.desk.verdictAction({ item: item.id, action: 'edit', fields: { summary_fr: 'Trop vague.', summary_en: '⠀' } }), /summary missing/);
+  // Whatever verdict is sent, a vague item gets "unverifiable".
+  s.desk.verdictAction({ item: item.id, action: 'edit', fields: { verdict: 'came_true', summary_fr: 'Rien de mesurable.', summary_en: 'Nothing measurable.' } });
+  const v = s.db.prepare('SELECT * FROM verdicts').get();
+  assert.deepEqual([v.verdict, v.decided_by, v.based_on_round], ['unverifiable', 'human', null]);
+  [item] = s.desk.verdictQueue().items;
+  assert.equal(item.canConfirm, true);
+  s.desk.verdictAction({ item: item.id, action: 'confirm', seconds: 6 });
+  s.advance(5_200);
+  const { publicationId } = s.desk.commit(s.desk.pending.id);
+  assert.equal(JSON.parse(s.db.prepare('SELECT snapshot FROM publications WHERE id = ?').get(publicationId).snapshot).verdict.verdict, 'unverifiable');
+  assert.equal(s.db.prepare('SELECT count(*) AS n FROM jury_votes').get().n, 0);
+  assert.equal(s.desk.verdictQueue().items.length, 0, 'done');
+});
+
+// ---------------------------------------------------------------- re-check after decision 9: closed rounds (step-back 2026-11-23)
+
+test('re-check A: votes arriving one by one make no round until the jury step closes it; the ledger lists each vote once', (t) => {
+  const s = setup(t);
+  importOne(s);
+  writePack(s, ['came_true'], { close: false });
+  assert.match(closeRound(packPathOf(s)).problem, /no vote on this pack yet from openai \(subscription\)/, 'tally does not close an incomplete round');
+  let [item] = s.desk.verdictQueue().items;
+  assert.match(item.stops.join(), /no jury round has been closed/);
+  assert.equal(item.p.votes.length, 0, 'loose vote files are not read');
+  writePack(s, ['came_true', 'came_true'], { close: false });
+  s.desk.verdictPage();
+  writePack(s, ['came_true', 'came_true', 'not_came_true'], { close: false });
+  s.desk.verdictQueue();
+  assert.equal(s.db.prepare('SELECT count(*) AS n FROM jury_votes').get().n, 0, 'no round while the votes arrive');
+  const r = closeRound(packPathOf(s));
+  assert.deepEqual([r.closed.round, r.closed.votes.length], [1, 3]);
+  assert.equal(closeRound(packPathOf(s)).already, true, 'closing again with the same files adds nothing');
+  assert.equal(readFileSync(join(s.packDir, 'c1.rounds.jsonl'), 'utf8').trim().split('\n').length, 1);
+  [item] = s.desk.verdictQueue().items;
+  assert.equal(item.round, 1);
+  assert.deepEqual(roundsOf(s.db), [[1, 3]]);
+  s.desk.verdictAction({ item: item.id, round: 1, action: 'adopt', vote: 1 });
+  s.desk.verdictAction({ item: item.id, round: 1, action: 'confirm', seconds: 3 });
+  s.advance(5_200);
+  const { publicationId } = s.desk.commit(s.desk.pending.id);
+  const snap = JSON.parse(s.db.prepare('SELECT snapshot FROM publications WHERE id = ?').get(publicationId).snapshot);
+  assert.deepEqual(snap.jury.map((j) => [j.round, j.provider]), [[1, 'anthropic'], [1, 'gemini'], [1, 'openai']], 'three rows for three votes');
+});
+
+test('re-check B: a stray vote file neither adds a round nor removes the item; a changed file of the closed round stops C and says so', (t) => {
+  const s = setup(t);
+  importOne(s);
+  writePack(s);
+  let [item] = s.desk.verdictQueue().items;
+  assert.equal(item.round, 1);
+  const stray = join(s.packDir, 'c1.vote-anthropic-api.json');
+  writeFileSync(stray, readFileSync(join(s.packDir, 'c1.vote-anthropic-subscription.json')));
+  [item] = s.desk.verdictQueue().items;
+  assert.deepEqual([item.round, item.valid.length], [1, 2], 'the stray file is not in the closed round');
+  rmSync(stray);
+  const q = s.desk.verdictQueue();
+  assert.equal(q.items.length, 1, 'removing it changes nothing');
+  assert.deepEqual(q.unlinked, []);
+  assert.deepEqual(roundsOf(s.db), [[1, 2]]);
+  // The votes stop counting (here: the judge input is gone): the item stays and says why.
+  const input = join(s.packDir, 'c1.judge-input.md');
+  const inputText = readFileSync(input, 'utf8');
+  rmSync(input);
+  [item] = s.desk.verdictQueue().items;
+  assert.ok(item, 'still in queue B');
+  assert.match(item.stops.join(), /only 0 vote\(s\) pass/);
+  writeFileSync(input, inputText);
+  // A file of the closed round changes during the 5-second window: nothing is written.
+  [item] = s.desk.verdictQueue().items;
+  s.desk.verdictAction({ item: item.id, round: 1, action: 'confirm', seconds: 2 });
+  const openai = join(s.packDir, 'c1.vote-openai-subscription.json');
+  writeFileSync(openai, JSON.stringify({ ...JSON.parse(readFileSync(openai, 'utf8')), reasoning: 'rewritten' }));
+  s.advance(5_200);
+  assert.throws(() => s.desk.commit(s.desk.pending.id), /files of the jury round changed during the window/);
+  assert.equal(s.db.prepare('SELECT count(*) AS n FROM publications').get().n, 0);
+  [item] = s.desk.verdictQueue().items;
+  assert.equal(item.canConfirm, false);
+  assert.match(item.stops.join(), /round 1 of the jury cannot be confirmed: vote file c1\.vote-openai-subscription\.json changed after round 1 was closed/);
+  rmSync(openai);
+  [item] = s.desk.verdictQueue().items;
+  assert.match(item.stops.join(), /c1\.vote-openai-subscription\.json was removed after round 1 was closed/);
+  assert.match(s.desk.verdictPage(item.id), /was removed after round 1 was closed/);
+  assert.throws(() => s.desk.verdictAction({ item: item.id, round: 1, action: 'confirm' }), /cannot confirm/);
+});
+
+test('re-check C: a vague item sent back returns once the item changes (a translation, a summary)', (t) => {
+  const s = setup(t);
+  addClaim(s.db, s.origin, {
+    quote_original: 'Nous baisserons Y.', quote_en: 'We will lower Y.', source_locator: '§2', verifiability: 'vague',
+    criteria_fr: null, criteria_en: null, deadline: null, deadline_basis: null, said_on: '2022-03-17',
+  });
+  let [item] = s.desk.verdictQueue().items;
+  s.desk.verdictAction({ item: item.id, action: 'edit', fields: { summary_fr: 'Rien de mesurable.', summary_en: 'Nothing measurable.' } });
+  s.desk.verdictAction({ item: item.id, action: 'send_back', reason: 3, note: 'The English quote is wrong.' });
+  assert.equal(s.desk.verdictQueue().items.length, 0);
+  s.db.prepare("UPDATE claims SET quote_en = 'We shall lower Y.'").run();
+  [item] = s.desk.verdictQueue().items;
+  assert.ok(item, 'back after the translation was corrected');
+  s.desk.verdictAction({ item: item.id, action: 'send_back', reason: 4, note: 'Summary to redo.' });
+  assert.equal(s.desk.verdictQueue().items.length, 0);
+  s.db.prepare("UPDATE verdicts SET summary_en = 'Nothing that can be measured.'").run();
+  assert.equal(s.desk.verdictQueue().items.length, 1, 'back after the summary changed');
+});
+
+test('re-check D: a corrected person row is seen without a restart, and C goes through', (t) => {
+  const s = setup(t);
+  importOne(s);
+  writePack(s);
+  const [item] = s.desk.verdictQueue().items;
+  s.desk.verdictPage(item.id);
+  s.db.prepare("UPDATE subjects SET name = 'Corrected Name'").run();
+  s.desk.verdictAction({ item: item.id, round: 1, action: 'confirm', seconds: 2 });
+  s.advance(5_200);
+  const { publicationId } = s.desk.commit(s.desk.pending.id);
+  assert.equal(JSON.parse(s.db.prepare('SELECT snapshot FROM publications WHERE id = ?').get(publicationId).snapshot).subject.name, 'Corrected Name');
+});
+
+test('re-check E: the PDF is marked opened only when it was actually served', async (t) => {
+  const s = setup(t, { pdfLaw: true });
+  importOne(s);
+  writePack(s);
+  const { server } = await startDeskServer(s.desk, { port: 0, evidenceDir: s.evidenceDir });
+  t.after(() => server.close());
+  const port = server.address().port;
+  const host = `127.0.0.1:${port}`;
+  const html = (await call(port, { path: '/verdicts', headers: { Host: host } })).body;
+  const nonce = new RegExp(`/original/${s.law}\\?view=([0-9a-f]{32})`).exec(html)[1];
+  const file = evidencePath(s.evidenceDir, s.db.prepare('SELECT sha256 FROM sources WHERE id = ?').get(s.law).sha256);
+  renameSync(file, `${file}.away`);
+  assert.equal((await call(port, { path: `/original/${s.law}?view=${nonce}`, headers: { Host: host } })).status, 404);
+  renameSync(`${file}.away`, file);
+  let [item] = s.desk.verdictQueue().items;
+  assert.deepEqual(item.toOpen, [s.law], 'not opened: nothing was served');
+  assert.equal(readActions(s.logPath).filter((e) => e.action === 'opened_original').length, 0);
+  assert.equal((await call(port, { path: `/original/${s.law}?view=${nonce}`, headers: { Host: host } })).status, 200);
+  [item] = s.desk.verdictQueue().items;
+  assert.deepEqual(item.toOpen, []);
+});
+
+test('re-check F: no link nonce for another site\'s page load; an old PDF link does not bring a sent-back item back', async (t) => {
+  const s = setup(t, { pdfLaw: true });
+  importOne(s);
+  writePack(s);
+  const { server } = await startDeskServer(s.desk, { port: 0, evidenceDir: s.evidenceDir });
+  t.after(() => server.close());
+  const port = server.address().port;
+  const host = `127.0.0.1:${port}`;
+  const html = (await call(port, { path: '/verdicts', headers: { Host: host } })).body;
+  const nonce = new RegExp(`/original/${s.law}\\?view=([0-9a-f]{32})`).exec(html)[1];
+  const foreign = (await call(port, { path: '/verdicts', headers: { Host: host, 'Sec-Fetch-Site': 'cross-site' } })).body;
+  assert.doesNotMatch(foreign, /view=[0-9a-f]{32}/, 'a page another site loads gets no nonce, so it cannot push the founder\'s out');
+  const [item] = s.desk.verdictQueue().items;
+  s.desk.verdictAction({ item: item.id, action: 'send_back', reason: 1, note: 'Excerpt too short.' });
+  await call(port, { path: `/original/${s.law}?view=${nonce}`, headers: { Host: host } });
+  assert.equal(readActions(s.logPath).at(-1).action, 'opened_original');
+  assert.equal(s.desk.verdictQueue().items.length, 0, 'still sent back');
+});
+
+test('re-check F: sessions compared without case; figures written in words count', () => {
+  const pack = { made_by: { session: 'S1' } };
+  assert.match(sameSessionProblem(pack, { provider: 'anthropic', channel: 'subscription', made_by: { session: ' s1' } }), /session that cut the pack/);
+  for (const text of ['deux millions d’euros', 'two hundred schools', 'cinquante pour cent', '٣', '12', '50 %']) assert.equal(hasFigures(text), true, text);
+  for (const text of ['une baisse', 'one plan', 'Article premier', null]) assert.equal(hasFigures(text), false, String(text));
 });

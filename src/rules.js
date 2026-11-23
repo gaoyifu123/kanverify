@@ -64,6 +64,26 @@ export function renunciationCounts(source, claim, verdict) {
     && source.published_on >= claim.said_on;
 }
 
+/**
+ * A public renunciation ends the wait on a promise (founder, 2026-11-23): from its date the claim is
+ * judged as if its deadline had passed, on what was actually done. Whether a renunciation does that
+ * does not depend on the verdict, unlike renunciationCounts (the renunciation as the only evidence,
+ * which stays limited to "not_came_true"). It must be of kind renunciation, about a promise, published
+ * on or after the day the promise was made, and not after `today`.
+ * @param {{kind: string, published_on: string|null}} source
+ * @param {{type: string, said_on: string}} claim
+ * @param {string} today YYYY-MM-DD, local date
+ */
+export function renunciationEndsWait(source, claim, today) {
+  return source?.kind === 'renunciation'
+    && claim?.type === 'promise'
+    && typeof source.published_on === 'string'
+    && typeof claim.said_on === 'string'
+    && typeof today === 'string'
+    && source.published_on >= claim.said_on
+    && source.published_on <= today;
+}
+
 export const INDEPENDENT_KINDS = Object.freeze(['media', 'dataset_study']);
 
 /**
@@ -78,20 +98,45 @@ export function twoIndependent(sources) {
 
 /**
  * The deadline rule (verdict-standard.md section 3 and section 5 as amended). The deadline
- * day itself is still inside the deadline. On or before it: only came_true, pending,
- * unverifiable on a vague or hedged claim, and not_came_true on a renounced promise. After
- * it: never pending. Returns the problem, or null.
+ * day itself is still inside the deadline. On or before it: only came_true, pending, and
+ * unverifiable on a vague or hedged claim. After it: never pending. A renounced promise is
+ * judged as if its deadline had passed (renunciationEndsWait). Returns the problem, or null.
  * @param {{deadline: string|null, verifiability: string}} claim
  * @param {string} verdict
  * @param {string} today YYYY-MM-DD, local date
- * @param {boolean} renounced the verdict rests on a renunciation that counts
+ * @param {boolean} renounced a renunciation has ended the wait (renunciationEndsWait), whatever the verdict
  */
 export function deadlineProblem(claim, verdict, today, renounced) {
   if (!claim.deadline) return null;
-  const notOver = today <= claim.deadline;
-  const waits = (['to_evaluate', 'partly_came_true', 'not_came_true'].includes(verdict) && !renounced)
+  const notOver = !renounced && today <= claim.deadline;
+  const waits = ['to_evaluate', 'partly_came_true', 'not_came_true'].includes(verdict)
     || (verdict === 'unverifiable' && claim.verifiability === 'measurable');
   if (notOver && waits) return `deadline ${claim.deadline} not over (not reached until the day after it), but verdict is ${verdict}`;
-  if (!notOver && verdict === 'pending') return `deadline ${claim.deadline} passed, but verdict is pending`;
+  if (!notOver && verdict === 'pending') {
+    return renounced ? 'the promise was publicly renounced, which ends the wait, but verdict is pending'
+      : `deadline ${claim.deadline} passed, but verdict is pending`;
+  }
   return null;
+}
+
+/**
+ * Claude vote integrity, interim (decision 0012 A2): a Claude vote under the subscription must come
+ * from a fresh session, not the one that cut the pack. Both files name their session in
+ * made_by.session. Returns the problem, or null (also when either session is not recorded; see
+ * sessionsRecorded).
+ */
+export function sameSessionProblem(pack, vote) {
+  if (vote?.provider !== 'anthropic' || vote?.channel !== 'subscription') return null;
+  const cut = pack?.made_by?.session;
+  const voted = vote?.made_by?.session;
+  if (!filled(cut) || !filled(voted)) return null;
+  // Case and surrounding blanks aside: "S1" and "s1" name the same session (Fable re-check F).
+  return cut.trim().toLowerCase() === voted.trim().toLowerCase()
+    ? 'this Claude vote was made in the session that cut the pack; a judge must be a fresh session (decision 0012 A2)'
+    : null;
+}
+
+/** True when both the pack and the vote name their session, so sameSessionProblem could check them. */
+export function sessionsRecorded(pack, vote) {
+  return filled(pack?.made_by?.session) && filled(vote?.made_by?.session);
 }

@@ -250,6 +250,23 @@ test('a renunciation lets "not_came_true" come early only if it was published on
   }
 });
 
+test('a renunciation ends the wait only once it is published; the ledger cannot see one under partly_came_true', () => {
+  const db = freshDb();
+  const platform = addSource(db, 'platform');
+  // Published after the day of confirmation: the wait is not over yet (founder, 2026-11-23).
+  const claim = addClaim(db, platform); // said on 2022-03-17, due 2027-05-13
+  const ren = addSource(db, 'renunciation', { published_on: '2026-12-01', url: 'https://example.org/ren/late' });
+  addEvidence(db, addVerdict(db, claim, 'not_came_true'), ren);
+  assert.throws(() => confirmOn(db, claim, 'founder', { today: '2026-11-23' }), /not over/);
+  confirmOn(db, claim, 'founder', { today: '2026-12-01' });
+  // partly_came_true: publication_checks refuses a renunciation among its evidence, the only place the ledger
+  // could find one, so before the deadline it is still refused here (record format; see the developer's output note).
+  const partly = addClaim(db, platform);
+  const law = addSource(db, 'law', { url: 'https://example.org/law/partly' });
+  addEvidence(db, addVerdict(db, partly, 'partly_came_true'), law);
+  assert.throws(() => confirmOn(db, partly, 'founder', { today: '2026-12-01' }), /not over/);
+});
+
 test('two independent sources: different publishers by one normalisation, and different files', () => {
   const db = freshDb();
   const platform = addSource(db, 'platform');

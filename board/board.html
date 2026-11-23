@@ -12,9 +12,9 @@
   "meta": {
     "day": 2,
     "totalDays": 14,
-    "updated": "2026-11-23 10:11:39",
+    "updated": "2026-11-23 15:29:50",
     "launch": "Dec 5",
-    "headline": "Record format 10 is live (deadline rule enforced at publication; your 38 archived sources migrated and verified). Re-checks running; the desk is being switched over. Questions for you below."
+    "headline": "Desk fixed after the step-back (292 tests pass). Fable's second re-check is running again (it paused for the 5-hour quota). Meanwhile the evidence-pack rules are being drafted. One thing for you when at the computer: sign in to the Claude command line."
   },
   "counts": [
     {
@@ -23,19 +23,19 @@
       "target": "427 candidates ready (Macron 2022, Trump 2024); launch target 100 to 200"
     },
     {
-      "label": "Verdicts in trial",
-      "value": "10",
-      "target": "Dry run: two judges agree on 7 of 10; not confirmed, not published"
+      "label": "Fable reviews passed",
+      "value": "3 of 4",
+      "target": "Judge prompt, record format, fetching code; desk second re-check running"
     },
     {
       "label": "Tests",
-      "value": "235",
+      "value": "292",
       "target": "All passing"
     },
     {
       "label": "Jury",
       "value": "2 of 3",
-      "target": "Claude and Codex (subscriptions) working; Gemini waits for a key"
+      "target": "Codex working; Claude installed, waits for your sign-in; Gemini waits for a key"
     }
   ],
   "done": [
@@ -51,105 +51,29 @@
     "Link mailbox read every morning at 08:30",
     "Board, interface and new documents now in English",
     "Source rule restored to its full version (0.4) after it was found reverted to an early draft; content matches your decisions",
-    "Judge prompt rewritten once as judge-0.5 and passed Fable review"
+    "Judge prompt rewritten once as judge-0.5 and passed Fable review",
+    "Your 11 board answers applied (decision 0013, verdict standard 0.4, judge prompt judge-0.6)",
+    "PRINCIPLES.md: English text first, Chinese original underneath; judges now get the English text",
+    "Claude command line: terms checked, installed",
+    "Desk rebuilt on explicitly closed jury rounds, plus the 5 smaller re-check fixes; renunciation rule in code"
   ],
   "next": [
-    "Re-checks by the same Fable reviewers: record format 10 (running), fetching code and desk after their fixes",
-    "Desk switch-over to format 10, plus the evidence-selection safeguards from decision 0012",
-    "Write the evidence-pack rules (team/run/pack-prompt.md) and have Fable review them — they decide what the judges see",
-    "After the desk passes: create Macron and Trump, import candidates; you confirm only the flagged ones",
-    "Translation step; re-vote the 10 trial claims under the new judge prompt"
+    "Desk: Fable second re-check running, then a real-browser test, then commit",
+    "Evidence-pack rules (team/run/pack-prompt.md): being drafted now; Fable reviews it after the desk",
+    "Record format 11 (small): publish \"partly came true\" right after a renunciation; ledger shows only the verdict's jury round",
+    "Then: create Macron and Trump, import candidates; you confirm the flagged ones",
+    "Wire the isolated Claude judge (after your sign-in); desk: stricter calibration"
   ],
   "needs": [
     {
-      "id": "state-at-deadline",
-      "t": "Which moment counts: the deadline, or later?",
-      "d": "Example: fibre coverage was 94.3% at the deadline (end 2025) and 95.3% six months later. Recommendation: judge the state AT the deadline; later progress is mentioned in the summary but does not change the verdict.",
+      "id": "claude-login",
+      "t": "When you are at the computer: sign in to the Claude command line once",
+      "d": "Installed (version 2.1.330); terms checked: running it in our own scripts on your own plan is documented use. Open a terminal, type claude, and follow the sign-in with your Claude account. I never handle the login. After that the Claude judge runs isolated, like Codex.",
       "options": [
-        "At the deadline",
-        "Latest state"
+        "Done",
+        "Not yet"
       ],
-      "placeholder": "Anything to add"
-    },
-    {
-      "id": "renunciation-order",
-      "t": "A public renunciation: end of the wait, or the verdict itself?",
-      "d": "If 65 was promised, 64 enacted, and the speaker then says \"we give up 65\": saying it gives \"did not come true\" now; staying silent gives \"partly came true\" at the deadline. Same facts, two verdicts. Recommendation: a renunciation only ends the wait; the verdict is then judged on what was actually done (here: partly came true).",
-      "options": [
-        "Ends the wait only",
-        "Renunciation = did not come true"
-      ],
-      "placeholder": "Anything to add"
-    },
-    {
-      "id": "early-revertible",
-      "t": "Early \"came true\" for things that can be undone?",
-      "d": "Some promises can be met early and then reverted (a level target, a law that can be repealed). Recommendation: early \"came true\" only for one-off results that cannot be undone (a law passed, a facility built); for levels and repealable measures, wait for the deadline.",
-      "options": [
-        "Only for one-off results",
-        "Any early came true"
-      ],
-      "placeholder": "Anything to add"
-    },
-    {
-      "id": "principles-en",
-      "t": "English version of the eight principles",
-      "d": "The principles are given to every judge (Claude, Codex, Gemini) at the start of each vote, and the project now works in English, but PRINCIPLES.md is Chinese and only you may change it. Proposed English text (same meaning): 1. A good question matters as much as a conclusion — if we cannot give the truth, we give a good question. 2. No source, no record — without a source we neither record nor conclude. 3. One ruler — the same rules for everyone; report outcomes, never guess motives. 4. Think, then code — write less code; when stuck, step back instead of forcing it. 5. Keep it simple — look for the simplest solution and dare to cut. 6. Have backbone — speak up, own your role, don't flatter. 7. Automate what can be automated — people only do the step machines cannot. 8. Stay independent — no lock-in to an AI vendor, data stays local, self-funded. If approved, PRINCIPLES.md gets this English text first with the Chinese kept underneath.",
-      "options": [
-        "Approve this English text",
-        "Change it"
-      ],
-      "placeholder": "Your wording changes, if any"
-    },
-    {
-      "id": "vague-renounced",
-      "t": "A vague promise that the speaker explicitly abandons",
-      "d": "Today a vague promise (e.g. \"we will make the country fairer\") can only ever be \"unverifiable\", even if the speaker later says publicly \"we give this up\". Option A: keep it unverifiable (the wording was never checkable). Option B: an explicit public abandonment makes it \"did not come true\", even when vague. Recommendation: A — one rule, and the abandonment is still shown in the summary.",
-      "options": [
-        "A: stays unverifiable",
-        "B: abandonment = did not come true"
-      ],
-      "placeholder": "Anything to add"
-    },
-    {
-      "id": "judge-file-access",
-      "t": "Judges can read files on this computer: accept the remaining risk?",
-      "d": "The Codex and Claude judges run on your computer with read access to files (Codex in a read-only sandbox). A malicious document in an evidence pack could try to make a judge quote a secret (an API key) into its vote. Guards being added: any reply containing a key from .env or a token-like string is refused and nothing is stored; votes never reach the site without your confirmation. Fully closing it means running the judges under a separate Windows user account that cannot read the project or your profile (more setup). Recommendation: accept with the guards for now; revisit before opening reader submissions.",
-      "options": [
-        "Accept with the guards",
-        "Set up a separate account first"
-      ],
-      "placeholder": "Anything to add"
-    },
-    {
-      "id": "calibration-count",
-      "t": "How the 10/30/100 test counts (before automatic approval)",
-      "d": "Fable found that the current count would mostly measure easy items (vague promises are forced to \"unverifiable\"; most items are \"pending\") and that you see the jury's pre-selected answer first. Recommendation: count only measurable items with a real outcome; for those, hide the votes until you have picked your verdict; count a send-back or a rewritten summary on a unanimous item as a jury miss; on 1 in 5 you open the original document, not only the excerpts. Slower for you now, but it makes the 99% mean something.",
-      "options": [
-        "Use the stricter count",
-        "Keep the current count"
-      ],
-      "placeholder": "Anything to add"
-    },
-    {
-      "id": "launch-scope",
-      "t": "What to publish at launch on 5 December",
-      "d": "Recommendation: publish every recorded promise with its source, but give an outcome verdict (came true / partly / did not come true) only on the items you have checked against the original documents (likely 20–40 at launch); never publish \"pending\" for an item nobody has searched evidence for — it would wrongly suggest we checked.",
-      "options": [
-        "Agree",
-        "Publish more verdicts"
-      ],
-      "placeholder": "Anything to add"
-    },
-    {
-      "id": "claude-cli",
-      "t": "Install the Claude Code command line for the Claude judge?",
-      "d": "Today the Claude judge is a helper inside this project: it can see project files and other votes, and once it already broke the rule. Codex runs isolated (empty folder, read-only). Running Claude the same way needs the Claude Code command-line tool installed on this computer, using your existing Claude subscription login. Terms for this kind of use are not yet checked; I would check them first.",
-      "options": [
-        "Yes, check the terms and install",
-        "Not now"
-      ],
-      "placeholder": "Anything to add"
+      "placeholder": "Anything that went wrong"
     },
     {
       "id": "note",
@@ -805,6 +729,12 @@
       "id": "—",
       "t": "Third country: UK or Germany, decided by traffic after launch",
       "by": "You decided",
+      "s": "done"
+    },
+    {
+      "id": "0013",
+      "t": "Verdict rules: state at the deadline; renunciation ends the wait; early came true only for one-off results; vague stays unverifiable; stricter 10/30/100 count; launch publishes more verdicts incl. all unverifiable; principles in English",
+      "by": "You decided on the board",
       "s": "done"
     }
   ],

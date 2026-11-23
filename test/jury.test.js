@@ -84,9 +84,9 @@ test('voteProblems: verdict values, deadlines, open question, summaries, vague c
   assert.deepEqual(voteProblems(okVote(), early, d, texts, '2026-11-22'), []);
   assert.match(voteProblems(okVote({ verdict: 'partly_came_true' }), early, d, texts, '2026-11-22').join(), /not over .*but verdict is partly_came_true/);
   assert.deepEqual(voteProblems(okVote({ verdict: 'partly_came_true' }), CLAIM, d, texts, '2026-11-22'), []);
-  // A renunciation lets only not_came_true skip the deadline, never partly_came_true.
+  // A renunciation is still no evidence for partly_came_true (see below); whether it ends the wait is another question.
   const renEarly = okVote({ verdict: 'partly_came_true', evidence: [{ source_id: 3, excerpt: 'Article 16', locator: '§1' }] });
-  assert.match(voteProblems(renEarly, early, [doc(3, 'renunciation')], new Map([[3, UNITS]]), '2026-11-22').join(), /not over .*but verdict is partly_came_true/);
+  assert.match(voteProblems(renEarly, early, [doc(3, 'renunciation')], new Map([[3, UNITS]]), '2026-11-22').join(), /renunciation, evidence only for not_came_true/);
   // Before the deadline, part done is pending: the summary says what has been done so far.
   assert.deepEqual(voteProblems({ verdict: 'pending', reasoning: 'r', summary_fr: 'f', summary_en: 'e', evidence: [] }, early, d, texts, '2026-11-22'), []);
   assert.match(voteProblems(okVote({ verdict: 'not_came_true' }), early, d, texts, '2026-11-22').join(), /not reached/);
@@ -108,6 +108,32 @@ test('voteProblems: verdict values, deadlines, open question, summaries, vague c
   }
   assert.match(voteProblems(okVote(), { ...CLAIM, verifiability: 'vague' }, d, texts, '2026-11-22').join(), /must be unverifiable/);
   assert.match(voteProblems({ verdict: 'unverifiable', reasoning: 'r', summary_fr: 'f', summary_en: 'e', evidence: [] }, CLAIM, d, texts, '2026-11-22').join(), /one official document/);
+});
+
+test('voteProblems: a public renunciation ends the wait, whatever the verdict (founder, 2026-11-23)', () => {
+  const early = { ...CLAIM, deadline: '2029-01-20', deadline_basis: 'inferred' };
+  const texts = new Map([[1, UNITS]]);
+  const partial = okVote({ verdict: 'partly_came_true' }); // cites the law: the partial result on the measure
+  const ren = (published_on) => doc(3, 'renunciation', 'Pub', { published_on });
+  // With a renunciation in the pack (not cited: it is no evidence for partly_came_true), partly_came_true is accepted early.
+  assert.deepEqual(voteProblems(partial, early, [doc(1, 'law'), ren('2025-06-01')], texts, '2026-11-22'), []);
+  // Without one, it still waits for the deadline.
+  assert.match(voteProblems(okVote({ verdict: 'partly_came_true' }), early, [doc(1, 'law')], texts, '2026-11-22').join(), /not over .*but verdict is partly_came_true/);
+  // Dated before the promise was made, after today, or not dated: it does not count.
+  for (const published_on of ['2022-03-16', '2026-11-23', null]) {
+    assert.match(voteProblems(okVote({ verdict: 'partly_came_true' }), early, [doc(1, 'law'), ren(published_on)], texts, '2026-11-22').join(),
+      /not over .*but verdict is partly_came_true/, String(published_on));
+  }
+  // The wait is over, so pending no longer fits; came_true and not_came_true are judged as usual.
+  assert.match(voteProblems({ verdict: 'pending', reasoning: 'r', summary_fr: 'f', summary_en: 'e', evidence: [] }, early, [ren('2025-06-01')], texts, '2026-11-22').join(),
+    /renounced, which ends the wait, but verdict is pending/);
+  assert.deepEqual(voteProblems(okVote(), early, [doc(1, 'law'), ren('2025-06-01')], texts, '2026-11-22'), []);
+  assert.deepEqual(voteProblems(okVote({ verdict: 'not_came_true' }), early, [doc(1, 'law'), ren('2025-06-01')], texts, '2026-11-22'), []);
+  // A renunciation of a prediction is nothing: the wait goes on.
+  assert.match(voteProblems(okVote({ verdict: 'partly_came_true' }), { ...early, type: 'prediction' }, [doc(1, 'law'), ren('2025-06-01')], texts, '2026-11-22').join(), /not over/);
+  // A vague promise stays unverifiable, renounced or not.
+  assert.match(voteProblems(okVote({ verdict: 'not_came_true' }), { ...early, verifiability: 'vague' }, [doc(1, 'law'), ren('2025-06-01')], texts, '2026-11-22').join(),
+    /vague or hedged claim, verdict must be unverifiable/);
 });
 
 test('voteProblems: the deadline day is inside the deadline (Fable review 1, finding 3)', () => {
@@ -174,7 +200,7 @@ test('searchEvidence: asks with web search and checks each suggestion against th
   const r = await searchEvidence(CLAIM, { provider: 'fake', model: 'claude-sonnet-5-5', today: '2026-11-22', askOptions: { adapters: { fake: adapter } } });
   assert.deepEqual(base.calls[0].webSearch, { maxUses: 8 });
   assert.match(base.calls[0].promptVersion, /^evidence-/);
-  assert.match(base.calls[0].system, /KANVERIFY 最高原则/);
+  assert.match(base.calls[0].system, /^# KANVERIFY principles/);
   assert.deepEqual(r.evidence[0].problems, []);
   assert.match(r.evidence[1].problems.join(), /not among the search results/);
   assert.equal(r.call.web_searches, 3);

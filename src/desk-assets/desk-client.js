@@ -117,7 +117,9 @@
   addEventListener('popstate', () => go(location.pathname + location.search, { push: false }));
 
   async function act(data, form = null) {
-    const r = await post('/api/action', { queue: document.body.dataset.queue, item: document.body.dataset.item, seconds, ...data });
+    // The round the page shows goes with every action: the server refuses adopt, edit and confirm on newer votes.
+    const round = document.body.dataset.round === undefined ? undefined : Number(document.body.dataset.round);
+    const r = await post('/api/action', { queue: document.body.dataset.queue, item: document.body.dataset.item, seconds, round, ...data });
     if (!r) return;
     if (r.error) {
       const slot = form?.querySelector('.form-error');
@@ -198,7 +200,9 @@
   function submit(form) {
     const data = new FormData(form);
     const action = form.dataset.action;
-    if (form.classList.contains('reasons')) {
+    if (form.classList.contains('kinds')) {
+      act({ action, source: Number(data.get('source')) }, form);
+    } else if (form.classList.contains('reasons')) {
       act({ action, reason: Number(data.get('reason')), note: String(data.get('note') ?? '') }, form);
     } else {
       const fields = {};
@@ -241,9 +245,9 @@
     if (openPanel) {
       if (ev.key === 'Escape') { ev.preventDefault(); close(); return; }
       if (openPanel.tagName === 'FORM' && openPanel.classList.contains('reasons')) {
-        if (/^[1-4]$/.test(ev.key) && !typing(ev.target)) {
+        if (/^[1-9]$/.test(ev.key) && !typing(ev.target)) {
           ev.preventDefault();
-          const r = openPanel.querySelector(`input[type=radio][value="${ev.key}"]`);
+          const r = openPanel.querySelector(`input[type=radio][data-n="${ev.key}"]`);
           if (r) { r.checked = true; openPanel.querySelector('input[type=text]')?.focus(); }
           return;
         }
@@ -260,8 +264,15 @@
       return;
     }
     if (ev.key.toLowerCase() === 'o') {
-      const a = $('#open-original');
-      if (a) { ev.preventDefault(); a.click(); }
+      // On a verdict: the PDF the item still requires, else the first PDF; on a candidate: its source.
+      const pdf = $('a.open-pdf[data-needed="1"]') ?? $('a.open-pdf');
+      const a = pdf ?? $('#open-original');
+      if (a) {
+        ev.preventDefault();
+        a.click();
+        // Opening it is what enables C; redraw so the page knows.
+        if (pdf) setTimeout(() => refresh(), 800);
+      }
       return;
     }
     const k = ev.key === '?' ? '?' : ev.key.toLowerCase();

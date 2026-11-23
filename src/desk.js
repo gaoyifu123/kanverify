@@ -22,8 +22,10 @@ import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { DEFAULT_EVIDENCE_DIR, evidencePath } from './archive.js';
 import { openDatabase } from './db.js';
-import { candidateProblems, checkVerbatim, loadPrompt, normalizeForMatch } from './extract.js';
+import { candidateProblems, checkVerbatim, normalizeForMatch } from './extract.js';
 import { confirm, hasUnconfirmedChanges, publicationBlockers } from './ledger.js';
+import { readRounds, roundsFileName, voteContext } from './jury.js';
+import { publisherKey, sameSessionProblem, sessionsRecorded } from './rules.js';
 import { DEFAULT_TEXT_DIR, VERDICTS, checkCandidatesFile, checkPack, checkVote, sha256Of, sourceUnits, voteProblems, writeJsonAtomic } from './pack.js';
 import { renderCandidatePage, renderVerdictPage } from './desk-view.js';
 
@@ -32,6 +34,7 @@ const ROOT = resolve(here, '..');
 export const DEFAULT_LOG_PATH = resolve(ROOT, 'data/desk/actions.jsonl');
 export const DEFAULT_CANDIDATES_DIR = resolve(ROOT, 'data/candidates');
 const JUDGE_PROMPT_PATH = resolve(ROOT, 'team/run/judge-prompt.md');
+const PRINCIPLES_PATH = resolve(ROOT, 'PRINCIPLES.md');
 const ASSETS = {
   '/assets/kanverify.css': [resolve(ROOT, 'design/mockups/kanverify.css'), 'text/css; charset=utf-8'],
   '/assets/desk.css': [resolve(here, 'desk-assets/desk.css'), 'text/css; charset=utf-8'],
@@ -50,6 +53,13 @@ const MAX_SECONDS = 24 * 3600;
 function filled(v) {
   return typeof v === 'string' && v.trim().length > 0;
 }
+// Characters that show nothing: whitespace, the zero-width and joiner family, soft hyphen, BOM, and
+// U+180E, U+2800, U+115F, U+3164 (decision 9, item 6), which neither JavaScript's trim nor the schema knows.
+const BLANK_RE = /[\s\u00AD\u115F\u180E\u200B-\u200F\u2060\u2800\u3164\uFEFF]/gu;
+/** True when the text has something a reader can see. */
+export function deskFilled(v) {
+  return typeof v === 'string' && v.replace(BLANK_RE, '').length > 0;
+}
 /** Local time with its UTC offset, e.g. 2026-11-22T10:31:07+01:00. */
 export function localIso(d = new Date()) {
   const pad = (n) => String(Math.trunc(Math.abs(n))).padStart(2, '0');
@@ -63,6 +73,22 @@ function cleanSeconds(s) {
   if (s === null || s === undefined) return null;
   if (typeof s !== 'number' || !Number.isFinite(s) || s < 0) throw new DeskError('seconds must be a non-negative number');
   return Math.min(Math.round(s), MAX_SECONDS);
+}
+// Figures in an excerpt (decision 0012 A3): digits of any script, a per cent or per mille sign, or a
+// number written in words in French or English. "One", "un" and "une" are left out: they are mostly
+// articles. Fable re-check F: numbers in words were not caught before.
+const NUMBER_WORDS = [
+  'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen',
+  'sixteen', 'seventeen', 'eighteen', 'nineteen', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety',
+  'hundreds?', 'thousands?', 'millions?', 'billions?', 'trillions?', 'dozens?', 'half', 'percent', 'per cent',
+  'deux', 'trois', 'quatre', 'cinq', 'sept', 'huit', 'neuf', 'dix', 'onze', 'douze', 'treize', 'quatorze', 'quinze', 'seize',
+  'vingts?', 'trente', 'quarante', 'cinquante', 'soixante', 'cents?', 'mille', 'milliers?', 'milliards?', 'douzaines?',
+  'moitié', 'pour cent', 'pourcentage',
+];
+const FIGURE_RE = new RegExp(String.raw`[\p{Nd}%‰]|(?<!\p{L})(?:${NUMBER_WORDS.join('|')})(?!\p{L})`, 'iu');
+/** True when the text holds a figure: digits, %, or a number in words (French or English). */
+export function hasFigures(text) {
+  return typeof text === 'string' && FIGURE_RE.test(text);
 }
 /** A refusal the founder should read; the message is shown as is, and nothing was written. */
 export class DeskError extends Error {}
@@ -121,12 +147,16 @@ export function appendAction(path, fields, now = new Date()) {
   return entry;
 }
 
-/** The log with undone entries taken out: last effective action per queue and item. */
+// Lines that record what happened around an item, not a decision on it: they never count as its last action
+// (Fable re-check F: an old PDF link must not bring a sent-back item back).
+const NOT_DECISIONS = new Set(['opened_original', 'round_ingested', 'tick_publisher']);
+
+/** The log with undone entries taken out: last effective decision per queue and item. */
 export function actionState(entries) {
   const undone = new Set(entries.filter((e) => e.action === 'undo' && e.undoes).map((e) => e.undoes));
   const effective = entries.filter((e) => e.action !== 'undo' && !undone.has(e.id));
   const last = new Map();
-  for (const e of effective) last.set(`${e.queue}|${e.item}`, e);
+  for (const e of effective) if (!NOT_DECISIONS.has(e.action)) last.set(`${e.queue}|${e.item}`, e);
   return { undone, effective, last };
 }
 
@@ -245,33 +275,32 @@ export function workspaceOf(db, claimId) {
   return { claim: claim && { ...claim }, verdict: verdict && { ...verdict }, evidence, jury };
 }
 
-/** The verdict part of a workspace state without row ids, to compare two states. */
+/** The verdict and its evidence without row ids, to compare two states. Votes are not part of it: they only grow. */
 function verdictKey(state) {
   const strip = (r, ...keys) => (r ? Object.fromEntries(Object.entries(r).filter(([k]) => !keys.includes(k))) : null);
   return JSON.stringify({
     verdict: strip(state.verdict, 'id'),
     evidence: state.evidence.map((e) => strip(e, 'id', 'verdict_id')),
-    jury: state.jury.map((j) => strip(j, 'id')),
   });
 }
 
-function restoreVerdictState(db, claimId, state) {
+/** Puts a claim's verdict and evidence back as they were in `state`. Never touches jury_votes (decision 9). */
+function restoreVerdict(db, claimId, state) {
   db.prepare('DELETE FROM verdicts WHERE claim_id = ?').run(claimId);
-  db.prepare('DELETE FROM jury_votes WHERE claim_id = ?').run(claimId);
   if (state.verdict) {
     const v = state.verdict;
     const verdictId = Number(db.prepare(
-      `INSERT INTO verdicts (claim_id, verdict, summary_fr, summary_en, open_question_fr, open_question_en, decided_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
-    ).run(claimId, v.verdict, v.summary_fr, v.summary_en, v.open_question_fr, v.open_question_en, v.decided_by).lastInsertRowid);
+      `INSERT INTO verdicts (claim_id, verdict, summary_fr, summary_en, open_question_fr, open_question_en, based_on_round, decided_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(claimId, v.verdict, v.summary_fr, v.summary_en, v.open_question_fr, v.open_question_en, v.based_on_round ?? null, v.decided_by).lastInsertRowid);
     const add = db.prepare('INSERT INTO verdict_evidence (verdict_id, source_id, excerpt, excerpt_fr, excerpt_en, locator) VALUES (?, ?, ?, ?, ?, ?)');
     for (const e of state.evidence) add.run(verdictId, e.source_id, e.excerpt, e.excerpt_fr, e.excerpt_en, e.locator);
   }
-  const vote = db.prepare(
-    `INSERT INTO jury_votes (claim_id, round, provider, model, prompt_version, verdict, reasoning, open_question, evidence_json)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  );
-  for (const j of state.jury) vote.run(claimId, j.round, j.provider, j.model, j.prompt_version, j.verdict, j.reasoning, j.open_question, j.evidence_json);
+}
+
+/** Identifies a claim in the log together with its id, which a deleted, never-published claim can hand on. */
+export function claimQuoteSha(claim) {
+  return sha256Of(Buffer.from(`${claim.source_id}\n${claim.quote_original}`, 'utf8'));
 }
 
 /** The pack excerpts a vote cites, as verdict_evidence rows: text and locator from the pack. */
@@ -349,7 +378,7 @@ function snapshotDiff(a, b) {
  */
 export function createDesk({
   db, logPath = DEFAULT_LOG_PATH, reviewPath = null, packDirs = [], evidenceDir = DEFAULT_EVIDENCE_DIR, textDir = DEFAULT_TEXT_DIR,
-  now = () => new Date(), confirmWindowMs = CONFIRM_WINDOW_MS, judgePromptPath = JUDGE_PROMPT_PATH,
+  now = () => new Date(), confirmWindowMs = CONFIRM_WINDOW_MS,
 }) {
   const opts = { evidenceDir, textDir };
   const undoStack = [];
@@ -359,9 +388,14 @@ export function createDesk({
   const pendingActive = () => (pending && now().getTime() - pending.startedAt <= confirmWindowMs + COMMIT_GRACE_MS ? pending : null);
   const unitsCache = new Map();
   const fileCache = new Map();
-  const promptVersion = loadPrompt(judgePromptPath).version;
 
-  const log = (fields) => appendAction(logPath, fields, now());
+  const log = (fields) => {
+    if (fields.claim_id !== null && fields.claim_id !== undefined && !fields.quote_sha256) {
+      const c = db.prepare('SELECT source_id, quote_original FROM claims WHERE id = ?').get(fields.claim_id);
+      if (c) fields = { ...fields, quote_sha256: claimQuoteSha(c) };
+    }
+    return appendAction(logPath, fields, now());
+  };
   const sourceRow = (id) => db.prepare('SELECT * FROM sources WHERE id = ?').get(id) ?? null;
   const sourceLang = (id) => sourceRow(id)?.lang ?? null;
   function unitsOf(source) {
@@ -508,37 +542,119 @@ export function createDesk({
   }
 
   // ------------------------------------------------ queue B
+  //
+  // Coordinator decision 9 (design/review-desk.md), on record format 10, as amended by the step-back of
+  // 2026-11-23: the desk never infers a round from the files on disk. The jury step closes a round
+  // explicitly (src/jury.js closeRound, <name>.rounds.jsonl); the desk reads only the newest closed round
+  // of each pack and the vote files it lists, and ignores any other vote file. The first time the desk
+  // sees a closed round whose files are intact it writes its valid votes to jury_votes once, under the
+  // claim's next round number, each row carrying the pack's sha256; the `round_ingested` log line keeps
+  // which closed round that was (`round_id`). Every verdict records its round in
+  // verdicts.based_on_round; a verdict from an older round is stale and the item comes back to queue B,
+  // published or not. A closed round whose pack or vote files changed afterwards is shown with a stop.
+  //
+  // Vague and hedged claims (decision 0012 A5) skip pack and jury: their only verdict is
+  // "unverifiable"; the founder writes the summary and confirms directly.
 
+  // Pack index: path -> { key, value }. A pack is read and checked again only when one of its files
+  // (pack, votes, judge input), the judge prompt or the sources table changed.
+  const packIndex = new Map();
+  function statKey(path) {
+    try {
+      const st = statSync(path);
+      return `${st.size}:${st.mtimeMs}`;
+    } catch {
+      return 'missing';
+    }
+  }
   function packFiles() {
     const out = [];
     for (const dir of packDirs) {
       if (!existsSync(dir)) continue;
-      for (const f of readdirSync(dir).sort()) if (f.endsWith('.pack.json')) out.push(join(dir, f));
+      for (const f of readdirSync(dir).sort()) {
+        if (!f.endsWith('.pack.json')) continue;
+        out.push({ path: join(dir, f), dir, stem: f.slice(0, -'.pack.json'.length) });
+      }
     }
     return out;
   }
+  // The newest closed round of a pack, read again only when its rounds file changed.
+  const roundsCache = new Map();
+  function newestClosed(packPath) {
+    const path = roundsFileName(packPath);
+    const key = statKey(path);
+    const hit = roundsCache.get(path);
+    if (hit?.key === key) return hit.value;
+    const value = readRounds(packPath).reduce((a, r) => (!a || r.round > a.round ? r : a), null);
+    roundsCache.set(path, { key, value });
+    return value;
+  }
+  function packEntry(f, globalKey) {
+    const closed = newestClosed(f.path);
+    const key = [
+      globalKey, statKey(f.path), statKey(join(f.dir, `${f.stem}.judge-input.md`)), closed?.id ?? 'no round',
+      ...(closed?.votes ?? []).map((v) => `${v.file}=${statKey(join(f.dir, v.file))}`),
+    ].join('|');
+    const hit = packIndex.get(f.path);
+    if (hit?.key === key) return hit.value;
+    let value;
+    try {
+      value = { ...loadPack(f, closed), key };
+    } catch (error) {
+      value = { path: f.path, error: error.message };
+    }
+    packIndex.set(f.path, { key, value });
+    return value;
+  }
 
-  function loadPack(path) {
+  /** A jury_votes row as the desk writes it from a vote. */
+  const voteRow = (vote) => ({
+    provider: vote.provider, model: vote.model, prompt_version: vote.promptVersion, verdict: vote.verdict, reasoning: vote.reasoning,
+    open_question: vote.open_question_en ?? vote.open_question_fr ?? null, evidence_json: JSON.stringify(vote.evidence ?? []),
+  });
+  /** What identifies a round's votes: the counted votes, in a fixed order. */
+  const roundSig = (rows) => JSON.stringify(rows.map((r) => [r.provider, r.model, r.prompt_version, r.verdict, r.reasoning, r.open_question, r.evidence_json]).map((x) => JSON.stringify(x)).sort());
+
+  /**
+   * A pack and the votes of its newest closed round (none without one). A vote file of the round that is
+   * missing, or whose sha256 differs from the round's, is not read as a vote: the round cannot be
+   * confirmed (`roundProblems`), and the item says so.
+   */
+  function loadPack({ path, dir, stem }, closed) {
     const bytes = readFileSync(path);
     const pack = JSON.parse(bytes.toString('utf8'));
     const packSha256 = sha256Of(bytes);
     const checked = checkPack(db, pack, opts);
-    const stem = basename(path).slice(0, -'.pack.json'.length);
-    const dir = dirname(path);
-    const voteNames = readdirSync(dir).filter((f) => f.startsWith(`${stem}.vote-`) && f.endsWith('.json')).sort();
-    const voteBytes = [];
-    const votes = voteNames.map((f, i) => {
-      const b = readFileSync(join(dir, f));
-      voteBytes.push(f, b.toString('base64'));
+    // The same context tallyPack uses: current prompt and system text, and the date from the judge input.
+    const ctx = voteContext(path, packSha256);
+    const roundProblems = [];
+    if (closed && closed.pack_sha256 !== packSha256) {
+      roundProblems.push(`the evidence pack changed after round ${closed.round} was closed, so its votes are about another version of it`);
+    }
+    const votes = (closed?.votes ?? []).map(({ file: f, sha256 }, i) => {
+      const at = join(dir, f);
+      if (!existsSync(at)) {
+        roundProblems.push(`vote file ${f} was removed after round ${closed.round} was closed`);
+        return { n: i + 1, file: f, vote: {}, valid: false, problems: ['this vote file was removed after the round was closed'] };
+      }
+      const b = readFileSync(at);
+      if (sha256Of(b) !== sha256) {
+        roundProblems.push(`vote file ${f} changed after round ${closed.round} was closed`);
+        return { n: i + 1, file: f, vote: {}, valid: false, problems: ['this vote file changed after the round was closed; the vote of the round is no longer on disk'] };
+      }
       let vote;
       try {
         vote = JSON.parse(b.toString('utf8'));
       } catch {
         return { n: i + 1, file: f, vote: {}, valid: false, problems: ['not valid JSON'] };
       }
-      const problems = checkVote(vote, pack, checked, { packSha256, promptVersion });
+      const problems = ctx.problem ? [ctx.problem] : checkVote(vote, pack, checked, ctx);
       if (`${stem}.vote-${vote?.provider}-${vote?.channel}.json` !== f) problems.push('file name does not match provider and channel');
-      return { n: i + 1, file: f, vote, valid: problems.length === 0, problems };
+      // Decision 0012 A2: a Claude subscription vote from the session that cut the pack is not independent.
+      const session = sameSessionProblem(pack, vote);
+      if (session) problems.push(session);
+      const unrecorded = vote?.provider === 'anthropic' && vote?.channel === 'subscription' && !sessionsRecorded(pack, vote);
+      return { n: i + 1, file: f, vote, valid: problems.length === 0, problems, sessionUnrecorded: unrecorded };
     });
     // One vote per model. Two files from the same provider and model (case and spaces aside) are not
     // independent votes, and file order must not pick one: neither is counted.
@@ -554,36 +670,129 @@ export function createDesk({
         v.problems = [...v.problems, `same provider and model as vote ${group.filter((x) => x !== v).map((x) => x.n).join(', ')}; neither is counted`];
       }
     }
-    return { path, pack, packSha256, checked, votes, votesSha256: sha256Of(Buffer.from(JSON.stringify(voteBytes))) };
+    const validSig = roundSig(votes.filter((v) => v.valid).map((v) => voteRow(v.vote)));
+    return { path, pack, packSha256, checked, votes, closed, roundProblems, validSig, mtime: statSync(path).mtimeMs };
   }
 
-  function claimOfPack(pack) {
-    if (Number.isInteger(pack.claim?.claim_id)) return db.prepare('SELECT id FROM claims WHERE id = ?').get(pack.claim.claim_id)?.id ?? null;
-    const rows = db.prepare('SELECT id FROM claims WHERE source_id = ? AND quote_original = ?').all(pack.claim?.origin?.source_id ?? -1, pack.claim?.quote_original ?? '');
-    return rows.length === 1 ? rows[0].id : null;
+  /** The rounds of a claim as recorded in jury_votes: round -> { pack_sha256, sig }. */
+  function roundsOf(claimId) {
+    const byRound = new Map();
+    for (const r of db.prepare('SELECT * FROM jury_votes WHERE claim_id = ? ORDER BY round, id').all(claimId)) {
+      byRound.set(r.round, [...(byRound.get(r.round) ?? []), r]);
+    }
+    return [...byRound.entries()].map(([round, rows]) => ({ round, pack_sha256: rows[0].pack_sha256, sig: roundSig(rows) }));
   }
 
   /**
-   * Records the valid votes in jury_votes. Rounds are appended, never deleted: if the latest round
-   * already holds exactly these votes nothing is written, otherwise they become round max + 1.
+   * Writes a closed round seen for the first time: its valid votes into jury_votes under the claim's next
+   * round number, with the pack's sha256 (never deleted), and a log line naming the closed round.
    */
-  function syncJury(claimId, votes) {
-    const rowOf = ({ vote }) => ({
-      provider: vote.provider, model: vote.model, prompt_version: vote.promptVersion, verdict: vote.verdict, reasoning: vote.reasoning,
-      open_question: vote.open_question_en ?? vote.open_question_fr ?? null, evidence_json: JSON.stringify(vote.evidence ?? []),
+  function ingestRound(claim, p, known) {
+    const round = Math.max(0, ...known.map((r) => r.round)) + 1;
+    return inTransaction(db, () => {
+      const add = db.prepare(
+        `INSERT INTO jury_votes (claim_id, round, provider, model, prompt_version, verdict, reasoning, open_question, evidence_json, pack_sha256)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      );
+      for (const { vote } of p.votes.filter((v) => v.valid)) {
+        const r = voteRow(vote);
+        add.run(claim.id, round, r.provider, r.model, r.prompt_version, r.verdict, r.reasoning, r.open_question, r.evidence_json, p.packSha256);
+      }
+      log({
+        by: 'program', queue: 'verdict', item: `c${claim.id}`, action: 'round_ingested', claim_id: claim.id, quote_sha256: claimQuoteSha(claim), round,
+        round_id: p.closed.id, closed_round: p.closed.round, pack_sha256: p.packSha256, pack_file: basename(p.path),
+        votes: p.votes.map((v) => ({ file: v.file, valid: v.valid })),
+      });
+      return round;
     });
-    const sig = (r) => JSON.stringify([r.provider, r.model, r.prompt_version, r.verdict, r.reasoning, r.open_question, r.evidence_json]);
-    const rows = db.prepare('SELECT * FROM jury_votes WHERE claim_id = ?').all(claimId);
-    const round = rows.reduce((m, r) => Math.max(m, r.round), 0);
-    const latest = rows.filter((r) => r.round === round).map(sig).sort();
-    const wanted = votes.map(rowOf);
-    if (wanted.length === 0) return;
-    if (round > 0 && JSON.stringify(latest) === JSON.stringify(wanted.map(sig).sort())) return;
-    const add = db.prepare(
-      `INSERT INTO jury_votes (claim_id, round, provider, model, prompt_version, verdict, reasoning, open_question, evidence_json)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    );
-    for (const r of wanted) add.run(claimId, round + 1, r.provider, r.model, r.prompt_version, r.verdict, r.reasoning, r.open_question, r.evidence_json);
+  }
+
+  const isDirect = (claim) => ['vague', 'hedged'].includes(claim.verifiability);
+
+  /** Closed round id -> the claim round it was written as, from the desk log's round_ingested lines. */
+  function ingestedRounds(entries) {
+    const out = new Map();
+    for (const e of entries) if (e.action === 'round_ingested' && typeof e.round_id === 'string') out.set(e.round_id, e.round);
+    return out;
+  }
+
+  /**
+   * Reads the pack index, links packs to claims, writes closed rounds not seen before, and returns per
+   * claim its pack with the newest closed round, the claim round that closed round was written as
+   * (null while there is none, or none of its votes counts), and the closed round's id. Loose vote files
+   * play no part. Vague and hedged claims are returned without a pack.
+   */
+  function scan(entries = readActions(logPath), world = worldKey()) {
+    const globalKey = `${world}|${statKey(JUDGE_PROMPT_PATH)}|${statKey(PRINCIPLES_PATH)}`;
+    const allClaims = db.prepare('SELECT id, source_id, quote_original, verifiability FROM claims').all();
+    const claimsByQuote = new Map();
+    for (const c of allClaims) {
+      const k = `${c.source_id}
+${c.quote_original}`;
+      claimsByQuote.set(k, [...(claimsByQuote.get(k) ?? []), c]);
+    }
+    const unlinked = [];
+    const byClaim = new Map();
+    for (const f of packFiles()) {
+      const p = packEntry(f, globalKey);
+      if (p.error) { unlinked.push({ path: f.path, why: `cannot read: ${p.error}` }); continue; }
+      let claim = null;
+      if (Number.isInteger(p.pack.claim?.claim_id)) claim = allClaims.find((c) => c.id === p.pack.claim.claim_id) ?? null;
+      else {
+        const found = claimsByQuote.get(`${p.pack.claim?.origin?.source_id}
+${p.pack.claim?.quote_original}`) ?? [];
+        if (found.length === 1) claim = found[0];
+      }
+      if (!claim) { unlinked.push({ path: f.path, why: 'no single workspace claim matches this pack' }); continue; }
+      if (isDirect(claim)) { unlinked.push({ path: f.path, why: `item #${claim.id} is vague or hedged: it is confirmed at the desk without pack or jury` }); continue; }
+      byClaim.set(claim.id, { claim, packs: [...(byClaim.get(claim.id)?.packs ?? []), p] });
+    }
+    const ingested = ingestedRounds(entries);
+    const out = new Map();
+    for (const [claimId, { claim, packs }] of byClaim) {
+      const closedPacks = packs.filter((x) => x.closed);
+      if (closedPacks.length === 0) {
+        // No closed round yet: the item is shown with its newest pack and no votes (its stops say why).
+        out.set(claimId, { claim, p: [...packs].sort((a, b) => b.mtime - a.mtime)[0], round: null, roundId: null });
+        continue;
+      }
+      // The newest closed round over the claim's packs (one pack per claim is the normal case).
+      const p = closedPacks.sort((a, b) => String(b.closed.closed_at).localeCompare(String(a.closed.closed_at)) || b.closed.round - a.closed.round)[0];
+      const known = roundsOf(claimId);
+      const top = known.reduce((a, r) => (r.round > (a?.round ?? 0) ? r : a), null);
+      const logged = ingested.get(p.closed.id);
+      let round = null;
+      if (logged !== undefined && known.some((r) => r.round === logged && r.pack_sha256 === p.closed.pack_sha256)) round = logged;
+      // Without the log line (log lost): the newest round in the database with the same pack and votes is this one.
+      else if (top && top.pack_sha256 === p.packSha256 && top.sig === p.validSig) round = top.round;
+      // Written once, and only while every file of the round is as it was closed and some vote counts.
+      else if (p.roundProblems.length === 0 && p.votes.some((v) => v.valid)) round = ingestRound(claim, p, known);
+      out.set(claimId, { claim, p, round, roundId: p.closed.id });
+    }
+    // Vague and hedged claims: every one is an item, pack or not.
+    for (const c of allClaims) if (isDirect(c)) out.set(c.id, { claim: c, p: null, round: null, roundId: null, direct: true });
+    return { byClaim: out, unlinked };
+  }
+
+  /** Writes vote n of a round into the workspace: verdict (decided_by jury, based on that round) and its evidence. */
+  function applyVote(p, claimId, n, round) {
+    const v = p.votes.find((x) => x.n === n);
+    if (!v?.valid) throw new DeskError(`vote ${n} does not pass the program's checks and cannot be adopted`);
+    const vote = v.vote;
+    const existing = db.prepare('SELECT id FROM verdicts WHERE claim_id = ?').get(claimId);
+    const fields = [vote.verdict, vote.summary_fr ?? null, vote.summary_en ?? null, vote.open_question_fr ?? null, vote.open_question_en ?? null, round];
+    let verdictId;
+    if (existing) {
+      db.prepare(`UPDATE verdicts SET verdict = ?, summary_fr = ?, summary_en = ?, open_question_fr = ?, open_question_en = ?, based_on_round = ?, decided_by = 'jury' WHERE id = ?`).run(...fields, existing.id);
+      verdictId = existing.id;
+      db.prepare('DELETE FROM verdict_evidence WHERE verdict_id = ?').run(verdictId);
+    } else {
+      verdictId = Number(db.prepare(
+        `INSERT INTO verdicts (claim_id, verdict, summary_fr, summary_en, open_question_fr, open_question_en, based_on_round, decided_by) VALUES (?, ?, ?, ?, ?, ?, ?, 'jury')`
+      ).run(claimId, ...fields).lastInsertRowid);
+    }
+    const add = db.prepare('INSERT INTO verdict_evidence (verdict_id, source_id, excerpt, excerpt_fr, excerpt_en, locator) VALUES (?, ?, ?, ?, ?, ?)');
+    for (const e of evidenceOfVote(vote, p.pack, sourceLang)) add.run(verdictId, e.source_id, e.excerpt, e.excerpt_fr, e.excerpt_en, e.locator);
   }
 
   /** The judges' rules (pack.js voteProblems) applied to a workspace verdict, whoever wrote it (principle 3). */
@@ -595,98 +804,197 @@ export function createDesk({
       open_question_en: v.open_question_en, reasoning: `decided by ${v.decided_by}`,
       evidence: state.evidence.map((e) => ({ source_id: e.source_id, excerpt: e.excerpt, locator: e.locator })),
     };
-    return voteProblems(asVote, claim, p.checked.docs, p.checked.texts, localDate(now()));
-  }
-
-  /** Writes vote n into the workspace: verdict (decided_by jury), its evidence, and the valid votes. */
-  function applyVote(p, claimId, n) {
-    const v = p.votes.find((x) => x.n === n);
-    if (!v?.valid) throw new DeskError(`vote ${n} does not pass the program's checks and cannot be adopted`);
-    const vote = v.vote;
-    syncJury(claimId, p.votes.filter((x) => x.valid));
-    const existing = db.prepare('SELECT id FROM verdicts WHERE claim_id = ?').get(claimId);
-    const fields = [vote.verdict, vote.summary_fr ?? null, vote.summary_en ?? null, vote.open_question_fr ?? null, vote.open_question_en ?? null];
-    let verdictId;
-    if (existing) {
-      db.prepare(`UPDATE verdicts SET verdict = ?, summary_fr = ?, summary_en = ?, open_question_fr = ?, open_question_en = ?, decided_by = 'jury' WHERE id = ?`).run(...fields, existing.id);
-      verdictId = existing.id;
-      db.prepare('DELETE FROM verdict_evidence WHERE verdict_id = ?').run(verdictId);
-    } else {
-      verdictId = Number(db.prepare(
-        `INSERT INTO verdicts (claim_id, verdict, summary_fr, summary_en, open_question_fr, open_question_en, decided_by) VALUES (?, ?, ?, ?, ?, ?, 'jury')`
-      ).run(claimId, ...fields).lastInsertRowid);
+    const problems = voteProblems(asVote, claim, p?.checked.docs ?? [], p?.checked.texts ?? new Map(), localDate(now()), { withinUnit: true });
+    // Text made only of characters that look blank (decision 9, item 6) counts as missing.
+    for (const f of ['summary_fr', 'summary_en', 'open_question_fr', 'open_question_en']) {
+      if (typeof v[f] === 'string' && !deskFilled(v[f])) problems.push(`${f} looks blank`);
     }
-    const add = db.prepare('INSERT INTO verdict_evidence (verdict_id, source_id, excerpt, excerpt_fr, excerpt_en, locator) VALUES (?, ?, ?, ?, ?, ?)');
-    for (const e of evidenceOfVote(vote, p.pack, sourceLang)) add.run(verdictId, e.source_id, e.excerpt, e.excerpt_fr, e.excerpt_en, e.locator);
+    return problems;
   }
 
-  /** One verdict item: the pack, the votes, the workspace, and what C would publish. */
-  function verdictView(p, claimId) {
-    const ws = workspaceOf(db, claimId);
+  /** The preview, publication checks and judges' rules for the workspace as it would be after `prepare`. */
+  function publishPreview(claimId, prepare) {
+    const today = localDate(now());
+    return preview(db, () => {
+      prepare?.();
+      const snap = db.prepare('SELECT snapshot FROM publishable WHERE claim_id = ?').get(claimId)?.snapshot ?? null;
+      return { blockers: publicationBlockers(db, claimId, { today }), snapshot: snap, state: workspaceOf(db, claimId) };
+    });
+  }
+
+  /**
+   * One verdict item: the newest round's pack and votes, the workspace, and what C would publish.
+   * This is the costly part (a preview in a rolled-back savepoint, the publication checks, the judges'
+   * rules); verdictView keeps it per claim until something it depends on changes.
+   */
+  function viewCore({ claim, p, round, direct }, ws) {
+    const claimId = claim.id;
+    const published = db.prepare('SELECT count(*) AS n FROM publications WHERE claim_id = ?').get(claimId).n;
+    const current = db.prepare("SELECT snapshot FROM current_publications WHERE claim_id = ? AND status = 'published'").get(claimId)?.snapshot ?? null;
+    const unconfirmed = hasUnconfirmedChanges(db, claimId);
+    if (direct) {
+      // Decision 0012 A5: no pack, no jury. The founder writes the summary; the verdict can only be "unverifiable".
+      const after = publishPreview(claimId);
+      const ruleProblems = verdictRuleProblems(null, ws.claim, after.state);
+      const stops = [];
+      if (!ws.verdict) stops.push('write the summary in French and English (E); a vague or hedged item is confirmed as “Unverifiable”, without pack or jury');
+      if (after.blockers.length > 0 && !after.blockers.includes('there is no such claim')) stops.push(...after.blockers);
+      if (ruleProblems.length > 0) stops.push(`the verdict breaks the rules every judge's vote must meet: ${ruleProblems.join('; ')}`);
+      if (current && after.snapshot === current) stops.push('nothing has changed since the last confirmation');
+      return {
+        id: `c${claimId}`, claimId, direct: true, p: null, round: null, stale: false, ws, after, valid: [], tally: new Map(), unanimous: false,
+        adopted: null, preselect: null, mismatch: [], stops, group: stops.length ? 2 : 0, published, unconfirmed, current, recheck: null,
+        changed: unconfirmed && current ? snapshotDiff(current, after.snapshot) : [], bilingual: bilingualGaps(after.state, sourceLang),
+      };
+    }
+    const stale = !!ws.verdict && ws.verdict.based_on_round !== round;
+    const currentVerdict = stale ? null : ws.verdict;
     const valid = p.votes.filter((v) => v.valid);
     const tally = new Map();
     for (const v of valid) tally.set(v.vote.verdict, (tally.get(v.vote.verdict) ?? 0) + 1);
-    const unanimous = valid.length >= 2 && tally.size === 1;
-    const adopted = ws.verdict ? valid.find((v) => voteMatchesVerdict(v.vote, ws.verdict))?.n ?? null : null;
-    const preselect = !ws.verdict && unanimous ? valid[0].n : null;
+    const unanimous = valid.length >= 2 && tally.size === 1 && round !== null;
+    const adopted = currentVerdict ? valid.find((v) => voteMatchesVerdict(v.vote, currentVerdict))?.n ?? null : null;
+    const preselect = !currentVerdict && unanimous ? valid[0].n : null;
     const mismatch = PACK_CLAIM_FIELDS.filter((f) => (p.pack.claim?.[f] ?? null) !== (ws.claim[f] ?? null));
-    const { last, effective } = actionState(readActions(logPath));
-    const published = db.prepare('SELECT count(*) AS n FROM publications WHERE claim_id = ?').get(claimId).n;
-
-    const after = preview(db, () => {
-      if (preselect) applyVote(p, claimId, preselect);
-      const snap = db.prepare('SELECT snapshot FROM publishable WHERE claim_id = ?').get(claimId)?.snapshot ?? null;
-      return { blockers: publicationBlockers(db, claimId), snapshot: snap, state: workspaceOf(db, claimId) };
-    });
-    const current = db.prepare("SELECT snapshot FROM current_publications WHERE claim_id = ? AND status = 'published'").get(claimId)?.snapshot ?? null;
-    const unconfirmed = hasUnconfirmedChanges(db, claimId);
+    const after = publishPreview(claimId, preselect ? () => applyVote(p, claimId, preselect, round) : null);
     const ruleProblems = verdictRuleProblems(p, ws.claim, after.state);
     const stops = [];
+    if (!p.closed) stops.push('no jury round has been closed for this pack yet: when the judges have voted, run node src/jury.js tally on the pack; until then no vote is shown');
+    if (p.roundProblems.length > 0) stops.push(`round ${p.closed.round} of the jury cannot be confirmed: ${p.roundProblems.join('; ')}. Run the jury again and close a new round (node src/jury.js tally)`);
     if (p.checked.problems.length > 0) stops.push('the evidence pack does not pass its checks; send it back (reason 1)');
     if (mismatch.length > 0) stops.push(`the pack's claim differs from the workspace claim (${mismatch.join(', ')}); the votes judged the pack's version`);
     if (valid.length < 2) stops.push(`only ${valid.length} vote(s) pass the program's checks; at least two different models must vote`);
-    if (!ws.verdict && !preselect && valid.length >= 2) stops.push(`the votes are split: adopt one with 1–${p.votes.length} (nothing is pre-selected on a split)`);
+    if (!currentVerdict && !preselect && valid.length >= 2) {
+      stops.push(stale
+        ? `new votes since your last decision: adopt one with 1–${p.votes.length}, or edit (nothing is pre-selected on a split)`
+        : `the votes are split: adopt one with 1–${p.votes.length} (nothing is pre-selected on a split)`);
+    }
     if (after.blockers.length > 0 && !after.blockers.includes('there is no such claim')) stops.push(...after.blockers);
     if (ruleProblems.length > 0) stops.push(`the verdict breaks the rules every judge's vote must meet: ${ruleProblems.join('; ')}`);
     if (current && after.snapshot === current) stops.push('nothing has changed since the last confirmation');
-    if (pendingActive() && pending.claimId !== claimId) stops.push('another confirmation is in its 5-second window; wait for it');
-    const origin = effective.filter((e) => e.claim_id === claimId && ACCEPTED.has(e.action)).at(-1)?.action ?? null;
-    const group = p.checked.problems.length > 0 || mismatch.length > 0 || valid.length < 2 || after.blockers.length > 0 || ruleProblems.length > 0 ? 2 : unanimous ? 0 : 1;
+    const group = !p.closed || p.roundProblems.length > 0 || p.checked.problems.length > 0 || mismatch.length > 0 || valid.length < 2 || after.blockers.length > 0 || ruleProblems.length > 0 ? 2 : unanimous ? 0 : 1;
     return {
-      id: `c${claimId}`, claimId, p, ws, after, valid, tally, unanimous, adopted, preselect, mismatch, stops, group,
-      canConfirm: stops.length === 0, published, unconfirmed,
+      id: `c${claimId}`, claimId, direct: false, p, round, verdictRound: ws.verdict?.based_on_round ?? null, stale, ws, after, valid, tally, unanimous,
+      adopted, preselect, mismatch, stops, group, published, unconfirmed, current,
+      recheck: stale ? (published > 0 ? 'Re-check of a published item: new votes since it was published' : 'New votes since your last decision') : null,
       changed: unconfirmed && current ? snapshotDiff(current, after.snapshot) : [],
-      entered: origin === 'auto_accept' ? 'auto' : origin ? 'candidate' : null,
-      lastAction: last.get(`verdict|c${claimId}`) ?? null,
       bilingual: bilingualGaps(after.state, sourceLang),
     };
   }
 
+  // Originals opened in an item view (decision 0012 A3): `${claimId}|${round}|${sourceId}`, this desk run only.
+  const opened = new Set();
+  // Page nonces: a link to an original carries the nonce of the page it is on, so only that page can mark it opened.
+  const viewNonces = new Map();
+  function newViewNonce(claimId, round) {
+    const nonce = randomBytes(16).toString('hex');
+    viewNonces.set(nonce, { claimId, round });
+    while (viewNonces.size > 200) viewNonces.delete(viewNonces.keys().next().value);
+    return nonce;
+  }
+  /** Called when an original is served for a link from an item page. */
+  function markOpened(nonce, sourceId) {
+    const v = viewNonces.get(nonce);
+    if (!v) return;
+    const key = `${v.claimId}|${v.round}|${sourceId}`;
+    if (opened.has(key)) return;
+    opened.add(key);
+    log({ queue: 'verdict', item: `c${v.claimId}`, action: 'opened_original', claim_id: v.claimId, round: v.round, source_id: sourceId });
+  }
+
+  /** PDF sources whose excerpts, as they would be published, contain figures (decision 0012 A3). */
+  function pdfsWithFigures(state) {
+    const ids = new Set();
+    for (const e of state.evidence) if (hasFigures(e.excerpt) && sourceRow(e.source_id)?.media_type === 'application/pdf') ids.add(e.source_id);
+    return [...ids];
+  }
+  /** `official` publishers used as evidence that the founder has not ticked yet (decision 0012 A4). */
+  function untickedOfficials(state, ticked) {
+    const out = new Map();
+    for (const e of state.evidence) {
+      const s = sourceRow(e.source_id);
+      if (s?.kind !== 'official') continue;
+      const key = publisherKey(s.publisher);
+      if (!ticked.has(key) && !out.has(key)) out.set(key, { key, publisher: s.publisher, sourceId: s.id });
+    }
+    return [...out.values()];
+  }
+
+  // claim id -> { key, value }. The key holds everything viewCore reads: the round and its files, the
+  // claim's workspace rows (verdict round included), its ledger rows, people and sources, and today's
+  // date (the deadline rules depend on it).
+  const viewCache = new Map();
+  function verdictView(entry, actions, world) {
+    const claimId = entry.claim.id;
+    const ws = workspaceOf(db, claimId);
+    const pubs = db.prepare('SELECT count(*) AS n, max(id) AS m FROM publications WHERE claim_id = ?').get(claimId);
+    const key = JSON.stringify([entry.p?.path ?? null, entry.p?.key ?? null, entry.round, ws, pubs.n, pubs.m, world, localDate(now())]);
+    let core = viewCache.get(claimId)?.key === key ? viewCache.get(claimId).value : null;
+    if (!core) {
+      core = viewCore(entry, ws);
+      viewCache.set(claimId, { key, value: core });
+    }
+    const stops = [...core.stops];
+    const figures = pdfsWithFigures(core.after.state);
+    const toOpen = figures.filter((id) => !opened.has(`${claimId}|${core.round}|${id}`));
+    if (toOpen.length > 0) stops.push(`the evidence quotes figures from a PDF: open the original first (O) — source ${toOpen.join(', source ')}; the transcription is checked by one model only`);
+    const officials = untickedOfficials(core.after.state, actions.ticked);
+    for (const o of officials) stops.push(`first use of the official publisher “${o.publisher}”: check that it is an official body and tick it (T)`);
+    if (pendingActive() && pending.claimId !== claimId) stops.push('another confirmation is in its 5-second window; wait for it');
+    const origin = actions.originOf.get(claimId) ?? null;
+    return {
+      ...core, roundId: entry.roundId ?? null, stops, canConfirm: stops.length === 0, figures, toOpen, officials,
+      entered: origin === 'auto_accept' ? 'auto' : origin ? 'candidate' : null,
+      lastAction: actions.last.get(`verdict|c${claimId}`) ?? null,
+    };
+  }
+  /**
+   * The people and sources tables, by content: a corrected name or title changes it (Fable re-check D),
+   * so no cached pack check or view outlives the rows it was built from.
+   */
+  function worldKey() {
+    const rows = [db.prepare('SELECT * FROM subjects ORDER BY id').all(), db.prepare('SELECT * FROM sources ORDER BY id').all()];
+    return sha256Of(Buffer.from(JSON.stringify(rows), 'utf8'));
+  }
+  /** The claim's workspace rows that a send-back waits on (votes aside: a new round changes the round id). */
+  function workspaceSha(claimId) {
+    const { claim, verdict, evidence } = workspaceOf(db, claimId);
+    return sha256Of(Buffer.from(JSON.stringify([claim, verdict, evidence]), 'utf8'));
+  }
+  function deskActions(entries = readActions(logPath)) {
+    const actions = actionState(entries);
+    actions.originOf = new Map();
+    actions.ticked = new Set();
+    for (const e of actions.effective) {
+      if (ACCEPTED.has(e.action) && e.claim_id !== null && e.claim_id !== undefined) actions.originOf.set(e.claim_id, e.action);
+      if (e.action === 'tick_publisher' && typeof e.publisher_key === 'string') actions.ticked.add(e.publisher_key);
+    }
+    return actions;
+  }
+
   function verdictQueue() {
+    const entries = readActions(logPath);
+    const world = worldKey();
+    const { byClaim, unlinked } = scan(entries, world);
+    const actions = deskActions(entries);
     const items = [];
-    const unlinked = [];
-    for (const path of packFiles()) {
-      let p;
-      try {
-        p = loadPack(path);
-      } catch (error) {
-        unlinked.push({ path, why: `cannot read: ${error.message}` });
-        continue;
-      }
-      const claimId = claimOfPack(p.pack);
-      if (!claimId) { unlinked.push({ path, why: 'no single workspace claim matches this pack' }); continue; }
-      if (pendingActive()?.claimId === claimId) continue;
+    for (const entry of byClaim.values()) {
+      if (pendingActive()?.claimId === entry.claim.id) continue;
+      const la = actions.last.get(`verdict|c${entry.claim.id}`);
+      // Sent back: away until something it was sent back for changes: the claim, its verdict or evidence
+      // (Fable re-check C: a fixed translation brings it back), or for a judged item the pack or the
+      // closed round. A stray vote file outside the closed round changes nothing.
+      if (la?.action === 'send_back' && la.ws_sha256 === workspaceSha(entry.claim.id)
+        && (entry.direct ? la.direct === true : la.pack_sha256 === entry.p.packSha256 && la.round_id === entry.roundId)) continue;
       let view;
       try {
-        view = verdictView(p, claimId);
+        view = verdictView(entry, actions, world);
       } catch (error) {
-        unlinked.push({ path, why: `cannot be shown: ${error.message}` });
+        unlinked.push({ path: entry.p?.path ?? `item #${entry.claim.id}`, why: `cannot be shown: ${error.message}` });
         continue;
       }
-      const la = view.lastAction;
-      if (la?.action === 'send_back' && la.pack_sha256 === p.packSha256 && la.votes_sha256 === p.votesSha256) continue;
-      const current = db.prepare("SELECT snapshot FROM current_publications WHERE claim_id = ? AND status = 'published'").get(claimId)?.snapshot ?? null;
-      if (current && view.after.snapshot === current) continue;
+      // Done: the verdict is from the newest round and the ledger already says exactly this.
+      if (!view.stale && view.current && view.after.snapshot === view.current) continue;
       items.push({ ...view, skippedAt: la?.action === 'skip' ? la.at : null });
     }
     items.sort((a, b) => (a.skippedAt ? 1 : 0) - (b.skippedAt ? 1 : 0) || (a.skippedAt ?? '').localeCompare(b.skippedAt ?? '')
@@ -700,42 +1008,58 @@ export function createDesk({
     return item;
   }
 
-  function verdictAction({ item, action, seconds, reason, note, vote, fields }) {
+  function verdictAction({ item, action, seconds, reason, note, vote, fields, round, source }) {
     seconds = cleanSeconds(seconds);
     const view = findVerdict(item);
     const { claimId, p } = view;
-    const base = { queue: 'verdict', item, claim_id: claimId, pack_sha256: p.packSha256, votes_sha256: p.votesSha256 };
+    // Adopt, edit and confirm act on the round the page showed; newer votes mean the page is out of date.
+    const shown = round === undefined || round === null || round === '' ? null : Number(round);
+    if (['adopt', 'edit', 'confirm'].includes(action) && shown !== view.round) {
+      throw new DeskError(`new votes arrived (round ${view.round}) since this page was shown (round ${shown ?? 'none'}); look again`);
+    }
+    const base = {
+      queue: 'verdict', item, claim_id: claimId, quote_sha256: claimQuoteSha(view.ws.claim), round: view.round,
+      pack_sha256: p?.packSha256 ?? null, round_id: view.roundId ?? null, ws_sha256: workspaceSha(claimId), ...(view.direct && { direct: true }),
+    };
     if (action === 'adopt') {
+      if (view.direct) throw new DeskError('a vague or hedged item has no votes');
       const n = Number(vote);
       return inTransaction(db, () => {
         const before = workspaceOf(db, claimId);
-        applyVote(p, claimId, n);
+        applyVote(p, claimId, n, view.round);
         const entry = log({ ...base, action: 'adopt_vote', note: `vote ${n}`, seconds, before, after: workspaceOf(db, claimId) });
         undoStack.push(entry);
-        return `Adopted vote ${n} for item #${claimId}. Z to undo`;
+        return `Adopted vote ${n} of round ${view.round} for item #${claimId}. Z to undo`;
       });
     }
     if (action === 'edit') {
       const next = {};
       for (const f of ['verdict', 'summary_fr', 'summary_en', 'open_question_fr', 'open_question_en']) {
         const v = fields?.[f];
-        next[f] = typeof v === 'string' && v.trim() !== '' ? v : null;
+        next[f] = deskFilled(v) ? v : null;
       }
+      if (view.direct) Object.assign(next, { verdict: 'unverifiable', open_question_fr: null, open_question_en: null });
       if (!VERDICTS.includes(next.verdict)) throw new DeskError('choose one of the six verdicts');
       return inTransaction(db, () => {
         const before = workspaceOf(db, claimId);
-        if (!before.verdict && view.preselect) applyVote(p, claimId, view.preselect);
+        // A verdict from an older round is not a base to edit from: start from the pre-selected vote, or from nothing.
+        if ((!before.verdict || view.stale) && view.preselect) applyVote(p, claimId, view.preselect, view.round);
         const cur = db.prepare('SELECT * FROM verdicts WHERE claim_id = ?').get(claimId);
-        const values = [next.verdict, next.summary_fr, next.summary_en, next.open_question_fr, next.open_question_en];
-        const edited = cur ? ['verdict', 'summary_fr', 'summary_en', 'open_question_fr', 'open_question_en'].filter((f) => (cur[f] ?? null) !== next[f]) : ['verdict'];
-        // decided_by: text-only edits keep the jury's; a changed verdict is the founder's (decision 6).
-        const decidedBy = !cur || cur.verdict !== next.verdict ? 'human' : cur.decided_by;
-        if (cur) db.prepare('UPDATE verdicts SET verdict = ?, summary_fr = ?, summary_en = ?, open_question_fr = ?, open_question_en = ?, decided_by = ? WHERE id = ?').run(...values, decidedBy, cur.id);
-        else db.prepare('INSERT INTO verdicts (claim_id, verdict, summary_fr, summary_en, open_question_fr, open_question_en, decided_by) VALUES (?, ?, ?, ?, ?, ?, ?)').run(claimId, ...values, decidedBy);
+        const baseRow = (view.stale && !view.preselect) || view.direct ? null : cur;
+        const values = [next.verdict, next.summary_fr, next.summary_en, next.open_question_fr, next.open_question_en, view.round];
+        const edited = baseRow ? ['verdict', 'summary_fr', 'summary_en', 'open_question_fr', 'open_question_en'].filter((f) => (baseRow[f] ?? null) !== next[f]) : ['verdict'];
+        // decided_by: text-only edits keep the jury's; a changed verdict, or one with no jury at all, is the founder's (decision 6).
+        const decidedBy = !baseRow || baseRow.verdict !== next.verdict ? 'human' : baseRow.decided_by;
+        if (cur) {
+          db.prepare('UPDATE verdicts SET verdict = ?, summary_fr = ?, summary_en = ?, open_question_fr = ?, open_question_en = ?, based_on_round = ?, decided_by = ? WHERE id = ?').run(...values, decidedBy, cur.id);
+          // A stale verdict's evidence belongs to the old round; a decision without a vote has none.
+          if (!baseRow) db.prepare('DELETE FROM verdict_evidence WHERE verdict_id = ?').run(cur.id);
+        } else {
+          db.prepare('INSERT INTO verdicts (claim_id, verdict, summary_fr, summary_en, open_question_fr, open_question_en, based_on_round, decided_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(claimId, ...values, decidedBy);
+        }
         // One ruler (principle 3): the founder's verdict meets the rules a judge's vote must meet.
         const problems = verdictRuleProblems(p, before.claim, workspaceOf(db, claimId));
         if (problems.length > 0) throw new DeskError(`not saved: a judge's vote with this verdict would be refused: ${problems.join('; ')}`);
-        syncJury(claimId, p.votes.filter((x) => x.valid));
         const entry = log({ ...base, action: 'edit_verdict', edited, seconds, before, after: workspaceOf(db, claimId) });
         undoStack.push(entry);
         return `Saved the verdict of item #${claimId} (decided by ${decidedBy}). Z to undo`;
@@ -746,6 +1070,26 @@ export function createDesk({
       const entry = log({ ...base, action: 'send_back', reason, note, seconds });
       undoStack.push(entry);
       return `Sent item #${claimId} back; it returns when its pack or votes change. Z to undo`;
+    }
+    if (action === 'wrong_kind') {
+      // Decision 0012 A4: one key sends the pack back because a source carries the wrong kind.
+      if (view.direct) throw new DeskError('a vague or hedged item has no evidence');
+      const id = Number(source);
+      if (!(p.pack.sources ?? []).some((s) => s.source_id === id)) throw new DeskError('choose one of the sources of this pack');
+      const row = sourceRow(id);
+      const entry = log({
+        ...base, action: 'send_back', reason: 1, seconds, wrong_kind_source: id,
+        note: `wrong kind: source ${id} ("${row?.title ?? ''}", ${row?.publisher ?? ''}) is labelled ${row?.kind ?? '?'}`,
+      });
+      undoStack.push(entry);
+      return `Sent item #${claimId} back: source ${id} has the wrong kind. Z to undo`;
+    }
+    if (action === 'tick_publisher') {
+      const next = view.officials[0];
+      if (!next) throw new DeskError('no official publisher here waits for a tick');
+      const entry = log({ ...base, action: 'tick_publisher', publisher_key: next.key, publisher: next.publisher, source_id: next.sourceId, seconds });
+      undoStack.push(entry);
+      return `Ticked “${next.publisher}” as an official body; it will not be asked again. Z to undo`;
     }
     if (action === 'reject_claim') {
       reason = checkReason(reason, note, { needsNote: [3, 4] });
@@ -760,8 +1104,8 @@ export function createDesk({
       if (!view.canConfirm) throw new DeskError(`cannot confirm: ${view.stops.join('; ')}`);
       if (pendingActive()) throw new DeskError('another confirmation is in its 5-second window; wait for it');
       pending = {
-        id: randomUUID(), claimId, item, adoptVote: view.preselect, snapshot: view.after.snapshot, seconds,
-        startedAt: now().getTime(), packSha256: p.packSha256, votesSha256: p.votesSha256, packPath: p.path,
+        id: randomUUID(), claimId, item, round: view.round, direct: view.direct, adoptVote: view.preselect, snapshot: view.after.snapshot, seconds,
+        startedAt: now().getTime(), packSha256: p?.packSha256 ?? null, roundId: view.roundId ?? null, quoteSha256: claimQuoteSha(view.ws.claim),
       };
       return `Item #${claimId} will be written to the ledger in ${Math.round(confirmWindowMs / 1000)} s. Z to cancel (nothing will be written)`;
     }
@@ -773,15 +1117,15 @@ export function createDesk({
     if (published > 0) throw new DeskError('Published items can only be withdrawn; withdrawal is not done at the desk');
     return inTransaction(db, () => {
       const removed = workspaceOf(db, claimId);
-      // The whole record goes to the log first; then the claim and everything hanging from it is deleted.
-      const entry = log({ ...fields, action: 'reject_claim', removed });
+      // Delete and log in one step: if either fails, neither is kept. The log keeps the whole item, rounds included.
       db.prepare('DELETE FROM claims WHERE id = ?').run(claimId);
+      const entry = log({ ...fields, action: 'reject_claim', removed });
       undoStack.push(entry);
       return `Rejected item #${claimId}: deleted from the workspace, saved in the desk log. Z puts it back`;
     });
   }
 
-  /** Writes the pending confirmation, if its window is over and nothing changed meanwhile. */
+  /** Writes the pending confirmation, if its window is over, the newest round is still the one shown, and nothing changed. */
   function commit(id) {
     if (!pending || pending.id !== id) throw new DeskError('there is no such pending confirmation; nothing was written');
     const p0 = pending;
@@ -789,16 +1133,24 @@ export function createDesk({
     if (elapsed < confirmWindowMs) throw new DeskError(`the ${Math.round(confirmWindowMs / 1000)}-second window is not over; nothing was written`);
     pending = null;
     if (elapsed > confirmWindowMs + COMMIT_GRACE_MS) throw new DeskError(`item #${p0.claimId}: the confirmation was abandoned (the page was closed, reloaded or asleep); nothing was written`);
+    // Always, not only for a pre-selected vote: newer votes since the page was shown stop the commit.
+    const entry = scan().byClaim.get(p0.claimId);
+    if (!entry || (!p0.direct && (entry.round !== p0.round || entry.roundId !== p0.roundId || entry.p.packSha256 !== p0.packSha256))) {
+      throw new DeskError(`item #${p0.claimId}: new votes arrived during the window (round ${entry?.round ?? '?'}, the page showed round ${p0.round}); nothing was written`);
+    }
+    if (!p0.direct && entry.p.roundProblems.length > 0) {
+      throw new DeskError(`item #${p0.claimId}: the files of the jury round changed during the window (${entry.p.roundProblems.join('; ')}); nothing was written`);
+    }
+    const today = localDate(now());
     const publicationId = inTransaction(db, () => {
-      if (p0.adoptVote) {
-        const p = loadPack(p0.packPath);
-        if (p.packSha256 !== p0.packSha256 || p.votesSha256 !== p0.votesSha256) throw new DeskError('the pack or its votes changed during the window; nothing was written');
-        applyVote(p, p0.claimId, p0.adoptVote);
-      }
+      if (p0.adoptVote) applyVote(entry.p, p0.claimId, p0.adoptVote, p0.round);
       const snap = db.prepare('SELECT snapshot FROM publishable WHERE claim_id = ?').get(p0.claimId)?.snapshot ?? null;
-      if (snap !== p0.snapshot) throw new DeskError('the claim changed during the window, so what would be published is not what you saw; nothing was written');
-      const pubId = confirm(db, p0.claimId, 'founder', { reviewSeconds: p0.seconds });
-      log({ queue: 'verdict', item: p0.item, action: 'confirm', claim_id: p0.claimId, publication_id: pubId, pack_sha256: p0.packSha256, votes_sha256: p0.votesSha256 });
+      if (snap !== p0.snapshot) throw new DeskError('the item changed during the window, so what would be published is not what you saw; nothing was written');
+      const pubId = confirm(db, p0.claimId, 'founder', { reviewSeconds: p0.seconds, today });
+      log({
+        queue: 'verdict', item: p0.item, action: 'confirm', claim_id: p0.claimId, quote_sha256: p0.quoteSha256, round: p0.round,
+        adopted_vote: p0.adoptVote, publication_id: pubId, pack_sha256: p0.packSha256, round_id: p0.roundId,
+      });
       return pubId;
     });
     undoStack.push({ action: 'confirm', claim_id: p0.claimId, publication_id: publicationId });
@@ -832,12 +1184,19 @@ export function createDesk({
         const r = top.removed;
         const { id: _id, ...claim } = r.claim;
         claimId = insertClaim(db, Object.fromEntries(CLAIM_COLUMNS.map((c) => [c, claim[c] ?? null])));
-        restoreVerdictState(db, claimId, r);
+        restoreVerdict(db, claimId, r);
+        // The item comes back with its own rounds, under the same numbers and pack hashes.
+        const vote = db.prepare(
+          `INSERT INTO jury_votes (claim_id, round, provider, model, prompt_version, verdict, reasoning, open_question, evidence_json, pack_sha256)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        );
+        for (const j of r.jury) vote.run(claimId, j.round, j.provider, j.model, j.prompt_version, j.verdict, j.reasoning, j.open_question, j.evidence_json, j.pack_sha256);
         item = `c${claimId}`;
         toastText = `Undone: the item is back in the workspace as #${claimId}.`;
       } else if (top.action === 'adopt_vote' || top.action === 'edit_verdict') {
+        // Only the verdict (with the round it was based on) and its evidence go back; votes and rounds are never removed.
         if (verdictKey(workspaceOf(db, top.claim_id)) !== verdictKey(top.after)) throw new DeskError(`the verdict of item #${top.claim_id} has changed since; edit it in the workspace`);
-        restoreVerdictState(db, top.claim_id, top.before);
+        restoreVerdict(db, top.claim_id, top.before);
         toastText = `Undone: the verdict of item #${top.claim_id} is as it was.`;
       } else {
         toastText = `Undone: ${top.action.replace('_', ' ')} of ${top.label ?? top.item}.`;
@@ -917,20 +1276,22 @@ export function createDesk({
     });
   }
 
-  function verdictPage(wanted) {
+  /** @param {{ nonce?: boolean }} [o] false for a page another site loaded: it cannot read the page, so it gets no link nonce (Fable re-check F) */
+  function verdictPage(wanted, { nonce = true } = {}) {
     const vq = verdictQueue();
     const q = candidateQueue();
     const chosen = vq.items.find((x) => x.id === wanted) ?? vq.items[0] ?? null;
     const subject = chosen ? db.prepare('SELECT * FROM subjects WHERE id = ?').get(chosen.ws.claim.subject_id) : null;
     const origin = chosen ? sourceRow(chosen.ws.claim.source_id) : null;
     const sources = new Map();
-    if (chosen) for (const s of [...(chosen.p.pack.sources ?? []), ...(chosen.p.pack.considered_not_used ?? [])]) {
+    if (chosen?.p) for (const s of [...(chosen.p.pack.sources ?? []), ...(chosen.p.pack.considered_not_used ?? [])]) {
       const row = sourceRow(s.source_id);
       if (row) sources.set(row.id, row);
     }
     return renderVerdictPage({
       today: today(), counts: { candidates: q.items.length, verdicts: vq.items.length }, toast: toast?.queue === 'verdict' ? toast.text : null, pending: pendingInfo(),
-      view: chosen, subject, origin, sources, originUnits: chosen && chosen.entered === 'auto' && origin ? unitsOf(origin) : null,
+      view: chosen, subject, origin, sources, originUnits: chosen && (chosen.entered === 'auto' || chosen.direct) && origin ? unitsOf(origin) : null,
+      viewNonce: chosen && nonce ? newViewNonce(chosen.claimId, chosen.round) : null,
       position: chosen ? { n: vq.items.indexOf(chosen) + 1, of: vq.items.length } : null, unlinked: vq.unlinked,
       onlySkipped: vq.items.length > 0 && vq.items.every((x) => x.skippedAt),
     });
@@ -942,6 +1303,7 @@ export function createDesk({
     setToast: (text, queue) => { toast = text ? { text, queue } : null; },
     pageLoaded,
     beginWrite,
+    markOpened,
     get pending() { return pending; },
     sourceRow,
   };
@@ -1082,7 +1444,9 @@ function handleGet(desk, url, res, evidenceDir, req) {
     desk.pageLoaded(typeof req.headers['x-desk-view'] === 'string' ? req.headers['x-desk-view'] : null);
   }
   if (path === '/' || path === '/candidates') return send(res, 200, 'text/html; charset=utf-8', desk.candidatePage(url.searchParams.get('item')));
-  if (path === '/verdicts') return send(res, 200, 'text/html; charset=utf-8', desk.verdictPage(url.searchParams.get('item')));
+  if (path === '/verdicts') {
+    return send(res, 200, 'text/html; charset=utf-8', desk.verdictPage(url.searchParams.get('item'), { nonce: req.headers['sec-fetch-site'] !== 'cross-site' }));
+  }
   if (Object.hasOwn(ASSETS, path)) {
     const [file, type] = ASSETS[path];
     return send(res, 200, type, readFileSync(file));
@@ -1090,6 +1454,8 @@ function handleGet(desk, url, res, evidenceDir, req) {
   const m = /^\/original\/(\d+)$/.exec(path);
   if (m) {
     const source = desk.sourceRow(Number(m[1]));
+    // A link from an item page carries that page's nonce: serving it counts as "opened in this item view" (decision 0012 A3).
+    const view = url.searchParams.get('view');
     if (!source) return send(res, 404, 'text/plain; charset=utf-8', 'No such source.');
     const file = evidencePath(evidenceDir, source.sha256);
     if (!existsSync(file)) return send(res, 404, 'text/plain; charset=utf-8', `The archived file of source ${source.id} is missing.`);
@@ -1102,7 +1468,10 @@ function handleGet(desk, url, res, evidenceDir, req) {
     if (pdf) res.setHeader('Content-Disposition', `attachment; filename="source-${source.id}.pdf"`);
     const type = pdf ? 'application/pdf' : ['text/html', 'application/xhtml+xml'].includes(source.media_type) ? 'text/html; charset=utf-8'
       : source.media_type === 'application/json' ? 'application/json' : 'text/plain; charset=utf-8';
-    return send(res, 200, type, bytes);
+    send(res, 200, type, bytes);
+    // Marked only once the file was served with its hash checked (Fable re-check E).
+    if (view && req.headers['sec-fetch-site'] !== 'cross-site') desk.markOpened(view, source.id);
+    return undefined;
   }
   return send(res, 404, 'text/plain; charset=utf-8', 'Not found.');
 }
@@ -1113,7 +1482,7 @@ function handlePost(desk, path, body, res) {
   if (path === '/api/action') {
     const queue = body.queue === 'verdict' ? 'verdict' : body.queue === 'candidate' ? 'candidate' : null;
     if (!queue) throw new DeskError('unknown queue');
-    const args = { item: String(body.item ?? ''), action: String(body.action ?? ''), seconds: body.seconds ?? null, reason: body.reason, note: typeof body.note === 'string' ? body.note : null, fields: body.fields && typeof body.fields === 'object' ? body.fields : null, vote: body.vote };
+    const args = { item: String(body.item ?? ''), action: String(body.action ?? ''), seconds: body.seconds ?? null, reason: body.reason, note: typeof body.note === 'string' ? body.note : null, fields: body.fields && typeof body.fields === 'object' ? body.fields : null, vote: body.vote, round: body.round, source: body.source };
     const text = queue === 'candidate' ? desk.candidateAction(args) : desk.verdictAction(args);
     // After C the page that pressed it shows its own countdown; a stored toast would go stale.
     desk.setToast(args.action === 'confirm' ? null : text, queue);
@@ -1206,6 +1575,13 @@ async function main(argv) {
   const packDirs = values.packs?.map((d) => resolve(d))
     ?? (existsSync(DEFAULT_CANDIDATES_DIR) ? readdirSync(DEFAULT_CANDIDATES_DIR).filter((f) => /^packs-/.test(f)).map((f) => join(DEFAULT_CANDIDATES_DIR, f)) : []);
   const desk = createDesk({ db, reviewPath, packDirs, logPath });
+  // Read and check every pack once before the address is printed, so the first page is as fast as the rest
+  // (about 12 s for 500 packs on this machine; afterwards only changed files are read again).
+  console.log('Reading the evidence packs and votes…');
+  const started = Date.now();
+  const { items } = desk.verdictQueue();
+  desk.candidateQueue();
+  console.log(`${items.length} verdict(s) waiting; ready in ${((Date.now() - started) / 1000).toFixed(1)} s.`);
   const port = values.port === undefined ? DEFAULT_PORT : Number(values.port);
   const { url } = await startDeskServer(desk, { port });
   console.log('KANVERIFY review desk, on this machine only. Open this address (the part after # is a one-time token; it is never sent to the server in the URL; do not share it):');

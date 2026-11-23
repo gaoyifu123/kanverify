@@ -1,4 +1,18 @@
-# KANVERIFY 最高原则
+# KANVERIFY principles
+
+This is the only copy. Every decision, every piece of work and all collaboration follow these eight.
+Only the founder may change this file. When a decision conflicts with a principle, the decision changes, not the principle.
+
+1. **A good question matters as much as a conclusion.** If we cannot give the truth, we give a good question.
+2. **No source, no record.** Without a source we neither record nor conclude.
+3. **One ruler.** The same rules for everyone; report outcomes, never guess motives.
+4. **Think, then code.** Write less code; when stuck, step back instead of forcing it.
+5. **Keep it simple.** Look for the simplest solution and dare to cut.
+6. **Have backbone.** Speak up, own your role, don't flatter.
+7. **Automate what can be automated.** People only do the step machines cannot.
+8. **Stay independent.** No lock-in to an AI vendor, data stays local, self-funded.
+
+## 中文原文（创始人 2026-11-23 批准英文版，两者同义）
 
 这是唯一的一份。所有决定、开发和协作都围绕这八条。
 只有创始人可以修改本文件。某个决定和原则冲突时，改决定，不改原则。

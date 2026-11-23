@@ -11,7 +11,11 @@
 //    Stages, each reading files beside the pack <name>.pack.json:
 //      judge-input  pack -> <name>.judge-input.md, the exact text every judge gets
 //      vote         codex (and Gemini if its key is set) -> <name>.vote-<provider>-<channel>.json
-//      tally        every vote file -> checks, comparison -> <name>.result.json and a report
+//      tally        every vote file -> checks, comparison -> <name>.result.json and a report; then
+//                   closes a jury round: appends one line to <name>.rounds.jsonl (pack sha256, the
+//                   vote files and their sha256, time, round number) once the subscription judges
+//                   have voted on this pack. The review desk reads votes only through closed
+//                   rounds (step-back 2026-11-23): only this step knows when a set of votes is complete.
 //    The Anthropic API judge is still there but off unless --anthropic-api-model is given.
 //
 // 2. The earlier dry run (search, archive, judge, report on a run file), which sends whole
@@ -28,7 +32,7 @@
 //   judge    archived documents -> one vote per jury model, each checked by the program
 //   report   run file -> a Markdown review section per claim
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
@@ -653,6 +657,97 @@ export function tallyPack(db, packPath, { checkOptions = {} } = {}) {
   return result;
 }
 
+// ---------------------------------------------------------------- closed rounds
+//
+// Why a file and not a table (principle 5): the round is closed by this step, which does not write
+// to the database (only the desk and the ledger do); the vote files it lists are files too. The desk
+// turns a closed round into jury_votes rows, once.
+
+export const ROUND_KIND = 'kanverify-jury-round';
+const HEX64 = /^[0-9a-f]{64}$/;
+
+/** <dir>/<name>.pack.json -> <dir>/<name>.rounds.jsonl, append-only, one closed round a line. */
+export function roundsFileName(packPath) {
+  return `${packStem(packPath)}.rounds.jsonl`;
+}
+
+/**
+ * The closed rounds of a pack, in file order, each with `id`: the sha256 of its line. A line that is
+ * not a well-formed round (an interrupted write) is skipped. Vote files must be plain names of this
+ * pack's vote files, so a round file can never point the desk at another file.
+ */
+export function readRounds(packPath) {
+  const path = roundsFileName(packPath);
+  if (!existsSync(path)) return [];
+  const stem = basename(packStem(packPath));
+  const out = [];
+  for (const raw of readFileSync(path, 'utf8').split('\n')) {
+    const line = raw.trim();
+    if (!line) continue;
+    let r;
+    try {
+      r = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    const filesOk = Array.isArray(r?.votes) && r.votes.length > 0 && r.votes.every((v) => typeof v?.file === 'string'
+      && v.file === basename(v.file) && v.file.startsWith(`${stem}.vote-`) && v.file.endsWith('.json') && HEX64.test(v.sha256 ?? ''));
+    if (r?.kind !== ROUND_KIND || !Number.isInteger(r.round) || !HEX64.test(r.pack_sha256 ?? '') || !filesOk) continue;
+    out.push({ ...r, id: sha256Of(Buffer.from(line, 'utf8')) });
+  }
+  return out;
+}
+
+/**
+ * Closes a jury round for a pack: appends { round, pack_sha256, votes: [{file, sha256}], closed_at }
+ * to <name>.rounds.jsonl. Only the vote files about this version of the pack are in it. Nothing is
+ * written while the judge input is stale or a subscription judge (Codex, Claude) has not voted on
+ * this pack yet; a vote arriving later (Gemini) goes into the next round. Closing again with the
+ * same files changes nothing. A round is never rewritten or renumbered.
+ * @returns {{ closed: object|null, already?: boolean, problem?: string, leftOut: string[] }}
+ */
+export function closeRound(packPath, { now = () => new Date() } = {}) {
+  const bytes = readFileSync(packPath);
+  const packSha256 = sha256Of(bytes);
+  const pack = JSON.parse(bytes.toString('utf8'));
+  const ctx = voteContext(packPath, packSha256);
+  const stem = basename(packStem(packPath));
+  const dir = dirname(packPath);
+  const votes = [];
+  const leftOut = [];
+  for (const f of readdirSync(dir).filter((n) => n.startsWith(`${stem}.vote-`) && n.endsWith('.json')).sort()) {
+    const b = readFileSync(join(dir, f));
+    let vote = null;
+    try {
+      vote = JSON.parse(b.toString('utf8'));
+    } catch {
+      // not a vote; left out
+    }
+    if (vote?.pack_sha256 !== packSha256) { leftOut.push(f); continue; }
+    votes.push({ file: f, sha256: sha256Of(b) });
+  }
+  if (ctx.problem) return { closed: null, problem: `round not closed: ${ctx.problem}`, leftOut };
+  const missing = PACK_JURY.filter((m) => m.channel === 'subscription' && !votes.some((v) => v.file === `${stem}.vote-${m.provider}-${m.channel}.json`));
+  if (missing.length > 0) {
+    return { closed: null, problem: `round not closed: no vote on this pack yet from ${missing.map((m) => `${m.provider} (${m.channel})`).join(', ')}`, leftOut };
+  }
+  const rounds = readRounds(packPath);
+  const last = rounds.at(-1);
+  if (last && last.pack_sha256 === packSha256 && JSON.stringify(last.votes.map((v) => [v.file, v.sha256])) === JSON.stringify(votes.map((v) => [v.file, v.sha256]))) {
+    return { closed: last, already: true, leftOut };
+  }
+  const record = {
+    kind: ROUND_KIND, format: 1, round: Math.max(0, ...rounds.map((r) => r.round)) + 1, claim: pack.claim?.key ?? null,
+    pack_file: basename(packPath), pack_sha256: packSha256, votes, closed_at: now().toISOString(),
+  };
+  const path = roundsFileName(packPath);
+  const line = JSON.stringify(record);
+  // A line cut short by an earlier crash must not swallow this one.
+  const lead = existsSync(path) && statSync(path).size > 0 && !readFileSync(path, 'utf8').endsWith('\n') ? '\n' : '';
+  appendFileSync(path, `${lead}${line}\n`);
+  return { closed: { ...record, id: sha256Of(Buffer.from(line, 'utf8')) }, leftOut };
+}
+
 const CHANNEL_ZH = { subscription: '订阅', api: 'API' };
 
 /** Markdown review section for one tallied pack. */
@@ -809,6 +904,10 @@ async function main(argv) {
       } else {
         const result = tallyPack(db, file);
         process.stdout.write(renderTally(result, JSON.parse(readFileSync(file, 'utf8'))));
+        const r = closeRound(file);
+        if (r.problem) console.log(r.problem);
+        else console.log(`${r.already ? 'Round already closed with these votes' : 'Closed jury round'} ${r.closed.round}: ${r.closed.votes.map((v) => v.file).join(', ')} -> ${basename(roundsFileName(file))}`);
+        if (r.leftOut.length > 0) console.log(`Left out (not about this version of the pack): ${r.leftOut.join(', ')}`);
       }
     } finally {
       db.close();

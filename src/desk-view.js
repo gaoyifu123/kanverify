@@ -101,7 +101,7 @@ function header({ today: t, counts, current }) {
 </div></header>`;
 }
 
-function page({ title, queue, item, pending, body, toast, today: t, counts }) {
+function page({ title, queue, item, round = null, pending, body, toast, today: t, counts }) {
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -113,7 +113,7 @@ function page({ title, queue, item, pending, body, toast, today: t, counts }) {
 <link rel="stylesheet" href="/assets/desk.css">
 <script src="/assets/desk-client.js" defer></script>
 </head>
-<body data-queue="${esc(queue)}" data-item="${esc(item ?? '')}">
+<body data-queue="${esc(queue)}" data-item="${esc(item ?? '')}"${round === null ? '' : ` data-round="${esc(round)}"`}>
 ${header({ today: t, counts, current: queue })}
 <main class="screen desk">
 <div id="toasts">${pendingNotice(pending)}${toast ? `<p class="toast" role="status">${esc(toast)}</p>` : ''}<p class="toast error" role="alert" id="error" hidden></p></div>
@@ -136,14 +136,14 @@ function pendingNotice(pending) {
 function help(queue) {
   const rows = queue === 'candidate'
     ? [['A', 'accept'], ['F', 'apply the proposed fixes and accept'], ['E', 'edit, then accept (Tab between fields, Ctrl+Enter saves, Esc cancels)'], ['R', 'reject (1–4 picks the reason, Enter confirms)'], ['S', 'skip'], ['Z', 'undo the last step (press again to go further back)'], ['O', 'open the archived original'], ['Space', 'scroll the archived text'], ['Q', 'go to the verdict queue'], ['?', 'this list']]
-    : [['C', 'confirm and publish (5 seconds to cancel with Z)'], ['1–3', 'adopt vote n'], ['E', 'edit the summary (and verdict)'], ['B', 'send back (1–4, a sentence, Enter)'], ['X', 'reject the item (never-published items only)'], ['S', 'skip'], ['Z', 'undo / cancel a pending confirmation'], ['U', 'show or hide "considered, not used"'], ['P', 'show or hide the source passage'], ['Q', 'go to the candidate queue'], ['?', 'this list']];
+    : [['C', 'confirm and publish (5 seconds to cancel with Z)'], ['1–3', 'adopt vote n'], ['E', 'edit the summary (and verdict)'], ['B', 'send back (1–4, a sentence, Enter)'], ['K', 'send back: a source has the wrong kind'], ['T', 'tick an official publisher on its first use'], ['O', 'open the original PDF (required when the evidence quotes figures from one)'], ['X', 'reject the item (never-published items only)'], ['S', 'skip'], ['Z', 'undo / cancel a pending confirmation'], ['U', 'show or hide "considered, not used"'], ['P', 'show or hide the source passage'], ['Q', 'go to the candidate queue'], ['?', 'this list']];
   return `<div class="panel dialog" id="help-panel" role="dialog" aria-label="Keyboard shortcuts" hidden><h2>Keyboard shortcuts</h2><dl class="meta">${rows.map(([k, t]) => `<div><dt>${kbd(k)}</dt><dd>${esc(t)}</dd></div>`).join('')}</dl><p class="muted">Keys work when the cursor is not in a text field. Esc closes.</p></div>`;
 }
 
 function reasonsPanel({ id, action, title, reasons, preset = null, noteLabel, noteValue = '', extra = '' }) {
   return `<form class="panel reasons dialog" id="${esc(id)}" data-action="${esc(action)}" role="dialog" aria-label="${esc(title)}" hidden>
 <h2>${esc(title)}</h2>
-<ol>${reasons.map((r, i) => `<li><label><input type="radio" name="reason" value="${i + 1}"${preset === i + 1 ? ' checked' : ''}> ${r}</label></li>`).join('')}</ol>
+<ol>${reasons.map((r, i) => `<li><label><input type="radio" name="reason" value="${i + 1}" data-n="${i + 1}"${preset === i + 1 ? ' checked' : ''}> ${r}</label></li>`).join('')}</ol>
 <label class="label" for="${esc(id)}-note">${esc(noteLabel)}</label>
 <input id="${esc(id)}-note" name="note" type="text" value="${esc(noteValue)}" autocomplete="off">
 <p class="form-error" role="alert" hidden></p>
@@ -334,7 +334,8 @@ function agreementLine(v) {
 function voteColumn(x, v, excerptIndex) {
   const vote = x.vote;
   const isAdopted = v.adopted === x.n;
-  const isPre = !v.ws.verdict && v.preselect === x.n;
+  // A verdict from an older round does not count: the newest round's vote is what is pre-selected.
+  const isPre = (!v.ws.verdict || v.stale) && v.preselect === x.n;
   const cites = (vote.evidence ?? []).map((e) => {
     const i = excerptIndex(e);
     return i ? `<a href="#x${i}">[${i}]</a>` : `<span class="muted">source ${esc(e?.source_id)}</span>`;
@@ -342,6 +343,7 @@ function voteColumn(x, v, excerptIndex) {
   return `<article class="judge${isAdopted || isPre ? ' adopted' : ''}" aria-label="Juror ${x.n}${isAdopted ? ', adopted' : isPre ? ', pre-selected' : ''}">
 <p><b>${x.n}</b> · <span class="mono">${esc(vote.model ?? '?')}</span> <span class="muted">${esc(label('channel', vote.channel))}</span></p>
 ${x.valid ? '' : `<p class="ok-line">This vote failed the program's check: ${esc(x.problems.join('; '))}. It does not count towards agreement.</p>`}
+${x.sessionUnrecorded ? '<p class="muted">The pack or this Claude vote does not name its session (made_by.session), so the program cannot check that the judge was a fresh session.</p>' : ''}
 <p>${verdictChip(vote.verdict)}</p>
 <p class="muted">Cites ${cites || 'nothing'}${isAdopted ? ' · adopted' : isPre ? ' · pre-selected' : ''}</p>
 ${vote.summary_fr ? `<p lang="fr">${esc(vote.summary_fr)}</p>` : ''}
@@ -352,7 +354,8 @@ ${vote.open_question_fr || vote.open_question_en ? `<p>What is missing: <span la
 }
 
 function verdictEditForm(v) {
-  const cur = v.ws.verdict ?? (v.preselect ? v.p.votes.find((x) => x.n === v.preselect).vote : null) ?? {};
+  const fromVote = v.preselect ? v.p.votes.find((x) => x.n === v.preselect).vote : null;
+  const cur = (v.stale ? fromVote : v.ws.verdict ?? fromVote) ?? {};
   const area = (name, labelText, lang) => `<div><label class="label" for="v-${name}">${esc(labelText)}</label><textarea id="v-${name}" name="${name}" rows="3" lang="${esc(lang)}">${esc(cur[name] ?? '')}</textarea></div>`;
   return `<form class="panel edit dialog" id="edit-panel" data-action="edit" role="dialog" aria-label="Edit summary" hidden>
 <h2>Edit the summary of item #${v.claimId}</h2>
@@ -374,6 +377,7 @@ export function renderVerdictPage(d) {
     const body = `<div class="panel"><p>No verdicts waiting. Today: ${d.today.confirmed} confirmed, ${d.today.sentBack} sent back.</p><p class="muted">${d.counts.candidates} flagged candidates left: press ${kbd('Q')} to switch.</p></div>${unlinked}${actionsBar([button({ key: 'Q', text: 'Candidates', href: '/candidates' }), button({ key: 'Z', text: 'Undo', undo: true, spacer: true })])}`;
     return page({ ...d, title: 'Verdicts', queue: 'verdict', body });
   }
+  if (v.direct) return renderDirectPage(d, unlinked);
   const c = v.ws.claim;
   const pack = v.p.pack;
   const excerpts = pack.excerpts ?? [];
@@ -386,7 +390,7 @@ export function renderVerdictPage(d) {
   const entered = v.entered === 'auto' ? 'auto-accepted' : v.entered === 'candidate' ? 'accepted from the candidate queue' : 'entered outside the desk';
   const status = v.published === 0 ? 'first publication' : v.unconfirmed ? '<b>unconfirmed changes</b>' : 'published';
   const after = v.after.state;
-  const chosen = v.adopted ? `vote ${v.adopted} adopted` : !v.ws.verdict && v.preselect ? `vote ${v.preselect} pre-selected` : v.ws.verdict ? `edited at the desk (decided by ${v.ws.verdict.decided_by})` : 'no vote chosen';
+  const chosen = v.adopted ? `vote ${v.adopted} adopted` : (!v.ws.verdict || v.stale) && v.preselect ? `vote ${v.preselect} pre-selected` : v.stale ? `your decision on round ${v.verdictRound ?? '?'} (older votes)` : v.ws.verdict ? `edited at the desk (decided by ${v.ws.verdict.decided_by})` : 'no vote chosen';
   const stops = v.stops.map((s) => {
     if (!/missing its French or English version/.test(s)) return `<li>${esc(blockerText(s))}</li>`;
     return `<li>${esc(blockerText(s))}${v.bilingual.length ? `:<ul>${v.bilingual.map((g) => `<li>${esc(g)}</li>`).join('')}</ul>` : ''}</li>`;
@@ -398,16 +402,22 @@ export function renderVerdictPage(d) {
     const i = excerptIndex(e);
     return i ? `[${i}]` : `(${esc(e.locator)})`;
   }).join(' ');
-  let prevSource = null;
+  const unticked = new Set((v.officials ?? []).map((o) => o.sourceId));
+  const pdfLink = (s) => {
+    if (s?.media_type !== 'application/pdf') return '';
+    const needed = (v.toOpen ?? []).includes(s.id);
+    const done = (v.figures ?? []).includes(s.id) && !needed;
+    return ` · <a class="open-pdf" data-needed="${needed ? 1 : 0}" href="/original/${esc(s.id)}?view=${esc(d.viewNonce ?? '')}" target="_blank" rel="noopener noreferrer">open the original PDF${needed ? ' (required: figures)' : ''}</a>${done ? ' <span class="muted">(opened)</span>' : ''}`;
+  };
   const excerptItems = excerpts.map((x, i) => {
     const s = src(x.source_id);
-    const head = prevSource === x.source_id ? `Same document, ${esc(x.locator)}`
-      : `${esc(label('kind', s?.kind))} · <span class="doc-title" lang="${esc(s?.lang)}">${esc(s?.title ?? `source ${x.source_id}`)}</span>, <span lang="${esc(s?.lang)}">${esc(s?.publisher ?? '')}</span>, ${esc(s?.published_on ?? 'no date')}, ${esc(x.locator)}`;
-    prevSource = x.source_id;
+    // Decision 0012 A4: kind and publisher beside every excerpt, so a wrong label is seen where it matters.
+    const head = `<b>${esc(label('kind', s?.kind))}</b> · publisher <b lang="${esc(s?.lang)}">${esc(s?.publisher ?? '?')}</b>${unticked.has(s?.id) ? ' <span class="muted">(first use of this official publisher: tick it with T)</span>' : ''} · <span class="doc-title" lang="${esc(s?.lang)}">${esc(s?.title ?? `source ${x.source_id}`)}</span>, ${esc(s?.published_on ?? 'no date')}, ${esc(x.locator)}${pdfLink(s)}`;
     return `<li id="x${i + 1}"><span class="n">[${i + 1}]</span> ${head}${quoteBlock(x.text, s?.lang)}${translations(s?.lang, x.text_fr, x.text_en)}</li>`;
   }).join('');
-  const body = `<div class="screen-title"><h1>Verdict ${d.position.n} / ${d.position.of}</h1>
-<span class="muted">Item #${v.claimId} · ${entered} · evidence pack <span class="mono">pack ${esc(v.p.packSha256.slice(0, 4))}…${esc(v.p.packSha256.slice(-4))}</span> · ${status}</span></div>
+  const packSources = (pack.sources ?? []).map((x) => src(x.source_id)).filter(Boolean);
+  const body = `${v.recheck ? `<p class="warn"><b>${esc(v.recheck)}.</b> Only the newest votes (round ${esc(v.round)}) are shown; your earlier decision was on round ${esc(v.verdictRound ?? 'unknown')}.</p>` : ''}<div class="screen-title"><h1>Verdict ${d.position.n} / ${d.position.of}</h1>
+<span class="muted">Item #${v.claimId} · ${entered} · votes round ${esc(v.round ?? (v.p.closed ? `none (closed round ${v.p.closed.round} not recorded)` : "none closed"))} · evidence pack <span class="mono">pack ${esc(v.p.packSha256.slice(0, 4))}…${esc(v.p.packSha256.slice(-4))}</span> · ${status}</span></div>
 ${d.onlySkipped ? `<p class="muted">The ${d.counts.verdicts} items left were all skipped.</p>` : ''}
 <div class="warn" role="note"><b>Confirm = publish.</b> Once written to the ledger it cannot be changed or deleted, only withdrawn, and the withdrawal is public too. After ${kbd('C')} you have 5 seconds: ${kbd('Z')} cancels and nothing is written.</div>
 ${v.changed.length ? `<p class="ok-line">Unconfirmed changes since the last ledger entry: ${v.changed.map(esc).join(', ')}</p>` : ''}
@@ -455,6 +465,8 @@ ${actionsBar([
     ...v.p.votes.map((x) => button({ key: String(x.n), text: `Adopt vote ${x.n}`, act: 'adopt', vote: x.n, disabled: !x.valid || v.adopted === x.n })),
     button({ key: 'E', text: 'Edit summary', open: 'edit-panel' }),
     button({ key: 'B', text: 'Send back…', open: 'send-back-panel' }),
+    button({ key: 'K', text: 'Wrong kind…', open: 'wrong-kind-panel' }),
+    ...(v.officials?.length ? [button({ key: 'T', text: `Tick “${v.officials[0].publisher}” as official`, act: 'tick_publisher' })] : []),
     button({ key: 'X', text: 'Reject item…', open: 'reject-claim-panel', disabled: v.published > 0, title: v.published > 0 ? 'Published items can only be withdrawn' : null }),
     button({ key: 'S', text: 'Skip', act: 'skip' }),
     button({ key: 'Z', text: 'Undo', undo: true, spacer: true }),
@@ -462,6 +474,12 @@ ${actionsBar([
     button({ key: '?', text: 'Shortcuts', open: 'help-panel' }),
   ])}
 <p hidden>${button({ key: 'U', text: 'Considered, not used', open: 'toggle:unused' })}${v.entered === 'auto' ? button({ key: 'P', text: 'Source passage', open: 'toggle:passage' }) : ''}</p>
+<form class="panel reasons kinds dialog" id="wrong-kind-panel" data-action="wrong_kind" role="dialog" aria-label="Wrong kind" hidden>
+<h2>Send item #${v.claimId} back: which source has the wrong kind?</h2>
+<ol>${packSources.map((s, i) => `<li><label><input type="radio" name="source" value="${esc(s.id)}" data-n="${i + 1}"${i === 0 ? ' checked' : ''}> source ${esc(s.id)}: labelled <b>${esc(label('kind', s.kind))}</b>, publisher ${esc(s.publisher)} — <span lang="${esc(s.lang)}">${esc(s.title)}</span></label></li>`).join('')}</ol>
+<p class="form-error" role="alert" hidden></p>
+<p class="muted">Goes back to the evidence pack (reason 1) with the source named. ${kbd('1')}–${kbd('9')} picks · ${kbd('Enter')} done · ${kbd('Esc')} cancel</p>
+</form>
 ${reasonsPanel({
     id: 'send-back-panel', action: 'send_back', title: `Send item #${v.claimId} back to:`,
     reasons: ['Evidence pack (excerpts insufficient, wrong, or a key passage missing)', 'Jury again (evidence is enough; the verdict or summary is wrong)', 'The item itself (quote, criteria or deadline need changing)', 'Translation'],
@@ -474,6 +492,71 @@ ${reasonsPanel({
     extra: `<p class="muted">The item's quote, verdict, evidence and votes are saved in the desk log; ${kbd('Z')} puts it back.</p>`,
   })}
 ${verdictEditForm(v)}`;
+  return page({ ...d, title: `Item #${v.claimId}`, queue: 'verdict', item: v.id, round: v.round, body });
+}
+
+/** A vague or hedged item (decision 0012 A5): no pack, no jury; the founder writes the summary and confirms "Unverifiable". */
+function renderDirectPage(d, unlinked) {
+  const v = d.view;
+  const c = v.ws.claim;
+  const after = v.after.state;
+  const entered = v.entered === 'auto' ? 'auto-accepted' : v.entered === 'candidate' ? 'accepted from the candidate queue' : 'entered outside the desk';
+  const status = v.published === 0 ? 'first publication' : v.unconfirmed ? '<b>unconfirmed changes</b>' : 'published';
+  const check = v.stops.length
+    ? `<div class="ok-line"><p><b>Cannot confirm yet:</b></p><ul>${v.stops.map((s) => `<li>${esc(blockerText(s))}</li>`).join('')}</ul></div>`
+    : '<p class="ok-line">Publication check: all checks pass (origin, summary, both languages).</p>';
+  const cur = v.ws.verdict ?? {};
+  const area = (name, labelText, lang) => `<div><label class="label" for="v-${name}">${esc(labelText)}</label><textarea id="v-${name}" name="${name}" rows="3" lang="${lang}">${esc(cur[name] ?? '')}</textarea></div>`;
+  const body = `<div class="screen-title"><h1>Verdict ${d.position.n} / ${d.position.of}</h1>
+<span class="muted">Item #${v.claimId} · ${entered} · ${esc(label('verifiability', c.verifiability))}: no evidence pack, no jury · ${status}</span></div>
+${d.onlySkipped ? `<p class="muted">The ${d.counts.verdicts} items left were all skipped.</p>` : ''}
+<div class="warn" role="note"><b>Confirm = publish.</b> Once written to the ledger it cannot be changed or deleted, only withdrawn, and the withdrawal is public too. After ${kbd('C')} you have 5 seconds: ${kbd('Z')} cancels and nothing is written.</div>
+<div class="panel">
+<p class="muted">${esc(d.subject?.name ?? `person #${c.subject_id}`)}${c.speaker_role_en ? ` · <span lang="en">${esc(c.speaker_role_en)}</span>` : ''} · <span class="doc-title" lang="${esc(d.origin?.lang)}">${esc(d.origin?.title ?? '')}</span>, ${esc(c.said_on)}, ${esc(c.source_locator)}</p>
+${quoteBlock(c.quote_original, c.lang)}
+${translations(c.lang, c.quote_fr, c.quote_en)}
+${meta([
+    ['Type · topic', `${esc(label('type', c.type))} · ${esc(label('domain', c.domain))}`],
+    ['Verifiability · deadline', `${esc(label('verifiability', c.verifiability))} · ${c.deadline ? `${esc(c.deadline)}, ${esc(label('deadline_basis', c.deadline_basis))}` : 'no deadline'}`],
+  ])}
+<details id="passage"${v.entered === 'auto' ? ' open' : ''}><summary>Source passage (${kbd('P')})</summary>${d.originUnits ? sourcePassage(d.originUnits, c.quote_original, passageUnit(d.originUnits, c.quote_original), d.origin?.lang) : ''}</details>
+</div>
+<div class="panel publish">
+<h2>What C will publish</h2>
+<p>${verdictChip('unverifiable')} <span class="muted">a ${esc(label('verifiability', c.verifiability).toLowerCase())} item can only be “Unverifiable”; the summary is yours (decided by human)</span></p>
+${after.verdict?.summary_fr ? `<p lang="fr">${esc(after.verdict.summary_fr)}</p>` : ''}
+${after.verdict?.summary_en ? `<p class="muted" lang="en">${esc(after.verdict.summary_en)}</p>` : ''}
+${check}
+</div>
+${unlinked}
+${actionsBar([
+    button({ key: 'C', text: 'Confirm and publish', act: 'confirm', disabled: !v.canConfirm, primary: true }),
+    button({ key: 'E', text: 'Write summary', open: 'edit-panel' }),
+    button({ key: 'B', text: 'Send back…', open: 'send-back-panel' }),
+    button({ key: 'X', text: 'Reject item…', open: 'reject-claim-panel', disabled: v.published > 0, title: v.published > 0 ? 'Published items can only be withdrawn' : null }),
+    button({ key: 'S', text: 'Skip', act: 'skip' }),
+    button({ key: 'Z', text: 'Undo', undo: true, spacer: true }),
+    button({ key: 'Q', text: 'Candidates', href: '/candidates' }),
+    button({ key: '?', text: 'Shortcuts', open: 'help-panel' }),
+  ])}
+<p hidden>${button({ key: 'P', text: 'Source passage', open: 'toggle:passage' })}</p>
+<form class="panel edit dialog" id="edit-panel" data-action="edit" role="dialog" aria-label="Write summary" hidden>
+<h2>Summary of item #${v.claimId} (verdict: Unverifiable)</h2>
+${area('summary_fr', 'Summary FR: why this cannot be checked', 'fr')}
+${area('summary_en', 'Summary EN: why this cannot be checked', 'en')}
+<p class="form-error" role="alert" hidden></p>
+<p class="muted">${kbd('Ctrl+Enter')} save to the workspace · ${kbd('Esc')} discard.</p>
+</form>
+${reasonsPanel({
+    id: 'send-back-panel', action: 'send_back', title: `Send item #${v.claimId} back to:`,
+    reasons: ['Extraction (it is not vague or hedged after all: it needs criteria and a jury)', 'The item itself (quote, type or topic)', 'Translation', 'Other'],
+    noteLabel: 'One sentence (required)',
+  })}
+${reasonsPanel({
+    id: 'reject-claim-panel', action: 'reject_claim', title: `Reject item #${v.claimId} and delete it from the workspace, reason:`,
+    reasons: ['Not a promise or prediction', 'Extraction error (quote cut wrongly, wrong page, wrongly split or merged)', 'Duplicate of another item (give the id)', 'Other (one sentence required)'],
+    noteLabel: 'One more sentence (the id for reason 3; required for reason 4)',
+  })}`;
   return page({ ...d, title: `Item #${v.claimId}`, queue: 'verdict', item: v.id, body });
 }
 
