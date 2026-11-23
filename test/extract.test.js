@@ -24,6 +24,11 @@ test('normalizeForMatch: layout differences vanish, words and letters do not', (
   assert.notEqual(n('65 ans'), n('64 ans'));
   assert.notEqual(n('Retraite'), n('retraite'));
   assert.notEqual(n('réforme'), n('reforme'));
+  // A minus or dash before a digit is a sign or a range, not layout (Fable review 1, finding 9).
+  assert.notEqual(n('croissance de -0,3 %'), n('croissance de 0,3 %'));
+  assert.notEqual(n('une baisse de − 42 %'), n('une baisse de 42 %'));
+  assert.equal(n('croissance de −0,3 %'), n('croissance de -0,3 %'));
+  assert.equal(n('2022 – 2023'), n('2022-2023'));
 });
 
 test('checkVerbatim: finds a quote inside one unit or across two, refuses a paraphrase', () => {

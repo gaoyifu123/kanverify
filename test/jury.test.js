@@ -61,11 +61,11 @@ test('voteProblems: verdict values, deadlines, open question, summaries, vague c
   // and to_evaluate wait for the deadline (standard section 5, as amended).
   const early = { ...CLAIM, deadline: '2029-01-20', deadline_basis: 'inferred' };
   assert.deepEqual(voteProblems(okVote(), early, d, texts, '2026-11-22'), []);
-  assert.match(voteProblems(okVote({ verdict: 'partly_came_true' }), early, d, texts, '2026-11-22').join(), /not reached, but verdict is partly_came_true/);
+  assert.match(voteProblems(okVote({ verdict: 'partly_came_true' }), early, d, texts, '2026-11-22').join(), /not over .*but verdict is partly_came_true/);
   assert.deepEqual(voteProblems(okVote({ verdict: 'partly_came_true' }), CLAIM, d, texts, '2026-11-22'), []);
   // A renunciation lets only not_came_true skip the deadline, never partly_came_true.
   const renEarly = okVote({ verdict: 'partly_came_true', evidence: [{ source_id: 3, excerpt: 'Article 16', locator: '§1' }] });
-  assert.match(voteProblems(renEarly, early, [doc(3, 'renunciation')], new Map([[3, UNITS]]), '2026-11-22').join(), /not reached, but verdict is partly_came_true/);
+  assert.match(voteProblems(renEarly, early, [doc(3, 'renunciation')], new Map([[3, UNITS]]), '2026-11-22').join(), /not over .*but verdict is partly_came_true/);
   // Before the deadline, part done is pending: the summary says what has been done so far.
   assert.deepEqual(voteProblems({ verdict: 'pending', reasoning: 'r', summary_fr: 'f', summary_en: 'e', evidence: [] }, early, d, texts, '2026-11-22'), []);
   assert.match(voteProblems(okVote({ verdict: 'not_came_true' }), early, d, texts, '2026-11-22').join(), /not reached/);
@@ -82,6 +82,42 @@ test('voteProblems: verdict values, deadlines, open question, summaries, vague c
   assert.match(voteProblems(okVote({ summary_en: ' ' }), CLAIM, d, texts, '2026-11-22').join(), /summary missing/);
   assert.match(voteProblems(okVote(), { ...CLAIM, verifiability: 'vague' }, d, texts, '2026-11-22').join(), /must be unverifiable/);
   assert.match(voteProblems({ verdict: 'unverifiable', reasoning: 'r', summary_fr: 'f', summary_en: 'e', evidence: [] }, CLAIM, d, texts, '2026-11-22').join(), /one official document/);
+});
+
+test('voteProblems: the deadline day is inside the deadline (Fable review 1, finding 3)', () => {
+  const texts = new Map([[1, UNITS]]);
+  const d = [doc(1, 'law')];
+  const pending = { verdict: 'pending', reasoning: 'r', summary_fr: 'f', summary_en: 'e', evidence: [] };
+  // On the deadline day: still pending; outcome verdicts other than came_true wait.
+  assert.deepEqual(voteProblems(pending, CLAIM, d, texts, '2023-12-31'), []);
+  assert.match(voteProblems(okVote({ verdict: 'not_came_true' }), CLAIM, d, texts, '2023-12-31').join(), /not over/);
+  assert.match(voteProblems(okVote({ verdict: 'partly_came_true' }), CLAIM, d, texts, '2023-12-31').join(), /not over/);
+  assert.deepEqual(voteProblems(okVote(), CLAIM, d, texts, '2023-12-31'), []);
+  // The day after: pending is void, the others are allowed.
+  assert.match(voteProblems(pending, CLAIM, d, texts, '2024-01-01').join(), /passed, but verdict is pending/);
+  assert.deepEqual(voteProblems(okVote({ verdict: 'not_came_true' }), CLAIM, d, texts, '2024-01-01'), []);
+});
+
+test('voteProblems: unverifiable on a measurable claim only after the deadline, with evidence (finding 5)', () => {
+  const texts = new Map([[1, UNITS]]);
+  const d = [doc(1, 'law')];
+  const unv = okVote({ verdict: 'unverifiable' });
+  assert.match(voteProblems(unv, CLAIM, d, texts, '2023-06-01').join(), /not over .*but verdict is unverifiable/);
+  assert.match(voteProblems(unv, CLAIM, d, texts, '2023-12-31').join(), /not over/);
+  assert.deepEqual(voteProblems(unv, CLAIM, d, texts, '2024-01-01'), []);
+  // A vague or hedged claim is unverifiable at any date, before the deadline too.
+  for (const verifiability of ['vague', 'hedged']) {
+    assert.deepEqual(voteProblems({ ...unv, evidence: [] }, { ...CLAIM, verifiability }, d, texts, '2023-06-01'), []);
+  }
+});
+
+test('voteProblems withinUnit: a quote may not join the end of one unit to the start of the next (finding 9)', () => {
+  const units = [{ unit: 1, text: 'Il reste 3 millions de locaux à rendre raccordables.' }, { unit: 2, text: 'Le ralentissement du rythme des déploiements se confirme.' }];
+  const joined = okVote({ evidence: [{ source_id: 1, excerpt: 'à rendre raccordables. Le ralentissement du rythme', locator: '§1' }] });
+  assert.deepEqual(voteProblems(joined, CLAIM, [doc(1, 'law')], new Map([[1, units]]), '2026-11-22'), []);
+  assert.match(voteProblems(joined, CLAIM, [doc(1, 'law')], new Map([[1, units]]), '2026-11-22', { withinUnit: true }).join(), /not found verbatim/);
+  const inside = okVote({ evidence: [{ source_id: 1, excerpt: 'Le ralentissement du rythme', locator: '§1' }] });
+  assert.deepEqual(voteProblems(inside, CLAIM, [doc(1, 'law')], new Map([[1, units]]), '2026-11-22', { withinUnit: true }), []);
 });
 
 test('suggestionProblems: only http(s) URLs that were among the search results, with an evidence kind', () => {

@@ -1,6 +1,7 @@
 # 运行组 · 评审团成员（Claude，订阅）
 
-版本：0.1（2026-11-22）。依据决策 0010 创始人的修改：评审团三家，Claude 用订阅（Claude Code），
+版本：0.2（2026-11-23）。0.2：配合 judge-0.5（Fable 审查 1 第 8、10 条）——子 agent 不再写 `created_at`（它没有时钟，期限按 judge-input 的 made 日期核对），改为照抄 `system_sha256`。
+0.1（2026-11-22）：依据决策 0010 创始人的修改：评审团三家，Claude 用订阅（Claude Code），
 OpenAI 用订阅（Codex），Gemini 走 API。这份说明给**派去投一票的全新 Claude Code 子 agent**。
 派活的人（总协调或定时任务）把下面“派活时给子 agent 的话”原样发给它，只填两个路径。
 
@@ -26,8 +27,8 @@ OpenAI 用订阅（Codex），Gemini 走 API。这份说明给**派去投一票�
 >    不看 `*.result.json`。只根据摘录判断，不用你自己的记忆补。
 > 3. 按 Instructions 里的规则判断，回答格式也照那里的 JSON。引用必须从摘录里逐字复制。
 > 4. 把结果写成一个 JSON 文件：`<投票文件的绝对路径，形如 <name>.vote-anthropic-subscription.json>`，
->    内容是下面的形状。`pack_sha256`、`claim`、`promptVersion` 从 judge-input 文件第一行的注释里照抄。
->    `created_at` 写现在的时间（ISO 8601，带时区）。`model` 写你自己的模型 ID。
+>    内容是下面的形状。`pack_sha256`、`claim`、`promptVersion`、`system_sha256` 从 judge-input 文件第一行的注释里照抄。
+>    不写时间。`model` 写你自己的模型 ID。
 >
 > ```json
 > {
@@ -41,9 +42,9 @@ OpenAI 用订阅（Codex），Gemini 走 API。这份说明给**派去投一票�
 >   "via": "claude-code",
 >   "model": "你的模型 ID",
 >   "promptVersion": "从注释抄",
->   "created_at": "2026-11-22T21:30:00+01:00",
+>   "system_sha256": "从注释抄",
 >   "verdict": "…",
->   "evidence": [{ "source_id": 4, "excerpt": "从摘录逐字复制", "locator": "p. 1", "pdf_page": 1 }],
+>   "evidence": [{ "source_id": 4, "excerpt": "从一段摘录里逐字复制", "locator": "照抄那段摘录的 locator", "pdf_page": 1 }],
 >   "reasoning": "…",
 >   "open_question_fr": null,
 >   "open_question_en": null,
@@ -56,7 +57,8 @@ OpenAI 用订阅（Codex），Gemini 走 API。这份说明给**派去投一票�
 
 ## 程序检查什么（`src/pack.js` 的 `checkVote`）
 
-和 Codex、Gemini 的票完全一样：结论是六个值之一；期限规则；“待评估”要有法英两种语言的缺口说明；
-除“待定”外要有法英两种语言的说明；结果类结论要有一份官方凭据或两家不同的独立来源；
-每段引用必须逐字出现在凭据包的摘录里（摘录本身已逐字核对过原件）；`pack_sha256` 要对得上，
-提示词版本要是当前版本；文件名要和 `provider`、`channel` 对得上。
+和 Codex、Gemini 的票完全一样：结论是六个值之一；期限规则（期限当天仍算期限内；日期用 judge-input 注释里的 made 日期，
+不用评审写的时间）；“待评估”要有法英两种语言的缺口说明；每种结论（含“待定”）都要有法英两种语言的说明；
+结果类结论要有一份官方凭据或两家不同的独立来源；每段引用必须逐字出现在**同一段**摘录里（不能跨两段拼接；
+摘录本身已逐字核对过原件）；`pack_sha256`、提示词版本和 `system_sha256` 都要对得上当前的 judge-input；
+文件名要和 `provider`、`channel` 对得上。judge-input 文件丢了或过期，这个凭据包的所有票都不算，重新生成后重投。

@@ -1,56 +1,77 @@
-# 来源规则：空口无凭
+# Source rule: no evidence, no claim
 
-版本 0.1（2026-11-22），待创始人确认后升为 1.0。
+Version 0.4 (2026-11-23). Restored and consolidated after the file was found reverted to an early 0.1 draft
+(overwritten on 2026-11-22 around 17:06, cause unknown). Content follows the founder's decisions recorded in
+`docs/decisions/0002`, `0008` (renunciation), `0011`, and the founder's board answers of 2026-11-21/22.
+History: 0.1 first draft → 0.2 founder simplified evidence (one official document, or two independent media) →
+0.3 an official body assessing its own work is not evidence → renunciation exception (promises only) → Légifrance API data.
 
-看凭据，不看是谁说的。这条规则对当事人、政府、反对党、媒体和评论员一视同仁。
+We look at the evidence, not at who is speaking. The same rule applies to the speaker, governments, the opposition,
+media and commentators.
 
-## 四条规则
+## Four rules
 
-1. **承诺只取原文。** 只收录当事人自己发布的材料里的承诺，逐字引用，给出页码或段落。
-2. **判定只认凭据。** 凭据是可以查证的原始材料。
-3. **说法只是线索。** 任何人的说法都不算证据。说法指向了凭据，就去查那份凭据并引用它；
-   指不出凭据的，谁说的都不采用，包括当事人自己。
-4. **没有凭据就不下结论。** 结论记为“无法判定”，并写明卡在哪里、还缺什么。
+1. **Claims only from the speaker's own words.** A promise or prediction is recorded only from material the person
+   (or their own campaign) published, quoted verbatim with page or section.
+2. **A verdict needs evidence:** one document issued by an official body, **or** two independent sources from
+   different publishers that each establish the fact themselves.
+3. **Statements are leads, not evidence.** Nobody's statement counts as evidence, including the speaker's own.
+   If a statement points to evidence, find that evidence and cite it.
+4. **No evidence, no verdict.** After the deadline the verdict is "to be assessed" (`to_evaluate`), stating where it
+   is stuck and what is missing (principle 1).
 
-## 什么算凭据，什么只是线索
+## Kinds of source
 
-| 类别 | 数据库里的 `kind` | 能否作为结论的证据 |
+| Class | `kind` in the database | Can it be evidence for a verdict? |
 | --- | --- | --- |
-| 法律文本 | `law` | 能 |
-| 官方公报 | `gazette` | 能 |
-| 官方统计 | `statistic` | 能 |
-| 预算和决算 | `budget` | 能 |
-| 议会记录 | `parliament` | 能 |
-| 法院判决 | `court` | 能 |
-| 审计报告 | `audit` | 能 |
-| 公开了原始数据的研究 | `dataset_study` | 能 |
-| 当事人的竞选纲领 | `platform` | 不能，只能作为承诺的出处 |
-| 任何人的讲话、新闻稿、采访、评论、媒体报道 | `statement` | 不能，只是线索 |
+| The speaker's own words: campaign platform | `platform` | No — only the origin of a claim |
+| Anyone's words: speeches, press releases, interviews, comments; an official body's assessment of its own work | `statement` | No — a lead only |
+| Documents issued by an official body: law, official gazette, official statistics, budget and accounts, parliamentary record, court ruling, audit report | `law` `gazette` `statistic` `budget` `parliament` `court` `audit` | Yes — one is enough |
+| Other documents issued by an official body | `official` | Yes — one is enough |
+| Independent, non-official: a news outlet's own reporting | `media` | Yes — but two from different publishers |
+| Independent, non-official: research that publishes its raw data | `dataset_study` | Yes — but two from different publishers |
+| The speaker's own public, explicit abandonment of a **promise** | `renunciation` | Only for "did not come true" on a promise; otherwise a lead |
 
-这张表由数据库强制执行：只要有一条证据是 `platform` 或 `statement`，这个结论就无法确认发布（见 `db/schema.sql` 里的 `publication_checks`）。
+The database enforces the table (`db/schema.sql`, `publication_checks`): a verdict about an outcome needs one official
+document or two independent sources from different publishers; `platform` and `statement` are never accepted as evidence.
 
-## 两个容易错的情况
+## What "two media, each establishing it" means
 
-- **政府新闻稿说“已完成”。** 这是说法。去找它所指的法律、公报或统计数据，引用那份文件。
-  找不到，就不能据此判“已兑现”。
-- **反对党或媒体说“没做到”，并引用了审计报告。** 说法本身不采用，但那份审计报告是凭据，
-  去查原件并引用它。
+- **Each establishes it:** each outlet got the fact through its own reporting, investigation or checking.
+- **Not counted:** reporting what someone said ("the minister said…", "the opposition claims…"). That is a statement.
+- **Not two:** one outlet repeating another, or both quoting the same agency wire. That counts as one.
+- The database can only check that the publisher names differ. Whether each outlet established the fact is judged by
+  the jury and the neutrality review, and confirmed by the founder.
 
-## 存证
+## An official body assessing its own work is not evidence (founder, 2026-11-22)
 
-每份来源在登记时保存原件，记录原始地址、下载日期和 SHA-256。没有哈希的来源存不进数据库。
-来源网页以后消失或被改动，我们仍能出示当时的原件。
+A government's or agency's press release or progress report saying "this promise has been delivered" is registered as
+`statement`, not `official`. It is a lead: find the law text or data it refers to and cite that.
+Test: does the document **record** something (a law, a budget figure, a statistic, a ruling) or **assess** how well the
+body did? The first is evidence; the second is a statement. The kind label is necessary, not sufficient: a judge who sees
+an `official` document that only assesses its own success treats it as a statement.
 
-## 这条规则的代价
+## Exception: the speaker's own public renunciation (founder, 2026-11-22; decision 0008)
 
-- 对 AI 的要求更高：初判必须给出凭据原文的逐字段落，只引用某人说法的初判由程序退回。
-- “无法判定”会比别的追踪网站多。这是可以接受的，因为每一条都会写明还缺什么（原则 1）。
+Before the deadline, the speaker's own public, explicit words abandoning a **promise** are registered as `renunciation`
+and may be the only evidence for "did not come true". Only for that verdict and only for promises; for predictions and
+for every other verdict it is a lead like any statement. Anything unclear ("postponed", "reconsidering") is a `statement`.
 
-## 法国法律原文：用 Légifrance 官方接口的数据（创始人 2026-11-22 定）
+## French law texts: Légifrance official API data (founder, 2026-11-22)
 
-法国的法律和官方公报，取自 Légifrance 官方接口（PISTE，由 DILA 提供），存下接口返回的原文数据并记哈希，
-登记为 `law` 或 `gazette`，出处链接指向 Légifrance 的公开页面。
+French laws and official gazette texts are taken from the Légifrance official API (PISTE, run by DILA). We store the
+API's response and its hash, register it as `law` or `gazette`, and link to the public Légifrance page.
+Stated plainly on the site: this is a copy from the official database, not the electronically signed gazette PDF
+(the API terms say only the signed PDF has legal force). Disputed items can be backed by the signed PDF, downloaded
+by the founder. The hash of the public page will differ from ours; that is known.
 
-照实说明：这是官方数据库的副本，不是带电子签名的公报 PDF；接口条款写明只有签名 PDF 具有法律效力。
-网站上标注“来源：Légifrance 官方数据库”。遇到有争议的条目，再由创始人手动下载签名 PDF 补上。
-别人从公开页面下载得到的文件，哈希和我们存的不同，这是已知的。
+## Archiving
+
+Every source is archived when registered: original file, original address, retrieval date and SHA-256.
+A source without a hash cannot enter the database. If the page later disappears or changes, we can still show the original.
+
+## The cost of this rule
+
+- Judges must quote evidence verbatim; a vote citing only someone's statement is refused by the program.
+- Whether something is a quote of someone else needs judgement; machines only do part of it.
+- "To be assessed" will be more frequent than on other trackers. Acceptable, because each states what is missing (principle 1).

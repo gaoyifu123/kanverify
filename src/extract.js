@@ -77,19 +77,22 @@ export function loadPrompt(path) {
 /**
  * Text used for the verbatim comparison. Removes what a transcription or a PDF layout changes
  * without changing the words: all whitespace (line breaks, French spaces before punctuation),
- * soft hyphens and zero-width characters, and every hyphen and dash (so a word hyphenated at a
- * line end matches the whole word). Curly quotes and guillemets become straight quotes.
+ * soft hyphens and zero-width characters, and every hyphen and dash that is not directly before
+ * a digit (so a word hyphenated at a line end matches the whole word). A hyphen, dash or minus
+ * directly before a digit (after whitespace is removed) is a sign or a range and becomes "-":
+ * "-0,3 %" never matches "0,3 %". Curly quotes and guillemets become straight quotes.
  * Letters, their case and accents, digits and other punctuation must match exactly.
  */
 export function normalizeForMatch(text) {
   return String(text)
     .normalize('NFKC')
-    .replace(/[­​-‍⁠﻿]/g, '')
-    .replace(/[‘’‚‛′`´]/g, "'")
-    .replace(/[“”„‟«»″]/g, '"')
-    .replace(/…/g, '...')
-    .replace(/[-‐-―−]/g, '')
-    .replace(/\s+/gu, '');
+    .replace(/[\u00AD\u200B-\u200D\u2060\uFEFF]/g, '')
+    .replace(/[\u2018\u2019\u201A\u201B\u2032\u0060\u00B4]/g, "'")
+    .replace(/[\u201C\u201D\u201E\u201F\u00AB\u00BB\u2033]/g, '"')
+    .replace(/\u2026/g, '...')
+    .replace(/\s+/gu, '')
+    // A dash before a digit is a sign or a range: keep it, as "-". Every other dash goes.
+    .replace(/[\-\u2010-\u2015\u2212]/g, (_m, offset, str) => (/\d/.test(str[offset + 1] ?? '') ? '-' : ''));
 }
 
 /**

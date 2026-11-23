@@ -91,9 +91,20 @@ function writeJsonAtomic(path, value) {
   writeFileSync(temp, `${JSON.stringify(value, null, 2)}\n`, { flag: 'w' });
   renameSync(temp, path);
 }
+/**
+ * The eight principles as the run roles get them: PRINCIPLES.md up to its first second-level
+ * heading. The status table after it is project bookkeeping, edited often; sending it would change
+ * the judges' text without a new prompt version (Fable review 1, finding 8).
+ */
+export function principlesText(raw = readFileSync(PRINCIPLES_PATH, 'utf8')) {
+  const at = raw.search(/^## /m);
+  return (at < 0 ? raw : raw.slice(0, at)).trim();
+}
+/** System text of a run role: the principles, then the prompt. system_sha256 identifies it exactly. */
 function systemFor(promptPath) {
   const prompt = loadPrompt(promptPath);
-  return { version: prompt.version, system: `${readFileSync(PRINCIPLES_PATH, 'utf8')}\n\n${prompt.text}` };
+  const system = `${principlesText()}\n\n${prompt.text}`;
+  return { version: prompt.version, system, systemSha256: sha256Of(Buffer.from(system, 'utf8')) };
 }
 
 /** Record of one model call: what it was for, tokens, searches and an estimated cost. */
@@ -161,8 +172,9 @@ export function loadClaims(specs, { outDir = DEFAULT_OUT_DIR, speakers = {} } = 
 }
 
 function claimBlock(claim, today) {
+  // No speaker name, as in judgeView (src/pack.js): the role only.
   const view = {
-    speaker: claim.speaker, speaker_role: claim.speaker_role_en, made_in: claim.origin.title,
+    speaker_role: claim.speaker_role_en, made_in: claim.origin.title,
     made_on: claim.origin.published_on, quote_original: claim.quote_original, quote_lang: claim.lang,
     quote_en: claim.quote_en, type: claim.type, verifiability: claim.verifiability,
     deadline: claim.deadline, deadline_basis: claim.deadline_basis,
@@ -337,7 +349,7 @@ async function transcribePages(bytes, pages, { provider, model, askOptions }) {
 
 /** One independent vote. No vote sees another; each call gets the same input. */
 export async function judgeClaim(claim, docs, { provider = 'anthropic', model, today, askOptions = {} }) {
-  const { version, system } = systemFor(JUDGE_PROMPT_PATH);
+  const { version, system, systemSha256 } = systemFor(JUDGE_PROMPT_PATH);
   const usable = docs.filter((d) => !d.excluded);
   const pdfs = usable.filter((d) => d.pdf).map((d) => ({ mediaType: 'application/pdf', data: d.pdf }));
   const reply = await ask({
@@ -348,6 +360,7 @@ export async function judgeClaim(claim, docs, { provider = 'anthropic', model, t
   const j = reply.json ?? {};
   return {
     provider: reply.provider, model: reply.model, model_version: reply.modelVersion ?? null, prompt_version: reply.promptVersion,
+    system_sha256: systemSha256,
     usage: { inputTokens: reply.usage?.inputTokens ?? 0, outputTokens: reply.usage?.outputTokens ?? 0 },
     call: callRecord('judge', reply),
     verdict: j.verdict ?? null,
@@ -453,8 +466,9 @@ export const JUDGE_SCHEMA = Object.freeze({
     reasoning: { type: 'string' },
     open_question_fr: { type: ['string', 'null'] },
     open_question_en: { type: ['string', 'null'] },
-    summary_fr: { type: ['string', 'null'] },
-    summary_en: { type: ['string', 'null'] },
+    // Required for every verdict, pending included (judge-0.5, step 5).
+    summary_fr: { type: 'string' },
+    summary_en: { type: 'string' },
   },
 });
 // Codex's default model with the founder's ChatGPT login on 2026-11-22; given explicitly so every
@@ -480,11 +494,11 @@ export function voteFileName(packPath, provider, channel) {
 }
 
 /**
- * The exact request every judge gets for a pack: PRINCIPLES.md and the judge prompt as the
+ * The exact request every judge gets for a pack: the eight principles and the judge prompt as the
  * system part, the claim and the excerpts as JSON in the user part. Same text for every judge.
  */
 export function packJudgeRequest(pack, today) {
-  const { version, system } = systemFor(JUDGE_PROMPT_PATH);
+  const { version, system, systemSha256 } = systemFor(JUDGE_PROMPT_PATH);
   const view = judgeView(pack);
   const prompt = [
     `Today's date: ${today}`,
@@ -497,16 +511,43 @@ export function packJudgeRequest(pack, today) {
     '',
     'Give your verdict. Answer in JSON as specified.',
   ].join('\n');
-  return { promptVersion: version, system, prompt };
+  return { promptVersion: version, system, systemSha256, prompt };
 }
 
 /** The judge input as one file, for a judge that reads files (a fresh Claude Code subagent). */
 export function judgeInputText(pack, packSha256, today) {
   const req = packJudgeRequest(pack, today);
   return [
-    `<!-- KANVERIFY judge input. claim ${pack.claim.key}; pack_sha256 ${packSha256}; promptVersion ${req.promptVersion}; made ${today}. -->`,
+    `<!-- KANVERIFY judge input. claim ${pack.claim.key}; pack_sha256 ${packSha256}; promptVersion ${req.promptVersion}; system_sha256 ${req.systemSha256}; made ${today}. -->`,
     '', '# Instructions', '', req.system, '', '# Request', '', req.prompt, '',
   ].join('\n');
+}
+
+/**
+ * The first-line comment of a judge input: { claim, pack_sha256, promptVersion, system_sha256, made },
+ * or null if the text does not start with one. `made` is the "Today's date" the judges were shown,
+ * and the date their votes are checked against (Fable review 1, finding 10).
+ */
+export function judgeInputHeader(text) {
+  const m = /^<!-- KANVERIFY judge input\. claim (\S+); pack_sha256 ([0-9a-f]{64}); promptVersion (\S+); system_sha256 ([0-9a-f]{64}); made (\d{4}-\d{2}-\d{2})\. -->/
+    .exec(String(text ?? ''));
+  return m ? { claim: m[1], pack_sha256: m[2], promptVersion: m[3], system_sha256: m[4], made: m[5] } : null;
+}
+
+/**
+ * What every vote of a pack is checked against: the current prompt and system text, and the date
+ * from the pack's judge input. A missing or stale judge input gives `problem` (and no date).
+ */
+export function voteContext(packPath, packSha256) {
+  const { version: promptVersion, systemSha256 } = systemFor(JUDGE_PROMPT_PATH);
+  const inputPath = `${packStem(packPath)}.judge-input.md`;
+  const header = existsSync(inputPath) ? judgeInputHeader(readFileSync(inputPath, 'utf8')) : null;
+  let problem = null;
+  if (!header) problem = `the judge input ${basename(inputPath)} is missing or has no header: the date the judges were shown is unknown`;
+  else if (header.pack_sha256 !== packSha256 || header.promptVersion !== promptVersion || header.system_sha256 !== systemSha256) {
+    problem = `the judge input ${basename(inputPath)} was made for another pack, prompt or system text; make it again and re-vote`;
+  }
+  return { packSha256, promptVersion, systemSha256, today: problem ? null : header.made, problem };
 }
 
 function readPack(db, packPath, checkOptions) {
@@ -530,7 +571,7 @@ export async function askVote(pack, packPath, packSha256, member, { model, today
     claim: pack.claim.key, pack_file: basename(packPath), pack_sha256: packSha256,
     provider: member.provider, channel: member.channel, via: member.via,
     model: reply.modelVersion ?? reply.model, model_requested: reply.model,
-    promptVersion: reply.promptVersion, created_at: now().toISOString(),
+    promptVersion: reply.promptVersion, system_sha256: req.systemSha256, created_at: now().toISOString(),
     ...answerOf(reply.json),
     usage: reply.usage ?? null,
     cost_usd_estimate: member.channel === 'subscription' ? 0 : call?.cost_usd_estimate ?? null,
@@ -577,7 +618,8 @@ export async function runPackVotes(db, packPath, {
  */
 export function tallyPack(db, packPath, { checkOptions = {} } = {}) {
   const { pack, packSha256, checked } = readPack(db, packPath, checkOptions);
-  const { promptVersion } = packJudgeRequest(pack, localDate());
+  const ctx = voteContext(packPath, packSha256);
+  const { promptVersion } = ctx;
   const stem = basename(packStem(packPath));
   const dir = dirname(packPath);
   const votes = readdirSync(dir).filter((f) => f.startsWith(`${stem}.vote-`) && f.endsWith('.json')).sort().map((f) => {
@@ -587,7 +629,7 @@ export function tallyPack(db, packPath, { checkOptions = {} } = {}) {
     } catch {
       return { file: f, valid: false, problems: ['not valid JSON'] };
     }
-    const problems = checkVote(vote, pack, checked, { packSha256, promptVersion });
+    const problems = ctx.problem ? [ctx.problem] : checkVote(vote, pack, checked, ctx);
     if (`${stem}.vote-${vote?.provider}-${vote?.channel}.json` !== f) problems.push('file name does not match provider and channel');
     return { file: f, ...vote, valid: problems.length === 0, problems };
   });
@@ -600,7 +642,7 @@ export function tallyPack(db, packPath, { checkOptions = {} } = {}) {
     note: 'Not reviewed, not recorded in claims/verdicts/jury_votes, not for publication.',
     claim: pack.claim?.key ?? null, pack_file: basename(packPath), pack_sha256: packSha256,
     pack_problems: checked.problems, pack_tokens_estimate: checked.tokens,
-    prompt_version: promptVersion, tallied_at: new Date().toISOString(),
+    prompt_version: promptVersion, system_sha256: ctx.systemSha256, judge_input_made: ctx.today, tallied_at: new Date().toISOString(),
     members,
     agreement: given.length === members.length ? (distinct.size === 1 ? 'agree' : 'disagree') : 'incomplete',
     agreement_among_given: given.length === 0 ? null : distinct.size === 1 ? 'agree' : 'disagree',

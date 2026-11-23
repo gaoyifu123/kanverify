@@ -13,6 +13,14 @@ const UNCONFIRMED = 'Uncnfmarkq8';
 const NEVER = 'Nevermarkq9';
 const REVIEWER = 'reviewer-zq5'; // publications.confirmed_by is internal
 const TODAY = '2026-11-22';
+// A confirmation date is publications.confirmed_at, which the schema pins to the real clock
+// (trigger ledger_now), so the tests read it back instead of assuming the day they were written.
+const confirmedOn = (claimId) => db.prepare('SELECT substr(confirmed_at, 1, 10) AS d FROM publications WHERE claim_id = ? ORDER BY id DESC LIMIT 1').get(claimId).d;
+const MONTHS = {
+  en: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'],
+  fr: ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'],
+};
+const longDate = (iso, lang) => `${lang === 'fr' && Number(iso.slice(8, 10)) === 1 ? '1er' : Number(iso.slice(8, 10))}${String.fromCharCode(160)}${MONTHS[lang][Number(iso.slice(5, 7)) - 1]} ${iso.slice(0, 4)}`;
 
 let db;
 let out;
@@ -266,13 +274,14 @@ test('counts per verdict on subject and topic pages match the current published 
   const expected = { unverifiable: 0, pending: 0, to_evaluate: 0, came_true: 0, partly_came_true: 0, not_came_true: 0 };
   for (const r of rows) expected[r.v]++;
   assert.deepEqual(expected, { unverifiable: 1, pending: 1, to_evaluate: 1, came_true: 1, partly_came_true: 0, not_came_true: 0 });
+  const asOf = db.prepare("SELECT max(substr(confirmed_at, 1, 10)) AS d FROM current_publications WHERE status = 'published' AND json_extract(snapshot, '$.subject.id') = 1").get().d;
 
   for (const lang of ['fr', 'en']) {
     const html = page(`${lang}/subject/1-test-subject/index.html`);
     for (const [v, n] of Object.entries(expected)) {
       assert.match(html, new RegExp(`data-verdict="${v}"><span class="legend-l">[^<]+</span> <span class="n">${n}</span>`), `${lang} ${v}`);
     }
-    assert.match(html, new RegExp(`<p class="muted">[^<]+ · ${lang === 'fr' ? '4 fiches · verdicts au' : '4 items · verdicts as of'} <time datetime="${TODAY}">`));
+    assert.match(html, new RegExp(`<p class="muted">[^<]+ · ${lang === 'fr' ? '4 fiches · verdicts au' : '4 items · verdicts as of'} <time datetime="${asOf}">`));
     assert.equal((html.match(/<details class="row"/g) || []).length, 4);
   }
   const housing = page('en/topic/housing/index.html');
@@ -603,7 +612,7 @@ test('the item page lists its basis as a dated chain', () => {
   };
   const en = page(`en/claim/${ids.early}/index.html`);
   // said → dated evidence → confirmation → deadline after it (early came true) → undated evidence last.
-  assert.deepEqual(whens(en), [`1${NBSP}January 2023`, `1${NBSP}January 2025`, `22${NBSP}November 2026`, `31${NBSP}December 2027`, 'Date not stated']);
+  assert.deepEqual(whens(en), [`1${NBSP}January 2023`, `1${NBSP}January 2025`, longDate(confirmedOn(ids.early), 'en'), `31${NBSP}December 2027`, 'Date not stated']);
   assert.match(en, /<span>Said, in the <a href="#src-\d+">platform, p\. 4<\/a><\/span>/);
   assert.match(en, /<details class="layer" id="src-\d+">/);
   assert.ok(en.includes('Deadline, stated in the promise'));
@@ -616,7 +625,7 @@ test('the item page lists its basis as a dated chain', () => {
     assert.deepEqual(ev.map((e) => e.p), [lang === 'en' ? 'Légifrance (official database)' : 'Légifrance (base officielle)', 'Example publisher']);
   }
   // A vague claim without evidence: one undated entry between said and confirmed.
-  assert.deepEqual(whens(page(`fr/claim/${ids.vague}/index.html`)), [`17${NBSP}mars 2022`, 'Sans date', `22${NBSP}novembre 2026`]);
+  assert.deepEqual(whens(page(`fr/claim/${ids.vague}/index.html`)), [`17${NBSP}mars 2022`, 'Sans date', longDate(confirmedOn(ids.vague), 'fr')]);
 });
 
 test('corrections entries carry their ledger id; the withdrawn page links to its own entry', () => {

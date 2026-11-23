@@ -199,12 +199,16 @@ const CLAIM_FIELDS = [
 ];
 const SOURCE_FIELDS = ['kind', 'title', 'publisher', 'published_on', 'url', 'lang'];
 
-/** What every judge sees of a pack: the claim, the sources' metadata, the excerpts. Nothing else. */
+/**
+ * What every judge sees of a pack: the claim, the sources' metadata, the excerpts. Nothing else.
+ * The speaker's name is left out, only their role is given, so no judge brings in what it knows
+ * of the person (principle 3; Fable review 1, finding 18). The quote or the title may still name them.
+ */
 export function judgeView(pack) {
   const c = pack.claim ?? {};
   return {
     claim: {
-      speaker: c.speaker, speaker_role: c.speaker_role_en, made_in: c.origin?.title ?? null, made_on: c.origin?.published_on ?? null,
+      speaker_role: c.speaker_role_en, made_in: c.origin?.title ?? null, made_on: c.origin?.published_on ?? null,
       quote_original: c.quote_original, quote_lang: c.lang, quote_en: c.quote_en, type: c.type, verifiability: c.verifiability,
       deadline: c.deadline, deadline_basis: c.deadline_basis, criteria_en: c.criteria_en, criteria_fr: c.criteria_fr,
     },
@@ -315,8 +319,13 @@ export function checkPack(db, pack, opts = {}) {
  * publication_checks, an open question for to_evaluate, summaries in both languages, deadlines,
  * and every excerpt found verbatim in its document. `texts` maps source_id to units, or to null
  * when no text is available to compare with (then the excerpt is reported as unchecked).
+ * withinUnit: each quote must lie inside one unit (one excerpt of a pack), never run across two.
+ *
+ * Deadlines (team/run/judge-prompt.md, step 2): the deadline day is still inside the deadline.
+ * On or before it, only came_true, pending, unverifiable on a vague or hedged claim, and
+ * not_came_true on a renounced promise; after it, never pending.
  */
-export function voteProblems(vote, claim, docs, texts, today) {
+export function voteProblems(vote, claim, docs, texts, today, { withinUnit = false } = {}) {
   const problems = [];
   const byId = new Map(docs.map((d) => [d.meta.source_id, d]));
   if (!VERDICTS.includes(vote?.verdict)) return ['verdict is not one of the six'];
@@ -330,10 +339,12 @@ export function voteProblems(vote, claim, docs, texts, today) {
     && evidence.some((e) => byId.get(e?.source_id)?.meta.kind === 'renunciation');
   // Before the deadline only came_true may be given early (verdict standard section 5, as
   // amended); partly_came_true waits like not_came_true, which only a renounced promise skips.
-  if (claim.deadline && today < claim.deadline && ['to_evaluate', 'partly_came_true', 'not_came_true'].includes(verdict) && !renounced) {
-    problems.push(`deadline ${claim.deadline} not reached, but verdict is ${verdict}`);
-  }
-  if (claim.deadline && today >= claim.deadline && verdict === 'pending') problems.push(`deadline ${claim.deadline} passed, but verdict is pending`);
+  // unverifiable on a measurable claim is only "the condition did not arise by the deadline".
+  const notOver = claim.deadline && today <= claim.deadline;
+  const waits = (['to_evaluate', 'partly_came_true', 'not_came_true'].includes(verdict) && !renounced)
+    || (verdict === 'unverifiable' && claim.verifiability === 'measurable');
+  if (notOver && waits) problems.push(`deadline ${claim.deadline} not over (not reached until the day after it), but verdict is ${verdict}`);
+  if (claim.deadline && today > claim.deadline && verdict === 'pending') problems.push(`deadline ${claim.deadline} passed, but verdict is pending`);
   for (const e of evidence) {
     const doc = byId.get(e?.source_id);
     if (!doc) { problems.push(`evidence cites source_id ${e?.source_id}, which was not given`); continue; }
@@ -341,7 +352,9 @@ export function voteProblems(vote, claim, docs, texts, today) {
     if (doc.meta.kind === 'renunciation' && !(verdict === 'not_came_true' && claim.type === 'promise')) problems.push(`source ${doc.meta.source_id} is a renunciation, evidence only for not_came_true on a promise`);
     if (!filled(e.excerpt)) { problems.push(`empty excerpt for source ${doc.meta.source_id}`); continue; }
     const units = texts.get(doc.meta.source_id);
-    const found = units ? checkVerbatim(e.excerpt, units) : null;
+    const found = !units ? null
+      : withinUnit ? units.map((u) => checkVerbatim(e.excerpt, [u])).find((f) => f.verbatim) ?? { verbatim: false, verbatim_unit: null }
+        : checkVerbatim(e.excerpt, units);
     e.verbatim = found ? found.verbatim : null;
     if (e.verbatim === false) problems.push(`excerpt not found verbatim in source ${doc.meta.source_id}`);
     // Law text: the locator must name the article the excerpt starts in.
@@ -377,9 +390,19 @@ export function answerOf(json) {
 /**
  * Checks a vote file against the pack it answers. A vote may quote only from the pack's excerpts
  * (which are themselves verbatim in the archived originals), so a judge cannot cite from memory.
+ * Each quote must lie inside one excerpt: joining the end of one excerpt to the start of the next
+ * is not a passage of the document (Fable review 1, finding 9).
+ *
+ * The deadline is checked against `today`: the date printed in the judge input the judge read
+ * (its "made" date, see src/jury.js judgeInputHeader), never a date the judge typed. Without it
+ * (callers that have no judge input) the vote's created_at is used, as before judge-0.5.
+ * systemSha256, when given, must equal the vote's system_sha256: the hash of the exact system
+ * text (principles + judge prompt) the judge received.
+ * Summaries in both languages are required for every verdict, pending included (the prompt asks
+ * for them; this is stricter than publication, which needs none for pending).
  * @param checked the result of checkPack for that pack
  */
-export function checkVote(vote, pack, checked, { packSha256, promptVersion }) {
+export function checkVote(vote, pack, checked, { packSha256, promptVersion, systemSha256, today } = {}) {
   const problems = [];
   if (vote?.kind !== VOTE_KIND) problems.push(`kind is not ${VOTE_KIND}`);
   if (vote?.format !== 1) problems.push('format is not 1');
@@ -388,10 +411,23 @@ export function checkVote(vote, pack, checked, { packSha256, promptVersion }) {
   for (const f of ['provider', 'model']) if (!filled(vote?.[f])) problems.push(`${f} is empty`);
   if (!CHANNELS.includes(vote?.channel)) problems.push(`channel must be one of ${CHANNELS.join(', ')}`);
   if (vote?.promptVersion !== promptVersion) problems.push(`promptVersion ${JSON.stringify(vote?.promptVersion ?? null)} is not the current judge prompt ${promptVersion}`);
-  const created = typeof vote?.created_at === 'string' ? new Date(vote.created_at) : null;
-  if (!created || Number.isNaN(created.getTime())) return [...problems, 'created_at is not a date and time'];
+  if (systemSha256 !== undefined && vote?.system_sha256 !== systemSha256) {
+    problems.push('system_sha256 does not match the current system text (principles + judge prompt) the judge input was made with');
+  }
+  let date = today;
+  if (date === undefined) {
+    const created = typeof vote?.created_at === 'string' ? new Date(vote.created_at) : null;
+    if (!created || Number.isNaN(created.getTime())) return [...problems, 'created_at is not a date and time'];
+    date = localDateOf(vote.created_at);
+  } else if (typeof date !== 'string' || !DATE_RE.test(date)) {
+    return [...problems, 'the date of the judge input is not known'];
+  }
   if (checked.problems.length > 0) problems.push('the pack itself does not pass its checks');
-  problems.push(...voteProblems(vote, pack.claim, checked.docs, checked.texts, localDateOf(vote.created_at)));
+  // voteProblems asks for summaries for every verdict but pending; a judge owes them for pending too.
+  if (vote?.verdict === 'pending' && !(filled(vote.summary_fr) && filled(vote.summary_en))) {
+    problems.push('summary missing in French or English (required for every verdict, pending included)');
+  }
+  problems.push(...voteProblems(vote, pack.claim, checked.docs, checked.texts, date, { withinUnit: true }));
   return problems;
 }
 

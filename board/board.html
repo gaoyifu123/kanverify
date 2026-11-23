@@ -12,9 +12,9 @@
   "meta": {
     "day": 2,
     "totalDays": 14,
-    "updated": "2026-11-23 09:35:56",
+    "updated": "2026-11-23 09:52:16",
     "launch": "Dec 5",
-    "headline": "Fable reviews running one at a time (1 of 4: judge prompt). Once the review desk passes, the people are created and candidates imported; then you confirm. Nothing needs you before then."
+    "headline": "Judge prompt rewritten once (judge-0.5); the same Fable reviewer is re-checking it. Fable review 2 (desk) running. Four quick questions for you below."
   },
   "counts": [
     {
@@ -58,6 +58,46 @@
     "More evidence packs and verdicts towards the first 10 confirmed items"
   ],
   "needs": [
+    {
+      "id": "state-at-deadline",
+      "t": "Which moment counts: the deadline, or later?",
+      "d": "Example: fibre coverage was 94.3% at the deadline (end 2025) and 95.3% six months later. Recommendation: judge the state AT the deadline; later progress is mentioned in the summary but does not change the verdict.",
+      "options": [
+        "At the deadline",
+        "Latest state"
+      ],
+      "placeholder": "Anything to add"
+    },
+    {
+      "id": "renunciation-order",
+      "t": "A public renunciation: end of the wait, or the verdict itself?",
+      "d": "If 65 was promised, 64 enacted, and the speaker then says \"we give up 65\": saying it gives \"did not come true\" now; staying silent gives \"partly came true\" at the deadline. Same facts, two verdicts. Recommendation: a renunciation only ends the wait; the verdict is then judged on what was actually done (here: partly came true).",
+      "options": [
+        "Ends the wait only",
+        "Renunciation = did not come true"
+      ],
+      "placeholder": "Anything to add"
+    },
+    {
+      "id": "early-revertible",
+      "t": "Early \"came true\" for things that can be undone?",
+      "d": "Some promises can be met early and then reverted (a level target, a law that can be repealed). Recommendation: early \"came true\" only for one-off results that cannot be undone (a law passed, a facility built); for levels and repealable measures, wait for the deadline.",
+      "options": [
+        "Only for one-off results",
+        "Any early came true"
+      ],
+      "placeholder": "Anything to add"
+    },
+    {
+      "id": "principles-en",
+      "t": "English version of the eight principles",
+      "d": "The principles are given to every judge (Claude, Codex, Gemini) at the start of each vote, and the project now works in English, but PRINCIPLES.md is Chinese and only you may change it. Proposed English text (same meaning): 1. A good question matters as much as a conclusion — if we cannot give the truth, we give a good question. 2. No source, no record — without a source we neither record nor conclude. 3. One ruler — the same rules for everyone; report outcomes, never guess motives. 4. Think, then code — write less code; when stuck, step back instead of forcing it. 5. Keep it simple — look for the simplest solution and dare to cut. 6. Have backbone — speak up, own your role, don't flatter. 7. Automate what can be automated — people only do the step machines cannot. 8. Stay independent — no lock-in to an AI vendor, data stays local, self-funded. If approved, PRINCIPLES.md gets this English text first with the Chinese kept underneath.",
+      "options": [
+        "Approve this English text",
+        "Change it"
+      ],
+      "placeholder": "Your wording changes, if any"
+    },
     {
       "id": "note",
       "t": "Anything else to tell me",

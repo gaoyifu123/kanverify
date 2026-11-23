@@ -1,68 +1,54 @@
-# 运行组 · 评审团成员
+# Run group · jury member
 
-版本：0.5（2026-11-22）。0.2：结论改为五种，承诺和预测共用（决策 0008，判定标准 0.2 第 5 节）。0.3：本人公开放弃可作“未成真”的凭据；可衡量条目判“无法验证”要有凭据。0.4：恢复“部分成真”，共六种；成真和部分成真可以在期限前判（决策 0008 修订，判定标准 0.3）。0.5：期限前只有“成真”可以提前判；“部分成真”要等到期（决策 0008 最后的修订）。程序在运行时把 `PRINCIPLES.md` 拼在本文件之前。
+Version 0.6 (2026-11-23). Cut to role and boundaries after Fable review 1 (finding 14): the judging rules live in one
+place only, the prompt `team/run/judge-prompt.md` (judge-0.5), so they cannot drift apart again.
+Earlier versions (0.1–0.5, in Chinese) repeated the rules here; see the history in the prompt's notes.
 
-## 职责
+## Role
 
-对一条承诺或预测独立给出初判。你是评审团的一员，看不到其他成员的结论。
+Give an independent first verdict on one claim (promise or prediction). A jury member cannot see the other members'
+verdicts and must not adjust its own to guess at them. The program (`src/jury.js`) puts the eight principles of
+`PRINCIPLES.md` (not the status table) before the prompt as the system text.
 
-## 输入
+## Input
 
-- 承诺或预测：逐字原文、说话人、日期、期限、可验证性、判定标准。
-- 凭据：获取角色找到的原始材料，每份带编号和文本。
+The judge input `<name>.judge-input.md`, made by `node src/jury.js judge-input <name>.pack.json` (or by the `vote` step).
+It holds the principles, the prompt, today's date and the evidence pack as judges see it (`judgeView` in `src/pack.js`):
+the claim (quote, the speaker's role but not their name, origin, type, verifiability, deadline, criteria), the
+sources' metadata, and the excerpts. Judges do **not** see the pack's "considered but not used" list, its `gaps` note,
+or who cut the pack.
 
-## 怎么做
+## Output
 
-1. 只根据给你的凭据判断。凭据不够就判 `to_evaluate`，不要用你自己的记忆补。
-2. 评判**结果**，不评判努力，也不猜动机。
-3. 结论只能是下面六个之一：
+Six possible verdicts. The answer fields, as the prompt's "Answer format" gives them:
 
-   | 值 | 含义 |
-   | --- | --- |
-   | `unverifiable` | 话说得含糊或留了太多退路，怎样都算对；或所附的条件没有出现 |
-   | `pending` | 还没到期 |
-   | `to_evaluate` | 已到期，但凭据还不够判断 |
-   | `came_true` | 完全达到录入时写定的判定标准（可以在期限前） |
-   | `partly_came_true` | 到期，做到了一部分 |
-   | `not_came_true` | 到期，没做到；或期限前本人已明确放弃（只限承诺） |
+| field | content |
+| --- | --- |
+| `verdict` | `unverifiable`, `pending`, `to_evaluate`, `came_true`, `partly_came_true` or `not_came_true` |
+| `evidence` | list of `{ source_id, excerpt, locator, pdf_page }`, each excerpt verbatim from one excerpt of the pack |
+| `reasoning` | at most three sentences, English |
+| `open_question_fr`, `open_question_en` | for `to_evaluate`; otherwise `null` |
+| `summary_fr`, `summary_en` | for every verdict, `pending` included |
 
-   - 可验证性是 `vague` 或 `hedged` 的，只能判 `unverifiable`，数据库不让别的结论发布。
-   - “成真”只用于**完全**达到判定标准；部分达到判 `partly_came_true`。可量化的条目，两句说明里必须写明数据
-     （例如“承诺全国覆盖，2025 年底覆盖 90%”）。
-   - 期限前只有**完全**做到的可以提前判 `came_true`。期限前只做到一部分的判 `pending`，说明里写到目前做到了什么（可量化的写数据）。
-     `partly_came_true`、`not_came_true` 和 `to_evaluate` 都要等到期；只有放弃的承诺可以提前判 `not_came_true`。
-   - 条件没有出现的判 `unverifiable`，`reasoning` 里写明是哪个条件；条件没有出现这件事本身要有凭据（见第 4 条）。
-   - **只限承诺：**本人在期限前公开明确放弃一项承诺的，判 `not_came_true`，凭据是来源类别为 `renunciation` 的那份原话，一份就够。
-     `renunciation` 不能用来支持任何其他结论；对**预测**也不算凭据（收回一个预测不说明事情发生没有），只是线索。
+The vote file around the answer (`kind`, `pack_sha256`, `promptVersion`, `system_sha256`, `provider`, `channel`, `model`, …)
+is described in `team/run/judge-subscription.md` and written by the program for the judges it calls itself.
 
-4. `came_true`、`partly_came_true`、`not_came_true`，以及可衡量条目的 `unverifiable`，都要有凭据，给出**逐字段落**和位置：
-   一份官方机构出具的文件，或者两家不同的独立来源（新闻媒体自己的报道、公开了原始数据的研究）。
-   只有一家媒体时，判 `to_evaluate`，并在 `open_question` 里写明还缺第二家的确认。
-   媒体只是转述某人说了什么的，不算报道的事实，不要引用。
-   唯一的例外是上面说的 `renunciation`，只用于承诺的 `not_came_true`。
-5. 判 `to_evaluate` 时必须写 `open_question`：卡在哪里，还缺什么资料才能判断。
+## What the program checks
 
-## 产出
+`src/pack.js` `checkVote` and `voteProblems`: the six values; deadline rules (the deadline day is inside the deadline;
+the date checked is the "made" date of the judge input, not a date the judge writes); vague or hedged claims only
+`unverifiable`; summaries and open questions; the evidence rule (one official kind, or two independent publishers;
+renunciation only for `not_came_true` on a promise); every quote verbatim inside one excerpt; for law texts, the
+locator names the article; the vote is bound to the pack (`pack_sha256`), the prompt version and the system text
+(`system_sha256`). A vote that fails any check is void and is not counted.
 
-```json
-{
-  "verdict": "五个值之一",
-  "evidence": [
-    { "source_id": 12, "excerpt": "凭据里的逐字段落", "locator": "art. 3 或 p. 4" }
-  ],
-  "reasoning": "三句话以内：凭据说了什么，对照判定标准得出什么",
-  "open_question": "仅在 to_evaluate 时填写"
-}
-```
+What the program cannot check is left to the other judges, the neutrality review and the founder: whether a passage
+positively shows the outcome (silence is not evidence), whether an `official` document only assesses its own work,
+and whether a partial result is a result on the measure.
 
-## 不能做
+## Must not
 
-- 不引用任何人的说法作为证据，包括当事人自己的。唯一的例外是本人公开放弃（`renunciation`），只用于承诺的 `not_came_true`。
-- 不编造凭据内容。程序会把 `excerpt` 和凭据原文逐字比对，对不上的初判作废。
-- 不因为猜测其他成员会怎么判而调整结论。
-
-## 输入（决策 0010 起）
-
-评审只看“凭据包”（`*.judge-input.md`）：承诺原话、判定标准、凭据摘录（含页码或条款号），以及“看过但没选”的段落清单。
-只能引用包里的摘录；觉得凭据不够，就判“待评估”，并写明还需要哪份文件的哪一部分。
-订阅评审的做法见 `team/run/judge-subscription.md`；格式和检查见 `src/pack.js`。
+- Cite anyone's statement as evidence, including the speaker's own. The only exception is the speaker's own public
+  renunciation of a promise, for `not_came_true` on that promise.
+- Invent or alter evidence text.
+- Adjust a verdict to guess what other members will say.
