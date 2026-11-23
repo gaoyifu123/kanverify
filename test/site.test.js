@@ -675,3 +675,102 @@ test('the root page offers both languages without any script', () => {
   assert.ok(root.includes('<p lang="en">A chronicle of public promises and predictions</p>'));
   assert.ok(root.includes('<a href="fr/" hreflang="fr" lang="fr">') && root.includes('<a href="en/" hreflang="en" lang="en">'));
 });
+
+// ------------------------------------------------ renunciation on the item page (components.md, 2026-11-23)
+
+/** cameTrue's snapshot with a renunciation before the law (same date), a second law and a later renunciation. */
+function renouncedSnapshot(verdict) {
+  const snap = currentSnapshot(ids.cameTrue);
+  snap.verdict.verdict = verdict;
+  const [law] = snap.evidence;
+  const ren = (title, published_on, sha) => ({ ...law, source_id: 90 + published_on.length, kind: 'renunciation', title, publisher: 'Ren Publisher', published_on, excerpt: `${title} excerpt.`, sha256: sha.repeat(64) });
+  snap.evidence = [
+    ren('Renonciation A', '2025-01-01', 'c'),
+    law,
+    { ...law, source_id: 80, title: 'Second law', published_on: '2025-06-01', sha256: 'd'.repeat(64) },
+    ren('Renonciation B', '2026-03-01', 'e'),
+  ];
+  return snap;
+}
+
+function buildRenounced(verdict, fn) {
+  const snap = renouncedSnapshot(verdict);
+  const dir = mkdtempSync(join(tmpdir(), 'kv-ren-'));
+  try {
+    const site = join(dir, 'site');
+    buildSite(fakeLedger(snap), site, { today: TODAY });
+    fn((p) => readFileSync(join(site, ...p.split('/')), 'utf8'), snap.claim.id);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+const layerIds = (html) => [...html.matchAll(/<details class="layer" id="([^"]+)">\s*<summary><span class="t">([^<]+)<\/span>/g)].map((m) => `${m[1]}=${m[2]}`);
+const chainOf = (html) => between(html, '<ol class="chain">', '</ol>');
+
+for (const verdict of ['came_true', 'partly_came_true', 'to_evaluate', 'unverifiable']) {
+  test(`renunciation under ${verdict}: unnumbered, its own anchor, chain line and layer; evidence numbering skips it`, () => {
+    buildRenounced(verdict, (read, id) => {
+      const en = read(`en/claim/${id}/index.html`);
+      const fr = read(`fr/claim/${id}/index.html`);
+      // 1. Numbering and anchors: evidence first (1, 2), then renunciations (1, 2), before "Where it was said".
+      assert.deepEqual(layerIds(en), [`ev-${id}-1=Evidence 1`, `ev-${id}-2=Evidence 2`, `ren-${id}-1=Public renunciation`, `ren-${id}-2=Public renunciation`, `src-${id}=Where it was said`]);
+      assert.deepEqual(layerIds(fr).slice(0, 4), [`ev-${id}-1=Preuve 1`, `ev-${id}-2=Preuve 2`, `ren-${id}-1=Renonciation publique`, `ren-${id}-2=Renonciation publique`]);
+      assert.doesNotMatch(en, /Evidence 3|>Evidence \d<\/span><span class="s">Public renunciation/);
+      assert.match(en, new RegExp(`id="ev-${id}-1">\\s*<summary><span class="t">Evidence 1</span><span class="s">Law · `));
+      // 2. Chain: renunciation after evidence of the same date; links to #ren-…; never "Evidence".
+      const chain = chainOf(en);
+      const order = [...chain.matchAll(/href="#((?:ev|ren)-\d+-\d+)"/g)].map((m) => m[1]);
+      assert.deepEqual(order, [`ev-${id}-1`, `ren-${id}-1`, `ev-${id}-2`, `ren-${id}-2`]);
+      assert.ok(chain.includes(`<a href="#ren-${id}-1" lang="fr">Renonciation A</a> · public renunciation, the wait for the deadline ends here`));
+      assert.ok(chainOf(fr).includes(`<a href="#ren-${id}-2" lang="fr">Renonciation B</a> · renonciation publique, l’attente de l’échéance s’arrête ici`));
+      // 4. Layer: description, first paragraph, then excerpt and the usual meta.
+      const layer = between(en, `id="ren-${id}-2">`, '</details>');
+      assert.ok(layer.includes(`<span class="s">Ends the wait · Ren Publisher · 1${NBSP}March 2026</span>`));
+      assert.ok(layer.includes(`<p class="muted">Test Subject publicly gave up this promise on 1${NBSP}March 2026. From that date, the promise is judged on what had been done; this document is not evidence of that result.</p>`));
+      assert.ok(layer.indexOf('<p class="muted">') < layer.indexOf('Renonciation B excerpt.'));
+      assert.ok(layer.includes('<dd class="mono">' + 'e'.repeat(64) + '</dd>'));
+      const frLayer = between(fr, `id="ren-${id}-1">`, '</details>');
+      assert.ok(frLayer.includes(`<span class="s">Met fin à l’attente · Ren Publisher · 1er${NBSP}janvier 2025</span>`));
+      assert.ok(frLayer.includes(`Test Subject a renoncé publiquement à cette promesse le 1er${NBSP}janvier 2025. À partir de cette date, la promesse est jugée sur ce qui avait été fait${NBSP}; ce document n’est pas la preuve de ce résultat.`));
+      // 3. Row body in lists (generated HTML), without the link.
+      const subj = read('en/subject/1-test-subject/index.html');
+      assert.ok(subj.includes('<li><span lang="fr">Renonciation A</span> <span class="muted">· public renunciation, the wait for the deadline ends here</span></li>'));
+      assert.doesNotMatch(subj, /· public renunciation, Ren Publisher/);
+      assert.ok(read('fr/subject/1-test-subject/index.html').includes('<span class="muted">· renonciation publique, l’attente de l’échéance s’arrête ici</span>'));
+    });
+  });
+}
+
+test('renunciation under not_came_true: unchanged, numbered among the evidence', () => {
+  buildRenounced('not_came_true', (read, id) => {
+    const en = read(`en/claim/${id}/index.html`);
+    assert.deepEqual(layerIds(en), [1, 2, 3, 4].map((n) => `ev-${id}-${n}=Evidence ${n}`).concat(`src-${id}=Where it was said`));
+    assert.match(en, new RegExp(`id="ev-${id}-1">\\s*<summary><span class="t">Evidence 1</span><span class="s">Public renunciation · Ren Publisher · `));
+    assert.doesNotMatch(en, /ren-\d|the wait for the deadline ends here|Ends the wait|publicly gave up/);
+    assert.ok(chainOf(en).includes(`<a href="#ev-${id}-1" lang="fr">Renonciation A</a> · public renunciation`));
+    assert.ok(read(`fr/claim/${id}/index.html`).includes('<span class="t">Preuve 4</span><span class="s">Renonciation publique · '));
+    assert.ok(read('en/subject/1-test-subject/index.html').includes('<span class="muted">· public renunciation, <span lang="fr">Ren Publisher</span></span>'));
+  });
+});
+
+test('rows drawn by the page script show the renunciation the same way as the generated rows', async () => {
+  const { runInNewContext } = await import('node:vm');
+  const views = readFileSync(new URL('../src/site-assets/views.js', import.meta.url), 'utf8');
+  for (const [verdict, lang, line] of [
+    ['came_true', 'en', '· public renunciation, the wait for the deadline ends here</span></li>'],
+    ['to_evaluate', 'fr', '· renonciation publique, l’attente de l’échéance s’arrête ici</span></li>'],
+    ['not_came_true', 'en', '· public renunciation, <span lang="fr">Ren Publisher</span></span></li>'],
+  ]) {
+    buildRenounced(verdict, (read) => {
+      const index = JSON.parse(read(`${lang}/index.json`));
+      const window = { KV: index, addEventListener() {} };
+      const document = { documentElement: { lang }, body: { getAttribute: () => '' }, addEventListener() {} };
+      runInNewContext(views, { window, document, Intl });
+      const el = {};
+      window.KVStats.rows(el, index.items, false);
+      assert.ok(el.innerHTML.includes(`<li><span lang="fr">Renonciation A</span> <span class="muted">${line}`), `${verdict} ${lang}`);
+      if (verdict !== 'not_came_true') assert.doesNotMatch(el.innerHTML, /Ren Publisher/);
+    });
+  }
+});

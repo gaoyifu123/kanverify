@@ -73,6 +73,9 @@ const T = {
     basedOn: 'Based on', and: 'and', wording: 'the wording itself', noDeadline: 'No deadline',
     confirmedOn: (d) => `Confirmed by a person on ${d}`,
     fullRecord: 'Full record', evidence: (n) => `Evidence ${n}`,
+    // A renunciation under any verdict but not_came_true ends the wait and is not evidence (components.md).
+    renWait: 'public renunciation, the wait for the deadline ends here', renTitle: 'Public renunciation', renEnds: 'Ends the wait',
+    renPara: (name, d) => `${name} publicly gave up this promise on ${d}. From that date, the promise is judged on what had been done; this document is not evidence of that result.`,
     document: 'Document', location: 'Location', address: 'Original address', retrieved: 'Retrieved on', fingerprint: 'Fingerprint (SHA-256)',
     whereSaid: 'Where it was said', who: 'Who', publishedBy: 'Published by',
     copies: 'We keep a copy of each file; copies are not published. The fingerprint lets anyone check that a copy they hold is the same file.',
@@ -145,6 +148,8 @@ const T = {
     basedOn: 'Fondé sur', and: 'et', wording: 'la formulation elle-même', noDeadline: 'Pas d’échéance',
     confirmedOn: (d) => `Confirmé par une personne le ${d}`,
     fullRecord: 'Dossier complet', evidence: (n) => `Preuve ${n}`,
+    renWait: 'renonciation publique, l’attente de l’échéance s’arrête ici', renTitle: 'Renonciation publique', renEnds: 'Met fin à l’attente',
+    renPara: (name, d) => `${name} a renoncé publiquement à cette promesse le ${d}. À partir de cette date, la promesse est jugée sur ce qui avait été fait${NB}; ce document n’est pas la preuve de ce résultat.`,
     document: 'Document', location: 'Emplacement', address: 'Adresse d’origine', retrieved: 'Date de collecte', fingerprint: 'Empreinte (SHA-256)',
     whereSaid: 'Source de la promesse', who: 'Qui', publishedBy: 'Publié par',
     copies: `Nous conservons une copie de chaque fichier${NB}; les copies ne sont pas publiées. L’empreinte permet à chacun de vérifier qu’une copie en sa possession est bien le même fichier.`,
@@ -226,6 +231,14 @@ function isLegifrance(source) {
 }
 
 /** Publisher as shown: the Légifrance label for its texts, the recorded publisher otherwise. */
+/**
+ * A public renunciation is evidence only under not_came_true; under any other verdict it only ends
+ * the wait and is shown unnumbered, in its own wording (decision 0013, design/components.md).
+ */
+function endsWaitOnly(e, verdict) {
+  return e.kind === 'renunciation' && verdict !== 'not_came_true';
+}
+
 function publisherOf(source, lang) {
   return isLegifrance(source) ? T[lang].legifrance : source.publisher;
 }
@@ -540,7 +553,9 @@ function rowBody(it, lang, up) {
       `<p class="row-body-h">${L.basedOn}</p><ul class="row-basis">${it.evidence
         .map(
           (e) =>
-            `<li><span lang="${esc(e.lang)}">${esc(e.title)}</span> <span class="muted">· ${esc(lowerFirst(L.kind[e.kind]))}, ${isLegifrance(e) ? esc(L.legifrance) : `<span lang="${esc(e.lang)}">${esc(e.publisher)}</span>`}</span></li>`
+            endsWaitOnly(e, it.verdict)
+              ? `<li><span lang="${esc(e.lang)}">${esc(e.title)}</span> <span class="muted">· ${esc(L.renWait)}</span></li>`
+              : `<li><span lang="${esc(e.lang)}">${esc(e.title)}</span> <span class="muted">· ${esc(lowerFirst(L.kind[e.kind]))}, ${isLegifrance(e) ? esc(L.legifrance) : `<span lang="${esc(e.lang)}">${esc(e.publisher)}</span>`}</span></li>`
         )
         .join('')}</ul>`
     );
@@ -945,10 +960,18 @@ function claimPage(lang, m, claim) {
   const o = s.origin;
   const chain = [];
   chain.push({ date: c.said_on, rank: 0, html: L.saidIn(o.kind, `<a href="#src-${c.id}">${esc(L.kindLower[o.kind] ?? lowerFirst(L.kind[o.kind]))}, ${esc(c.source_locator)}</a>`) });
-  evidence.forEach((e, i) => {
+  // Evidence is numbered 1…n; a renunciation that only ends the wait is numbered apart (#ren-…), so
+  // "Evidence n" and #ev-… keep counting evidence alone. Under not_came_true it is evidence.
+  const proofs = evidence.filter((e) => !endsWaitOnly(e, v.verdict));
+  const renunciations = evidence.filter((e) => endsWaitOnly(e, v.verdict));
+  proofs.forEach((e, i) => {
     const kind = esc(lowerFirst(L.kind[e.kind])) +
       (isLegifrance(e) ? `, ${esc(L.legifrance)}` : e.kind === 'media' || e.kind === 'dataset_study' ? `, <span lang="${esc(e.lang)}">${esc(e.publisher)}</span>` : '');
     chain.push({ date: e.published_on || null, rank: 1, undated: L.dateNotStated, html: `<a href="#ev-${c.id}-${i + 1}" lang="${esc(e.lang)}">${esc(e.title)}</a> · ${kind}` });
+  });
+  // Same date as a piece of evidence: after it (rank 1.5).
+  renunciations.forEach((e, k) => {
+    chain.push({ date: e.published_on || null, rank: 1.5, undated: L.dateNotStated, html: `<a href="#ren-${c.id}-${k + 1}" lang="${esc(e.lang)}">${esc(e.title)}</a> · ${esc(L.renWait)}` });
   });
   if (c.deadline) chain.push({ date: c.deadline, rank: 2, html: esc(L.chainDeadline(c.deadline_basis, c.type)) });
   if (!evidence.length && c.verifiability !== 'measurable') {
@@ -961,7 +984,7 @@ function claimPage(lang, m, claim) {
   const wording = chain.filter((x) => !x.date && x.rank === 2);
   const confirmedAt = ordered.findIndex((x) => x.rank === 3);
   ordered.splice(confirmedAt, 0, ...wording);
-  ordered.push(...chain.filter((x) => !x.date && x.rank === 1));
+  ordered.push(...chain.filter((x) => !x.date && (x.rank === 1 || x.rank === 1.5)));
   const chainHtml = ordered
     .map((x) =>
       x.date
@@ -975,10 +998,12 @@ function claimPage(lang, m, claim) {
   else if (openQ) questionBlock = `\n      <h2>${L.openQuestion}</h2>\n      <p>${esc(openQ)}</p>`;
 
   const layers = [];
-  evidence.forEach((e, i) => {
-    const sum = [L.kind[e.kind], esc(publisherOf(e, lang)), e.published_on ? fmt(e.published_on, lang) : null].filter(Boolean).join(' · ');
-    layers.push(`<details class="layer" id="ev-${c.id}-${i + 1}">
-          <summary><span class="t">${L.evidence(i + 1)}</span><span class="s">${sum}</span></summary>
+  // One layer per document: evidence first ("Evidence n"), then each renunciation that only ends the wait.
+  const docLayer = (e, id, title, first, intro) => {
+    const sum = [first, esc(publisherOf(e, lang)), e.published_on ? fmt(e.published_on, lang) : null].filter(Boolean).join(' · ');
+    return `<details class="layer" id="${id}">
+          <summary><span class="t">${title}</span><span class="s">${sum}</span></summary>${intro ? `
+          <p class="muted">${intro}</p>` : ''}
           ${quoteBlock(e.excerpt, e.lang, translationOf(e, e.lang, 'excerpt', lang), lang)}
           <dl class="meta">
             <div><dt>${L.document}</dt><dd lang="${esc(e.lang)}">${esc(e.title)}</dd></div>${isLegifrance(e) ? `
@@ -988,8 +1013,13 @@ function claimPage(lang, m, claim) {
             <div><dt>${L.retrieved}</dt><dd>${fmt(e.retrieved_on, lang)}</dd></div>
             <div><dt>${L.fingerprint}</dt><dd class="mono">${esc(e.sha256)}</dd></div>
           </dl>
-        </details>`);
-  });
+        </details>`;
+  };
+  proofs.forEach((e, i) => layers.push(docLayer(e, `ev-${c.id}-${i + 1}`, L.evidence(i + 1), L.kind[e.kind])));
+  // A renunciation is always dated (rules.js renunciationAdmitted); fmt() stops the build if one is not.
+  renunciations.forEach((e, k) =>
+    layers.push(docLayer(e, `ren-${c.id}-${k + 1}`, L.renTitle, L.renEnds, L.renPara(esc(subject.name), fmt(e.published_on, lang))))
+  );
   layers.push(`<details class="layer" id="src-${c.id}">
           <summary><span class="t">${L.whereSaid}</span><span class="s">${L.kind[o.kind]} · ${esc(c.source_locator)}</span></summary>
           <dl class="meta">
