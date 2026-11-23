@@ -12,9 +12,9 @@
   "meta": {
     "day": 2,
     "totalDays": 14,
-    "updated": "2026-11-23 15:29:50",
+    "updated": "2026-11-23 17:33:40",
     "launch": "Dec 5",
-    "headline": "Desk fixed after the step-back (292 tests pass). Fable's second re-check is running again (it paused for the 5-hour quota). Meanwhile the evidence-pack rules are being drafted. One thing for you when at the computer: sign in to the Claude command line."
+    "headline": "End of day 2: your judging rules are written once (version 0.8) and every verdict records the rules it used; record format 12 passed Fable and is committed. Next: re-cut and re-vote the 10 trial claims under the new rules, then Macron and Trump. Only the Claude sign-in waits for you."
   },
   "counts": [
     {
@@ -24,12 +24,12 @@
     },
     {
       "label": "Fable reviews passed",
-      "value": "3 of 4",
-      "target": "Judge prompt, record format, fetching code; desk second re-check running"
+      "value": "7 of 7",
+      "target": "Judge prompt, formats 10/11/12, fetching, desk, pack rules; rules 0.8"
     },
     {
       "label": "Tests",
-      "value": "292",
+      "value": "346",
       "target": "All passing"
     },
     {
@@ -55,14 +55,27 @@
     "Your 11 board answers applied (decision 0013, verdict standard 0.4, judge prompt judge-0.6)",
     "PRINCIPLES.md: English text first, Chinese original underneath; judges now get the English text",
     "Claude command line: terms checked, installed",
-    "Desk rebuilt on explicitly closed jury rounds, plus the 5 smaller re-check fixes; renunciation rule in code"
+    "Desk rebuilt on explicitly closed jury rounds, plus the 5 smaller re-check fixes; renunciation rule in code",
+    "Review desk passed Fable's second re-check; committed and tagged fable-desk-2026-11-23",
+    "Evidence-pack rules drafted (team/run/pack-prompt.md, pack-0.1)",
+    "Fable review 6 (pack rules, judge-prompt changes) done: sent back, report saved",
+    "Record format 11 built; real database upgraded (backup kept)",
+    "Fable review 7 (record format 11): core passed, narrow send-back",
+    "Record format 11 passed Fable's re-check; committed and tagged fable-record-format-11-2026-11-23",
+    "Pack rules 0.2 + judge prompt 0.7 in one pass; method docs brought in line (source rule 0.5, verdict standard 0.5)",
+    "Evidence-pack rules (pack-0.2) passed Fable's re-check; committed and tagged fable-pack-rules-2026-11-23",
+    "Site shows a renunciation as \"the wait ends here\", not as evidence (code review passed, committed)",
+    "Renunciation step-back closed by your choice (simplify)",
+    "Record format 12 built: rules written once (verdict standard 0.6), verdicts record their rules, simpler renunciation; database upgraded with backup",
+    "Record format 12 and rules 0.8 passed Fable; committed (tags fable-record-format-12-2026-11-23, rules-0.8)",
+    "Daily log written (docs/log/2026-11-23.md)"
   ],
   "next": [
-    "Desk: Fable second re-check running, then a real-browser test, then commit",
-    "Evidence-pack rules (team/run/pack-prompt.md): being drafted now; Fable reviews it after the desk",
-    "Record format 11 (small): publish \"partly came true\" right after a renunciation; ledger shows only the verdict's jury round",
-    "Then: create Macron and Trump, import candidates; you confirm the flagged ones",
-    "Wire the isolated Claude judge (after your sign-in); desk: stricter calibration"
+    "Transcribe the missing pages; re-cut and re-vote the 10 trial claims under rules 0.8",
+    "Desk and site in a real browser",
+    "Create Macron and Trump, import candidates; you confirm at the desk",
+    "Before your first real confirmation: a way to upgrade the database once it holds publications",
+    "Small follow-ups from Fable; designer: mark an overdue re-check on the site"
   ],
   "needs": [
     {
@@ -736,6 +749,24 @@
       "t": "Verdict rules: state at the deadline; renunciation ends the wait; early came true only for one-off results; vague stays unverifiable; stricter 10/30/100 count; launch publishes more verdicts incl. all unverifiable; principles in English",
       "by": "You decided on the board",
       "s": "done"
+    },
+    {
+      "id": "0014",
+      "t": "Rules are decided as we go; every verdict records the rules (ids and version) it was judged by, shown on the site",
+      "by": "You decided in chat",
+      "s": "in_progress"
+    },
+    {
+      "id": "0013+",
+      "t": "Simpler rules: giving up before the deadline = did not come true (stays even if delivered later); early came true whenever fully achieved",
+      "by": "You decided on the board",
+      "s": "done"
+    },
+    {
+      "id": "0015",
+      "t": "Three judging standards: S1 words are gold (a later public contradiction by the speaker negates the claim); S2 history moves in cycles (promise: term of office; prediction: its time range); S3 common sense, final result",
+      "by": "You decided in chat",
+      "s": "in_progress"
     }
   ],
   "open": [
