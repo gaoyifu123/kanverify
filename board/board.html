@@ -10,137 +10,418 @@
 <script type="application/json" id="board-data">
 {
   "meta": {
-    "day": 1,
+    "day": 2,
     "totalDays": 14,
-    "updated": "2026-11-22 21:29:56",
+    "updated": "2026-11-23 09:35:56",
     "launch": "Dec 5",
-    "headline": "Review desk built and browser-tested; Fable reviews it tomorrow at 09:15 (with the judge prompt, record formats and fetching code). Then you can start confirming."
+    "headline": "Fable reviews running one at a time (1 of 4: judge prompt). Once the review desk passes, the people are created and candidates imported; then you confirm. Nothing needs you before then."
   },
   "counts": [
-    { "label": "Promises recorded", "value": "0", "target": "427 candidates (deduplicated) awaiting confirmation; launch target 100 to 200" },
-    { "label": "Countries completed", "value": "0", "target": "France and the US first" },
-    { "label": "Tests", "value": "195", "target": "All passing; today's changes go to Fable for review tomorrow morning" },
-    { "label": "Jury models", "value": "2", "target": "Three vendors: Claude and Codex connected (subscriptions); Gemini waiting for a key" }
+    {
+      "label": "Promises recorded",
+      "value": "0",
+      "target": "427 candidates ready (Macron 2022, Trump 2024); launch target 100 to 200"
+    },
+    {
+      "label": "Verdicts in trial",
+      "value": "10",
+      "target": "Dry run: two judges agree on 7 of 10; not confirmed, not published"
+    },
+    {
+      "label": "Tests",
+      "value": "235",
+      "target": "All passing"
+    },
+    {
+      "label": "Jury",
+      "value": "2 of 3",
+      "target": "Claude and Codex (subscriptions) working; Gemini waits for a key"
+    }
   ],
   "done": [
-    "Project skeleton: principles file, project instructions, directory layout, version control",
-    "Team: 3 build-group agents, 5 run-group roles, 5 collaboration templates",
-    "Two independent reviews both found holes in the database rules, so we stopped and stepped back",
-    "After your confirmation, the database rules became \"workspace and ledger kept separate\"; rules cut from 24 to 7",
-    "Third independent review: the design holds; found 1 severe and a few medium issues, fixed",
-    "Fourth review: the fixes work; the ledger held against 32 kinds of ID attack; remaining issues are outside the boundary",
-    "Source rule v0.2: one official document, or two different independent sources; the database enforces it",
-    "Jury unlock conditions as you set them: 10, 30, 100 items, 99% accuracy",
-    "Models set to four vendors: Anthropic, Gemini, OpenAI, Mistral",
-    "Tech stack, design skill plan and the way withdrawals are displayed are all decided",
-    "Two design plugins installed (by you)",
-    "Models assigned to each agent: Opus 5.5 by default, Fable 5.2 only for key reviews and route decisions",
-    "6 decision records",
-    "This board: you can reply directly, and the refresh button notifies me",
-    "Design brief and information architecture (design folder); you answered three of its questions",
-    "Database protection boundary set: guards against code mistakes, not against deliberately switching safety off",
-    "Source rule 0.3: an official body assessing its own work does not count as evidence",
-    "Jury unlock algorithm confirmed; weekly spot checks stay after it is turned on"
+    "Principles, team, collaboration rules; project open source on GitHub (code AGPL v3, docs CC BY 4.0, site content CC BY-NC-SA 4.0)",
+    "Record format 9: workspace and ledger, six verdicts, bilingual, person IDs, renunciation rule; independently reviewed",
+    "Evidence archive with security checks; official sources: Légifrance (France) and the Federal Register (US)",
+    "AI interface layer (four vendors interchangeable); Codex connected through your ChatGPT subscription",
+    "Manifestos archived (Macron 2022, Trump 2024); 492 candidates extracted, 427 after cleaning",
+    "New low-cost pipeline: evidence packs cut on subscription, judges vote on packs; 10-claim dry run at zero API cost",
+    "Static site generator (French and English, translation first with the original underneath), browser-tested",
+    "Design frozen: palette B, two sizes and weights, timeline home, person and topic pages",
+    "Review desk built, security-reviewed by Opus and browser-tested; Fable review today",
+    "Link mailbox read every morning at 08:30",
+    "Board, interface and new documents now in English"
   ],
   "next": [
-    "Record format 6: five verdicts, the person's own public renunciation (promises only), quantifiable \"cannot verify\" also needs evidence; review passed",
-    "Record format 5: bilingual, verdict must carry an explanation, quotes not stored twice, invisible characters count as blank; both reviews passed; database boundary final check passed",
-    "Person ID protection fixed as you decided, routine review passed; record format 5 complete",
-    "Withdrawal reasons now in French and English (record format 7), review passed",
-    "Evidence archive script: passed security review after three rounds (reviewed today by Opus 5.5); can be used to download external links; not yet run against a real URL",
-    "Download a campaign manifesto and extract it into items with page numbers",
-    "First visual draft is out (home, person page, item page, method page, in French and English), waiting for you; then design review and accessibility check"
+    "Fable review queue (running now, one at a time): judge prompt, review desk, record formats 6–9, fetching code; design critique if quota remains",
+    "After the desk passes: create Macron and Trump, auto-import candidates, you confirm only the flagged ones (about 90)",
+    "Translation step (needed before French evidence can be published), then re-run the 10 trial verdicts under the new rule",
+    "More evidence packs and verdicts towards the first 10 confirmed items"
   ],
   "needs": [
-    {"id":"codex","t":"Jury moves to three vendors: install Codex?","d":"As you said: the Claude and OpenAI reviews use subscriptions, only Gemini goes through the API, under 1 cent per promise (decision 0010). The OpenAI vote needs the Codex command-line tool, signed in with your ChatGPT subscription. Needed: 1) you have a ChatGPT subscription; 2) you agree to install Codex (third-party software) on this computer. Before installing I will check whether it can be called automatically by a program and whether the terms allow it. The Gemini key also has to go into .env.","options":["Have a subscription, agree to install","No ChatGPT subscription"],"placeholder":"Extra notes, optional"},
-    { "id": "note", "t": "Anything else to tell me", "d": "Any thought, change request or new requirement can go here.", "options": [], "placeholder": "Write whatever comes to mind" }
+    {
+      "id": "note",
+      "t": "Anything else to tell me",
+      "d": "Any thought, change request or new requirement can go here.",
+      "options": [],
+      "placeholder": "Write whatever comes to mind"
+    }
   ],
   "phases": [
-    { "name": "1a Minimum technical version", "dates": "11/22 to 11/28", "line": "Fetch, analyse and present working end to end", "s": "doing" },
-    { "name": "1b Three datasets", "dates": "11/29 to 12/5", "line": "Campaign manifestos of two to three leaders", "s": "todo" },
-    { "name": "Launch", "dates": "12/5", "line": "Every item has a source; launch checklist passed", "s": "todo", "gate": true },
-    { "name": "2 Quiet polishing", "dates": "from December", "line": "At least 3 people per week, no promotion", "s": "todo" },
-    { "name": "3 Expansion", "dates": "date to be decided", "line": "Promotion, donations and ads, Chinese; open the submission link to readers", "s": "todo" }
+    {
+      "name": "1a Minimum technical version",
+      "dates": "11/22 to 11/28",
+      "line": "Fetch, analyse and present working end to end",
+      "s": "doing"
+    },
+    {
+      "name": "1b Three datasets",
+      "dates": "11/29 to 12/5",
+      "line": "Campaign manifestos of two to three leaders",
+      "s": "todo"
+    },
+    {
+      "name": "Launch",
+      "dates": "12/5",
+      "line": "Every item has a source; launch checklist passed",
+      "s": "todo",
+      "gate": true
+    },
+    {
+      "name": "2 Quiet polishing",
+      "dates": "from December",
+      "line": "At least 3 people per week, no promotion",
+      "s": "todo"
+    },
+    {
+      "name": "3 Expansion",
+      "dates": "date to be decided",
+      "line": "Promotion, donations and ads, Chinese; open the submission link to readers",
+      "s": "todo"
+    }
   ],
   "packages": [
-    { "from": 1, "to": 1, "dates": "11/22", "title": "Set up the project and team", "tasks": [
-      { "t": "Site name set: KANVERIFY", "s": "done" },
-      { "t": "Third country: UK or Germany, decided after launch based on traffic", "s": "done" },
-      { "t": "Project skeleton and local database", "s": "done" },
-      { "t": "Principles file and each agent's role file", "s": "done" },
-      { "t": "Record format: redone as \"workspace and ledger kept separate\"", "s": "done" },
-      { "t": "Third independent review of the record format", "s": "done" },
-      { "t": "Fix the third round's findings, fourth round re-check", "s": "done" },
-      { "t": "Set the database protection boundary", "s": "done" },
-      { "t": "Record format 5: person IDs, bilingual storage", "s": "done" },
-      { "t": "Choose the design skill", "s": "done" },
-      { "t": "Install two design plugins", "s": "done" },
-      { "t": "Assign models to each agent", "s": "done" }
-    ]},
-    { "from": 2, "to": 3, "dates": "11/23 to 11/24", "title": "AI interface layer, manifesto download and extraction", "tasks": [
-      { "t": "AI interface layer: four vendors' models interchangeable (done, review passed)", "s": "done" },
-      { "t": "Download manifestos and archive them (Macron 2022, Trump 2024)", "s": "done" },
-      { "t": "Extract into items with page numbers, verbatim check (492 candidates)", "s": "done" },
-      { "t": "Link inbox working end to end: you forward a link → archive → AI extracts promises and predictions → you confirm", "s": "todo" }
-    ]},
-    { "from": 4, "to": 5, "dates": "11/25 to 11/26", "title": "Evidence source list, jury first-pass verdicts, review desk", "tasks": [
-      { "t": "Evidence source list for the first country", "s": "todo" },
-      { "t": "Jury first-pass verdict pipeline", "s": "todo" },
-      { "t": "Review desk, 20 items given a first-pass verdict and confirmed", "s": "todo" }
-    ]},
-    { "from": 6, "to": 7, "dates": "11/27 to 11/28", "title": "Interface design and static site", "check": "Day 7 checkpoint: technical version runs end to end", "tasks": [
-      { "t": "Design agent produces interface drafts (MVP finalised)", "s": "done" },
-      { "t": "Implement the static site from the drafts (done, review passed)", "s": "done" },
-      { "t": "Export and daily backup", "s": "todo" }
-    ]},
-    { "from": 8, "to": 10, "dates": "11/29 to 12/1", "title": "All items for the first country", "tasks": [
-      { "t": "All promises of the first country", "s": "todo" },
-      { "t": "Compare with existing trackers, raise the verdict criteria to 1.0", "s": "todo" }
-    ]},
-    { "from": 11, "to": 13, "dates": "12/2 to 12/4", "title": "Second country, translations, neutrality check", "tasks": [
-      { "t": "All promises of the second country", "s": "todo" },
-      { "t": "French and English translations", "s": "todo" },
-      { "t": "Neutrality check", "s": "todo" }
-    ]},
-    { "from": 14, "to": 14, "dates": "12/5", "title": "Launch", "check": "Day 14 checkpoint: launch checklist passed", "tasks": [
-      { "t": "Minimum pre-launch checklist", "s": "todo" },
-      { "t": "Deploy", "s": "todo" }
-    ]}
+    {
+      "from": 1,
+      "to": 1,
+      "dates": "11/22",
+      "title": "Set up the project and team",
+      "tasks": [
+        {
+          "t": "Site name set: KANVERIFY",
+          "s": "done"
+        },
+        {
+          "t": "Third country: UK or Germany, decided after launch based on traffic",
+          "s": "done"
+        },
+        {
+          "t": "Project skeleton and local database",
+          "s": "done"
+        },
+        {
+          "t": "Principles file and each agent's role file",
+          "s": "done"
+        },
+        {
+          "t": "Record format: redone as \"workspace and ledger kept separate\"",
+          "s": "done"
+        },
+        {
+          "t": "Third independent review of the record format",
+          "s": "done"
+        },
+        {
+          "t": "Fix the third round's findings, fourth round re-check",
+          "s": "done"
+        },
+        {
+          "t": "Set the database protection boundary",
+          "s": "done"
+        },
+        {
+          "t": "Record format 5: person IDs, bilingual storage",
+          "s": "done"
+        },
+        {
+          "t": "Choose the design skill",
+          "s": "done"
+        },
+        {
+          "t": "Install two design plugins",
+          "s": "done"
+        },
+        {
+          "t": "Assign models to each agent",
+          "s": "done"
+        }
+      ]
+    },
+    {
+      "from": 2,
+      "to": 3,
+      "dates": "11/23 to 11/24",
+      "title": "AI interface layer, manifesto download and extraction",
+      "tasks": [
+        {
+          "t": "AI interface layer: four vendors interchangeable; Codex via subscription",
+          "s": "done"
+        },
+        {
+          "t": "Download manifestos and archive them (Macron 2022, Trump 2024)",
+          "s": "done"
+        },
+        {
+          "t": "Extract into items with page numbers, verbatim check (492 → 427 candidates)",
+          "s": "done"
+        },
+        {
+          "t": "Link mailbox read daily; links logged (extraction from them comes next)",
+          "s": "doing"
+        }
+      ]
+    },
+    {
+      "from": 4,
+      "to": 5,
+      "dates": "11/25 to 11/26",
+      "title": "Evidence source list, jury first-pass verdicts, review desk",
+      "tasks": [
+        {
+          "t": "Official evidence fetchers: Légifrance (France), Federal Register (US)",
+          "s": "done"
+        },
+        {
+          "t": "Jury pipeline on evidence packs (Claude + Codex; Gemini when keyed); 10-claim dry run",
+          "s": "done"
+        },
+        {
+          "t": "Review desk built and browser-tested; Fable review today",
+          "s": "doing"
+        },
+        {
+          "t": "Translation step before publication",
+          "s": "todo"
+        },
+        {
+          "t": "First 10 items confirmed by you",
+          "s": "todo"
+        }
+      ]
+    },
+    {
+      "from": 6,
+      "to": 7,
+      "dates": "11/27 to 11/28",
+      "title": "Interface design and static site",
+      "check": "Day 7 checkpoint: technical version runs end to end",
+      "tasks": [
+        {
+          "t": "Design finalised (palette B)",
+          "s": "done"
+        },
+        {
+          "t": "Static site generator, browser-tested",
+          "s": "done"
+        },
+        {
+          "t": "Export and daily backup",
+          "s": "todo"
+        }
+      ]
+    },
+    {
+      "from": 8,
+      "to": 10,
+      "dates": "11/29 to 12/1",
+      "title": "All items for the first country",
+      "tasks": [
+        {
+          "t": "All promises of the first country",
+          "s": "todo"
+        },
+        {
+          "t": "Compare with existing trackers, raise the verdict criteria to 1.0",
+          "s": "todo"
+        }
+      ]
+    },
+    {
+      "from": 11,
+      "to": 13,
+      "dates": "12/2 to 12/4",
+      "title": "Second country, translations, neutrality check",
+      "tasks": [
+        {
+          "t": "All promises of the second country",
+          "s": "todo"
+        },
+        {
+          "t": "French and English translations",
+          "s": "todo"
+        },
+        {
+          "t": "Neutrality check",
+          "s": "todo"
+        }
+      ]
+    },
+    {
+      "from": 14,
+      "to": 14,
+      "dates": "12/5",
+      "title": "Launch",
+      "check": "Day 14 checkpoint: launch checklist passed",
+      "tasks": [
+        {
+          "t": "Minimum pre-launch checklist",
+          "s": "todo"
+        },
+        {
+          "t": "Deploy",
+          "s": "todo"
+        }
+      ]
+    }
   ],
   "components": {
-    "fetch": { "name": "Source fetching", "line": "Download manifestos and original evidence, keep originals and hashes; manifestos already archived", "s": "doing" },
-    "extract": { "name": "AI extraction", "line": "Extracts promises one by one with source page; first real run completed", "s": "done" },
-    "jury": { "name": "AI jury", "line": "Four vendors' models each give an independent first-pass verdict, quoting the evidence text; feasibility trial running (Anthropic only)", "s": "doing" },
-    "layer": { "name": "AI interface layer", "line": "Anthropic, Gemini, OpenAI, Mistral, interchangeable; built and review passed, keys requested when real models are connected", "s": "done" },
-    "desk": { "name": "Review desk", "line": "Neutrality check; you confirm item by item; shows which items have unconfirmed changes", "s": "todo" },
-    "workspace": { "name": "Workspace", "line": "Promises, verdicts, evidence, sources, jury votes. Freely editable", "s": "done" },
-    "ledger": { "name": "Ledger", "line": "Each time you confirm, a full snapshot is stored. Append-only, never modified. Bilingual French and English", "s": "done" },
-    "evidence": { "name": "Local evidence archive", "line": "Original manifestos and evidence, file name is its hash; archive script passed review", "s": "done" },
-    "backup": { "name": "Daily backup", "line": "Encrypted backup to another disk or the cloud", "s": "todo" },
-    "site": { "name": "Public site", "line": "Static pages generated only from the ledger, French and English; generator built and review passed, not yet deployed", "s": "done" }
+    "fetch": {
+      "name": "Source fetching",
+      "line": "Originals and hashes; Légifrance and Federal Register connected",
+      "s": "done"
+    },
+    "extract": {
+      "name": "AI extraction",
+      "line": "Extracts promises one by one with source page; first real run completed",
+      "s": "done"
+    },
+    "jury": {
+      "name": "AI jury",
+      "line": "Three vendors judge evidence packs independently: Claude and Codex on subscription, Gemini on API (key pending)",
+      "s": "doing"
+    },
+    "layer": {
+      "name": "AI interface layer",
+      "line": "One entry point for all vendors; Codex runs through your ChatGPT subscription",
+      "s": "done"
+    },
+    "desk": {
+      "name": "Review desk",
+      "line": "Local page: you confirm flagged candidates and final verdicts by keyboard; Fable review today",
+      "s": "doing"
+    },
+    "workspace": {
+      "name": "Workspace",
+      "line": "Promises, verdicts, evidence, sources, jury votes. Freely editable",
+      "s": "done"
+    },
+    "ledger": {
+      "name": "Ledger",
+      "line": "Each time you confirm, a full snapshot is stored. Append-only, never modified. Bilingual French and English",
+      "s": "done"
+    },
+    "evidence": {
+      "name": "Local evidence archive",
+      "line": "Original manifestos and evidence, file name is its hash; archive script passed review",
+      "s": "done"
+    },
+    "backup": {
+      "name": "Daily backup",
+      "line": "Encrypted backup to another disk or the cloud",
+      "s": "todo"
+    },
+    "site": {
+      "name": "Public site",
+      "line": "Static pages generated only from the ledger, French and English; generator built and review passed, not yet deployed",
+      "s": "done"
+    }
   },
   "stack": [
-    { "part": "Language and runtime", "choice": "Node.js, plain JavaScript, no build step", "s": "done" },
-    { "part": "Database", "choice": "SQLite, a single file, only on your computer; workspace and ledger kept separate", "s": "done" },
-    { "part": "Third-party dependencies", "choice": "Zero", "s": "done" },
-    { "part": "Public site", "choice": "Program generates static HTML, put on static hosting", "s": "todo" },
-    { "part": "Models", "choice": "Called through one common interface: Anthropic, Gemini, OpenAI, Mistral; keys requested when models are connected", "s": "todo" }
+    {
+      "part": "Language and runtime",
+      "choice": "Node.js, plain JavaScript, no build step",
+      "s": "done"
+    },
+    {
+      "part": "Database",
+      "choice": "SQLite, a single file, only on your computer; workspace and ledger kept separate",
+      "s": "done"
+    },
+    {
+      "part": "Third-party dependencies",
+      "choice": "Zero",
+      "s": "done"
+    },
+    {
+      "part": "Public site",
+      "choice": "Program generates static HTML, put on static hosting",
+      "s": "todo"
+    },
+    {
+      "part": "Models",
+      "choice": "Through one interface. Jury: Claude and Codex (subscriptions), Gemini (API); Anthropic API key for tests",
+      "s": "doing"
+    }
   ],
   "team": {
     "build": [
-      { "name": "Coordinator", "does": "Splits tasks, assigns work, summarises progress, guards the principles", "gives": "Task tickets, progress summaries, the board", "s": "done" },
-      { "name": "Design", "does": "Information architecture, visual drafts, component specs, copy tone", "gives": "Design drafts and specs", "s": "done" },
-      { "name": "Development", "does": "Implements from the design drafts and record format", "gives": "Code and tests", "s": "done" },
-      { "name": "Code review", "does": "Independently checks development output, only sends back, never edits", "gives": "List of issues", "s": "done" }
+      {
+        "name": "Coordinator",
+        "does": "Splits tasks, assigns work, summarises progress, guards the principles",
+        "gives": "Task tickets, progress summaries, the board",
+        "s": "done"
+      },
+      {
+        "name": "Design",
+        "does": "Information architecture, visual drafts, component specs, copy tone",
+        "gives": "Design drafts and specs",
+        "s": "done"
+      },
+      {
+        "name": "Development",
+        "does": "Implements from the design drafts and record format",
+        "gives": "Code and tests",
+        "s": "done"
+      },
+      {
+        "name": "Code review",
+        "does": "Independently checks development output, only sends back, never edits",
+        "gives": "List of issues",
+        "s": "done"
+      }
     ],
     "run": [
-      { "name": "Fetching", "does": "Finds and downloads original evidence", "gives": "Originals, hashes", "s": "done" },
-      { "name": "Extraction", "does": "Extracts promises one by one from manifestos", "gives": "Items with original text and page numbers", "s": "done" },
-      { "name": "Jury", "does": "Several models each give an independent first-pass verdict", "gives": "Verdict, evidence passage, reasons", "s": "done" },
-      { "name": "Neutrality review", "does": "Checks selection, wording and evidence, only sends back, never edits", "gives": "Pass or send back", "s": "done" },
-      { "name": "Translation", "does": "French and English translations", "gives": "Translations", "s": "done" }
+      {
+        "name": "Fetching",
+        "does": "Finds and downloads original evidence",
+        "gives": "Originals, hashes",
+        "s": "done"
+      },
+      {
+        "name": "Extraction",
+        "does": "Extracts promises one by one from manifestos",
+        "gives": "Items with original text and page numbers",
+        "s": "done"
+      },
+      {
+        "name": "Jury",
+        "does": "Several models each give an independent first-pass verdict",
+        "gives": "Verdict, evidence passage, reasons",
+        "s": "done"
+      },
+      {
+        "name": "Neutrality review",
+        "does": "Checks selection, wording and evidence, only sends back, never edits",
+        "gives": "Pass or send back",
+        "s": "done"
+      },
+      {
+        "name": "Translation",
+        "does": "French and English translations",
+        "gives": "Translations",
+        "s": "done"
+      }
     ],
-    "note": "\"Done\" here means the role files are written. The run group only starts real work once the pipeline is built. Code review has actually worked for four rounds. Models: coordinator, design, development and routine review use Opus 5.5; Fable 5.2 is called only for reviews of key changes, step-backs and route decisions; research uses a cheaper model. The run group uses models from the other four vendors.",
+    "note": "Models: coordinator, design, development and routine review use Opus 5.5. Fable 5.2 is only a separate critical reviewer (judge prompt, what can be published, security, top-level design critique), one reviewer per area, re-used for its re-checks; queue in docs/review-queue-fable.md. Long Fable work would use two sessions and a handoff note.",
     "rules": [
       "All agents read the same principles",
       "Handoffs go through files and the database, not conversation memory",
@@ -152,59 +433,301 @@
     ]
   },
   "principles": [
-    { "n": 1, "name": "A good question matters as much as an answer", "gloss": "If the truth cannot be given, give a good question.", "how": "A \"cannot determine\" verdict that does not say what is missing is rejected by the database", "s": "done" },
-    { "n": 2, "name": "No source, no record", "gloss": "No source, no entry, no verdict.", "how": "Items without a source cannot be stored; verdicts without original evidence cannot enter the ledger. Four independent reviews done; boundary of protection decided", "s": "wait" },
-    { "n": 3, "name": "One yardstick", "gloss": "The same rules for everyone; state results, do not guess motives.", "how": "Neutrality review checks every item; weekly count of verdict distribution by country", "s": "doing" },
-    { "n": 4, "name": "Think, then code", "gloss": "Think, then code. When stuck, step back, do not force a fix.", "how": "Circuit breaker: if one problem is not solved after two fixes, stop and write a step-back note first. Already used once", "s": "doing" },
-    { "n": 5, "name": "Simplest solution, dare to cut", "gloss": "Keep it simple.", "how": "Before adding a component or dependency, write one sentence on why the existing ones are not enough", "s": "doing" },
-    { "n": 6, "name": "Speak plainly", "gloss": "Have backbone. Dare to give opinions, hold your role, do not flatter.", "how": "Every output has a fixed \"objections and risks\" field that cannot be left empty", "s": "doing" },
-    { "n": 7, "name": "Automate what can be automated", "gloss": "People only do the step machines cannot.", "how": "The review desk records human time per item and produces a weekly report", "s": "todo" },
-    { "n": 8, "name": "Not at anyone's mercy", "gloss": "No lock-in to an AI vendor, data stays local, self-funded.", "how": "Business code may call models only through the AI interface layer; the database stays on this machine", "s": "doing" }
+    {
+      "n": 1,
+      "name": "A good question matters as much as an answer",
+      "gloss": "If the truth cannot be given, give a good question.",
+      "how": "A \"cannot determine\" verdict that does not say what is missing is rejected by the database",
+      "s": "done"
+    },
+    {
+      "n": 2,
+      "name": "No source, no record",
+      "gloss": "No source, no entry, no verdict.",
+      "how": "Items without a source cannot be stored; verdicts without original evidence cannot enter the ledger. Four independent reviews done; boundary of protection decided",
+      "s": "wait"
+    },
+    {
+      "n": 3,
+      "name": "One yardstick",
+      "gloss": "The same rules for everyone; state results, do not guess motives.",
+      "how": "Neutrality review checks every item; weekly count of verdict distribution by country",
+      "s": "doing"
+    },
+    {
+      "n": 4,
+      "name": "Think, then code",
+      "gloss": "Think, then code. When stuck, step back, do not force a fix.",
+      "how": "Circuit breaker: if one problem is not solved after two fixes, stop and write a step-back note first. Already used once",
+      "s": "doing"
+    },
+    {
+      "n": 5,
+      "name": "Simplest solution, dare to cut",
+      "gloss": "Keep it simple.",
+      "how": "Before adding a component or dependency, write one sentence on why the existing ones are not enough",
+      "s": "doing"
+    },
+    {
+      "n": 6,
+      "name": "Speak plainly",
+      "gloss": "Have backbone. Dare to give opinions, hold your role, do not flatter.",
+      "how": "Every output has a fixed \"objections and risks\" field that cannot be left empty",
+      "s": "doing"
+    },
+    {
+      "n": 7,
+      "name": "Automate what can be automated",
+      "gloss": "People only do the step machines cannot.",
+      "how": "The review desk records human time per item and produces a weekly report",
+      "s": "todo"
+    },
+    {
+      "n": 8,
+      "name": "Not at anyone's mercy",
+      "gloss": "No lock-in to an AI vendor, data stays local, self-funded.",
+      "how": "Business code may call models only through the AI interface layer; the database stays on this machine",
+      "s": "doing"
+    }
   ],
   "principlesNote": "Done: the program already enforces it, with tests, and it passed independent review. In progress: the rule is written and relies on daily practice, or is still under review. Not started: the component does not exist yet.",
   "decisions": [
-    { "id": "0001", "t": "Tech stack: zero-dependency Node.js, SQLite, static HTML", "by": "I proposed, you agreed", "s": "done" },
-    { "id": "0002", "t": "Source rule: one official document, or two different independent sources each confirming", "by": "You decided", "s": "done" },
-    { "id": "0002", "t": "An official body assessing its own work does not count as evidence; data or legal text is required (source rule 0.3)", "by": "I recommended, you agreed", "s": "done" },
-    { "id": "0003", "t": "AI jury: 10, 30, 100 items, 99% accuracy turns on automatic review", "by": "You decided", "s": "done" },
-    { "id": "0003", "t": "10 of 10 correct, 30 of 30 correct, at most 1 error in 100; weekly spot checks stay after it is on", "by": "My reading, you confirmed", "s": "done" },
-    { "id": "0007", "t": "People use internal IDs, Wikidata ID optional; French and English are the storage languages; rebuttals added later", "by": "You decided", "s": "done" },
-    { "id": "—", "t": "Second round of visual drafts approved: as few font sizes and weights as possible, suited to wide desktop screens, built as an MVP first", "by": "You decided", "s": "done" },
-    { "id": "—", "t": "Dedicated mailbox connected; reads the links you send every day at 8:30", "by": "You connected it, I set it up", "s": "done" },
-    { "id": "—", "t": "Correction requests use kanverify@gmail.com for now", "by": "You decided", "s": "done" },
-    { "id": "—", "t": "French legal API PISTE production environment is open (you registered); development is wiring it into the evidence flow", "by": "You", "s": "done" },
-    { "id": "—", "t": "Colour scheme B: soft multi-colour (no red or green, keeping patterns and text labels)", "by": "You decided", "s": "done" },
-    { "id": "—", "t": "French legal text comes from the official Légifrance API data, the site labels it \"official database\"", "by": "You decided", "s": "done" },
-    { "id": "—", "t": "Deadline reading: \"before 2027\" means end of 2027, \"by the end of this decade\" means end of 2030; a bundled promise counts as kept only if all of it is done", "by": "You decided", "s": "done" },
-    { "id": "0011", "t": "Verdicts and data on the site use CC BY-NC-SA 4.0: may be quoted and reposted, must credit the source, no commercial use", "by": "You decided", "s": "done" },
-    { "id": "0011", "t": "Open source: github.com/gaoyifu123/kanverify, code AGPL v3, docs CC BY 4.0; data and unconfirmed verdicts not public", "by": "You decided", "s": "done" },
-    { "id": "—", "t": "Unflagged candidates enter the workspace automatically; you confirm only flagged candidates and final verdicts, in the local review desk", "by": "Your call", "s": "done" },
-    { "id": "0008", "t": "Before the deadline only \"came true\" may be given early; \"partly came true\" waits for the deadline", "by": "Your call", "s": "done" },
-    { "id": "0008", "t": "A person's own public renunciation can be the sole evidence for a \"not kept\" verdict, in this one case only", "by": "You decided", "s": "done" },
-    { "id": "0008", "t": "Six verdicts: cannot verify, pending, to be assessed, kept, partly kept, not kept; quantifiable partly kept states the data; if achieved, may be judged kept early", "by": "You decided", "s": "done" },
-    { "id": "—", "t": "Model keys: only Anthropic's is in so far, the rest to be added over time", "by": "You", "s": "done" },
-    { "id": "0007", "t": "Fixed list of 20 policy areas", "by": "I proposed, you agreed", "s": "done" },
-    { "id": "—", "t": "Withdrawn items leave no trace on the person page, only explained on the item page and the corrections page", "by": "You decided", "s": "done" },
-    { "id": "—", "t": "Circuit breaker: person ID protection fixed with a one-line change, only routine review afterwards", "by": "I recommended, you agreed", "s": "done" },
-    { "id": "—", "t": "Items with a verdict must carry French and English explanations", "by": "I recommended, you agreed", "s": "done" },
-    { "id": "—", "t": "Design direction approved; corrections by email, archived originals not public, withdrawal shows only an explanation, models shown as they are, home page sorted by time", "by": "I gave defaults, you agreed", "s": "done" },
-    { "id": "0004", "t": "Design skill: use frontend-design, plus our own design brief", "by": "I proposed, you agreed", "s": "done" },
-    { "id": "0004", "t": "Both design plugins installed; the design plugin connects to no external service", "by": "You installed", "s": "done" },
-    { "id": "—", "t": "Models: Opus 5.5 by default, Fable 5.2 only for key reviews and route decisions", "by": "You set the direction, I assigned", "s": "done" },
-    { "id": "0006", "t": "Models from four vendors: Anthropic, Gemini, OpenAI, Mistral", "by": "You decided", "s": "done" },
-    { "id": "—", "t": "Withdrawn items: the page stays, marked as withdrawn with the reason", "by": "You decided", "s": "done" },
-    { "id": "0005", "t": "Database: workspace and ledger kept separate, the site is generated only from the ledger", "by": "I proposed, you confirmed", "s": "done" },
-    { "id": "0005", "t": "Database protection boundary: guards against code mistakes, not against deliberately switching safety off", "by": "I proposed, you accepted", "s": "done" },
-    { "id": "—", "t": "Site name KANVERIFY, launching in French and English", "by": "You decided", "s": "done" },
-    { "id": "—", "t": "Launch within two weeks, no promotion after launch", "by": "You decided", "s": "done" },
-    { "id": "—", "t": "The database lives only on your computer; the public site is a read-only copy", "by": "You decided", "s": "done" },
-    { "id": "—", "t": "The human review step is done by you and the reviewers you invite, not public readers", "by": "You decided", "s": "done" },
-    { "id": "—", "t": "Third country: UK or Germany, decided by traffic after launch", "by": "You decided", "s": "done" }
+    {
+      "id": "0001",
+      "t": "Tech stack: zero-dependency Node.js, SQLite, static HTML",
+      "by": "I proposed, you agreed",
+      "s": "done"
+    },
+    {
+      "id": "0002",
+      "t": "Source rule: one official document, or two different independent sources each confirming",
+      "by": "You decided",
+      "s": "done"
+    },
+    {
+      "id": "0002",
+      "t": "An official body assessing its own work does not count as evidence; data or legal text is required (source rule 0.3)",
+      "by": "I recommended, you agreed",
+      "s": "done"
+    },
+    {
+      "id": "0003",
+      "t": "AI jury: 10, 30, 100 items, 99% accuracy turns on automatic review",
+      "by": "You decided",
+      "s": "done"
+    },
+    {
+      "id": "0003",
+      "t": "10 of 10 correct, 30 of 30 correct, at most 1 error in 100; weekly spot checks stay after it is on",
+      "by": "My reading, you confirmed",
+      "s": "done"
+    },
+    {
+      "id": "0007",
+      "t": "People use internal IDs, Wikidata ID optional; French and English are the storage languages; rebuttals added later",
+      "by": "You decided",
+      "s": "done"
+    },
+    {
+      "id": "—",
+      "t": "Second round of visual drafts approved: as few font sizes and weights as possible, suited to wide desktop screens, built as an MVP first",
+      "by": "You decided",
+      "s": "done"
+    },
+    {
+      "id": "—",
+      "t": "Dedicated mailbox connected; reads the links you send every day at 8:30",
+      "by": "You connected it, I set it up",
+      "s": "done"
+    },
+    {
+      "id": "—",
+      "t": "Correction requests use kanverify@gmail.com for now",
+      "by": "You decided",
+      "s": "done"
+    },
+    {
+      "id": "—",
+      "t": "French legal API PISTE production environment is open (you registered); development is wiring it into the evidence flow",
+      "by": "You",
+      "s": "done"
+    },
+    {
+      "id": "—",
+      "t": "Colour scheme B: soft multi-colour (no red or green, keeping patterns and text labels)",
+      "by": "You decided",
+      "s": "done"
+    },
+    {
+      "id": "—",
+      "t": "French legal text comes from the official Légifrance API data, the site labels it \"official database\"",
+      "by": "You decided",
+      "s": "done"
+    },
+    {
+      "id": "—",
+      "t": "Deadline reading: \"before 2027\" means end of 2027, \"by the end of this decade\" means end of 2030; a bundled promise counts as kept only if all of it is done",
+      "by": "You decided",
+      "s": "done"
+    },
+    {
+      "id": "0011",
+      "t": "Verdicts and data on the site use CC BY-NC-SA 4.0: may be quoted and reposted, must credit the source, no commercial use",
+      "by": "You decided",
+      "s": "done"
+    },
+    {
+      "id": "0011",
+      "t": "Open source: github.com/gaoyifu123/kanverify, code AGPL v3, docs CC BY 4.0; data and unconfirmed verdicts not public",
+      "by": "You decided",
+      "s": "done"
+    },
+    {
+      "id": "—",
+      "t": "Unflagged candidates enter the workspace automatically; you confirm only flagged candidates and final verdicts, in the local review desk",
+      "by": "Your call",
+      "s": "done"
+    },
+    {
+      "id": "0008",
+      "t": "Before the deadline only \"came true\" may be given early; \"partly came true\" waits for the deadline",
+      "by": "Your call",
+      "s": "done"
+    },
+    {
+      "id": "0008",
+      "t": "A person's own public renunciation can be the sole evidence for a \"not kept\" verdict, in this one case only",
+      "by": "You decided",
+      "s": "done"
+    },
+    {
+      "id": "0008",
+      "t": "Six verdicts: cannot verify, pending, to be assessed, kept, partly kept, not kept; quantifiable partly kept states the data; if achieved, may be judged kept early",
+      "by": "You decided",
+      "s": "done"
+    },
+    {
+      "id": "—",
+      "t": "Model keys: only Anthropic's is in so far, the rest to be added over time",
+      "by": "You",
+      "s": "done"
+    },
+    {
+      "id": "0007",
+      "t": "Fixed list of 20 policy areas",
+      "by": "I proposed, you agreed",
+      "s": "done"
+    },
+    {
+      "id": "—",
+      "t": "Withdrawn items leave no trace on the person page, only explained on the item page and the corrections page",
+      "by": "You decided",
+      "s": "done"
+    },
+    {
+      "id": "—",
+      "t": "Circuit breaker: person ID protection fixed with a one-line change, only routine review afterwards",
+      "by": "I recommended, you agreed",
+      "s": "done"
+    },
+    {
+      "id": "—",
+      "t": "Items with a verdict must carry French and English explanations",
+      "by": "I recommended, you agreed",
+      "s": "done"
+    },
+    {
+      "id": "—",
+      "t": "Design direction approved; corrections by email, archived originals not public, withdrawal shows only an explanation, models shown as they are, home page sorted by time",
+      "by": "I gave defaults, you agreed",
+      "s": "done"
+    },
+    {
+      "id": "0004",
+      "t": "Design skill: use frontend-design, plus our own design brief",
+      "by": "I proposed, you agreed",
+      "s": "done"
+    },
+    {
+      "id": "0004",
+      "t": "Both design plugins installed; the design plugin connects to no external service",
+      "by": "You installed",
+      "s": "done"
+    },
+    {
+      "id": "—",
+      "t": "Models: Opus 5.5 by default, Fable 5.2 only for key reviews and route decisions",
+      "by": "You set the direction, I assigned",
+      "s": "done"
+    },
+    {
+      "id": "0006",
+      "t": "Models from four vendors: Anthropic, Gemini, OpenAI, Mistral",
+      "by": "You decided",
+      "s": "done"
+    },
+    {
+      "id": "—",
+      "t": "Withdrawn items: the page stays, marked as withdrawn with the reason",
+      "by": "You decided",
+      "s": "done"
+    },
+    {
+      "id": "0005",
+      "t": "Database: workspace and ledger kept separate, the site is generated only from the ledger",
+      "by": "I proposed, you confirmed",
+      "s": "done"
+    },
+    {
+      "id": "0005",
+      "t": "Database protection boundary: guards against code mistakes, not against deliberately switching safety off",
+      "by": "I proposed, you accepted",
+      "s": "done"
+    },
+    {
+      "id": "—",
+      "t": "Site name KANVERIFY, launching in French and English",
+      "by": "You decided",
+      "s": "done"
+    },
+    {
+      "id": "—",
+      "t": "Launch within two weeks, no promotion after launch",
+      "by": "You decided",
+      "s": "done"
+    },
+    {
+      "id": "—",
+      "t": "The database lives only on your computer; the public site is a read-only copy",
+      "by": "You decided",
+      "s": "done"
+    },
+    {
+      "id": "—",
+      "t": "The human review step is done by you and the reviewers you invite, not public readers",
+      "by": "You decided",
+      "s": "done"
+    },
+    {
+      "id": "—",
+      "t": "Third country: UK or Germany, decided by traffic after launch",
+      "by": "You decided",
+      "s": "done"
+    }
   ],
   "open": [
-    { "t": "Legal consequences of the \"not news\" positioning", "d": "Defamation rules do not look at what a site calls itself; the safe basis under data protection law is the journalism exemption. Ask a lawyer before promoting or extending to more people." },
-    { "t": "How to judge prediction items", "d": "Neither the baseline nor the minimum sample size is set. The first layer covers promises only, so this is not involved yet." },
-    { "t": "Where to host the static site", "d": "To be decided before launch." }
+    {
+      "t": "Legal consequences of the \"not news\" positioning",
+      "d": "Defamation rules do not look at what a site calls itself. Ask a lawyer before promoting."
+    },
+    {
+      "t": "Where to host the static site",
+      "d": "To be decided before launch on 5 December."
+    },
+    {
+      "t": "Gemini API key",
+      "d": "Needed for the third judge. Until then two judges vote."
+    }
   ]
 }
 </script>
