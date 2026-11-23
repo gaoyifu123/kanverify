@@ -11,9 +11,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { evidencePath, storeEvidenceBytes } from '../src/archive.js';
 import { autoImport, candidateKey, claimQuoteSha, createDesk, hasFigures, readActions, startDeskServer } from '../src/desk.js';
-import { renderCandidatePage } from '../src/desk-view.js';
-import { closeRound, judgeInputText, voteContext } from '../src/jury.js';
-import { withdraw } from '../src/ledger.js';
+import { blockerText, renderCandidatePage } from '../src/desk-view.js';
+import { closeRound, judgeInputText, readRounds, voteContext } from '../src/jury.js';
+import { publicationBlockers, withdraw } from '../src/ledger.js';
 import { sha256Of } from '../src/pack.js';
 import { sameSessionProblem } from '../src/rules.js';
 import { addClaim, addSource, freshDb } from './helpers.js';
@@ -840,6 +840,20 @@ test('format 10: the deadline rule of confirm() is shown as a reason C is off', 
   assert.match(s.desk.verdictPage(item.id), /deadline 2030-01-01 not over/);
 });
 
+test('Fable review 7: the desk does not hand its own date to confirm(); the ledger uses this machine\'s date', (t) => {
+  const s = setup(t); // the desk's clock says 2026-11-22; the real date is later
+  importOne(s);
+  const claim = { deadline: '2026-11-22' };
+  s.db.prepare("UPDATE claims SET deadline = '2026-11-22'").run();
+  writePack(s, ['pending', 'pending'], { claim });
+  const [item] = s.desk.verdictQueue().items;
+  assert.equal(item.canConfirm, true, 'on the desk clock the deadline day is not over');
+  s.desk.verdictAction({ item: item.id, round: 1, action: 'confirm', seconds: 2 });
+  s.advance(5_200);
+  assert.throws(() => s.desk.commit(s.desk.pending.id), /deadline 2026-11-22 passed, but verdict is pending/);
+  assert.equal(s.db.prepare('SELECT count(*) AS n FROM publications').get().n, 0);
+});
+
 test('0012 A2: a Claude subscription vote from the session that cut the pack is refused', (t) => {
   const s = setup(t);
   importOne(s);
@@ -971,6 +985,53 @@ test('re-check A: votes arriving one by one make no round until the jury step cl
   const { publicationId } = s.desk.commit(s.desk.pending.id);
   const snap = JSON.parse(s.db.prepare('SELECT snapshot FROM publications WHERE id = ?').get(publicationId).snapshot);
   assert.deepEqual(snap.jury.map((j) => [j.round, j.provider]), [[1, 'anthropic'], [1, 'gemini'], [1, 'openai']], 'three rows for three votes');
+  assert.equal(snap.verdict.based_on_round, 1, 'the snapshot names the round its verdict rests on (format 11)');
+});
+
+test('format 11: a closed round keeps the text of its votes, so a re-vote that overwrites a file loses nothing', (t) => {
+  const s = setup(t);
+  importOne(s);
+  writePack(s, ['came_true', 'came_true']); // closes round 1
+  const rounds = () => readFileSync(join(s.packDir, 'c1.rounds.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+  const first = rounds()[0];
+  assert.equal(first.votes.length, 2);
+  for (const v of first.votes) {
+    assert.equal(sha256Of(Buffer.from(v.text, 'utf8')), v.sha256, v.file);
+    assert.equal(JSON.parse(v.text).verdict, 'came_true');
+  }
+  // Re-vote before the desk looked: both files overwritten, round 2 closed. Round 1's votes are still recorded.
+  writePack(s, ['not_came_true', 'not_came_true']);
+  const [r1, r2] = rounds();
+  assert.deepEqual([r1.round, r2.round], [1, 2]);
+  assert.deepEqual(r1.votes.map((v) => JSON.parse(v.text).verdict), ['came_true', 'came_true']);
+  assert.deepEqual(r2.votes.map((v) => JSON.parse(v.text).verdict), ['not_came_true', 'not_came_true']);
+  assert.notEqual(readFileSync(join(s.packDir, r1.votes[0].file), 'utf8'), r1.votes[0].text, 'the file itself was overwritten');
+});
+
+test('Fable review 7: a round is not closed on a vote file that is not UTF-8, and a round line whose text does not hash back is skipped', (t) => {
+  const s = setup(t);
+  importOne(s);
+  writePack(s, ['came_true', 'came_true'], { close: false });
+  const file = join(s.packDir, 'c1.vote-openai-subscription.json');
+  // The same vote saved as Windows-1252: "é" becomes the single byte 0xE9.
+  const latin = Buffer.from(readFileSync(file, 'utf8').replace('reasoning 2', 'raisonnement é'), 'latin1');
+  writeFileSync(file, latin);
+  const r = closeRound(packPathOf(s));
+  assert.equal(r.closed, null);
+  assert.match(r.problem, /c1\.vote-openai-subscription\.json is not UTF-8 text/);
+  assert.equal(existsSync(join(s.packDir, 'c1.rounds.jsonl')), false);
+  // Rewritten as UTF-8: the round closes, and the recorded text hashes back to the file.
+  writeFileSync(file, Buffer.from(latin.toString('latin1'), 'utf8'));
+  const ok = closeRound(packPathOf(s));
+  assert.equal(ok.closed.round, 1);
+  assert.equal(readRounds(packPathOf(s)).length, 1);
+  // A line whose recorded text was altered, or that has no text, is not a round.
+  const path = join(s.packDir, 'c1.rounds.jsonl');
+  const line = JSON.parse(readFileSync(path, 'utf8').trim());
+  const altered = { ...line, round: 2, votes: line.votes.map((v, i) => (i === 0 ? { ...v, text: v.text.replace('came_true', 'not_came_true') } : v)) };
+  const textless = { ...line, round: 3, votes: line.votes.map(({ text: _t, ...v }) => v) };
+  writeFileSync(path, `${readFileSync(path, 'utf8')}${JSON.stringify(altered)}\n${JSON.stringify(textless)}\n`);
+  assert.deepEqual(readRounds(packPathOf(s)).map((x) => x.round), [1]);
 });
 
 test('re-check B: a stray vote file neither adds a round nor removes the item; a changed file of the closed round stops C and says so', (t) => {
@@ -1092,4 +1153,18 @@ test('re-check F: sessions compared without case; figures written in words count
   assert.match(sameSessionProblem(pack, { provider: 'anthropic', channel: 'subscription', made_by: { session: ' s1' } }), /session that cut the pack/);
   for (const text of ['deux millions d’euros', 'two hundred schools', 'cinquante pour cent', '٣', '12', '50 %']) assert.equal(hasFigures(text), true, text);
   for (const text of ['une baisse', 'one plan', 'Article premier', null]) assert.equal(hasFigures(text), false, String(text));
+});
+
+test('Fable review 7: the desk stop for misused evidence names the renunciation conditions', () => {
+  const db = freshDb();
+  const platform = addSource(db, 'platform');
+  const claim = addClaim(db, platform, { type: 'prediction' });
+  const v = db.prepare("INSERT INTO verdicts (claim_id, verdict, summary_fr, summary_en, decided_by) VALUES (?, 'not_came_true', 'r', 's', 'human')").run(claim).lastInsertRowid;
+  const ren = addSource(db, 'renunciation', { url: 'https://example.org/ren/desk' });
+  db.prepare("INSERT INTO verdict_evidence (verdict_id, source_id, excerpt, excerpt_en, locator) VALUES (?, ?, 'x', 'x', '§1')").run(v, ren);
+  const message = publicationBlockers(db, claim, { today: '2030-01-01' }).find((b) => /is used as evidence/.test(b));
+  const text = blockerText(message);
+  assert.match(text, /dated on or after the promise/);
+  assert.match(text, /alone only for “Did not come true”/);
+  db.close();
 });

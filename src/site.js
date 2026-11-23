@@ -935,7 +935,10 @@ function claimPage(lang, m, claim) {
   const role = pair(c, 'speaker_role', lang);
   const criteria = pair(c, 'criteria', lang);
   const evidence = s.evidence || [];
-  const jury = s.jury || [];
+  // Only the votes of the round the verdict rests on (record format 11: verdict.based_on_round).
+  // Earlier rounds stay in the snapshot but are not shown or counted as this verdict's jury; a
+  // verdict that rests on no round (written from the wording alone) shows no jury.
+  const jury = (s.jury || []).filter((j) => Number.isInteger(v.based_on_round) && j.round === v.based_on_round);
 
   // "Based on, in date order": said → evidence by published_on → deadline → confirmed, sorted by
   // date (ties in that order). Undated entries come after the dated ones, marked as such.

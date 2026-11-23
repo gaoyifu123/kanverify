@@ -99,3 +99,56 @@
 - `confirm()` also checks that exactly one entry was written before it reports success (finding 2).
 - Principles: 2 (no conclusion before the evidence can exist), 4 (no time-dependent patch in the view, as the
   reviewer warned), 5 (one shared function, not two copies).
+
+## Addendum 2026-11-23: Format 11 (after Fable review 2, second re-check)
+
+- Status: decided by the coordinator after the second re-check of Fable review 2 (findings 1, 2 and the first
+  Low item; `docs/log/2026-11-23-fable-review-2.md`). Reviewed by Fable in the record-format area before it counts.
+- **A renunciation is seen by the ledger.** A `renunciation` source may now stand among a verdict's evidence on a
+  promise (dated on or after the promise) under `partly_came_true`, `came_true`, `to_evaluate`, and `unverifiable`
+  on a measurable promise (coordinator, after Fable review 7: "ends the wait whatever the verdict"), beside at least
+  one other evidence row, never alone; under `not_came_true` it may still be alone. Vague and hedged promises are
+  unchanged: `unverifiable` on the wording alone, with no renunciation cited. A cited renunciation dated after the
+  day of confirmation is refused (a document cannot be cited before it exists). It counts as evidence of an
+  outcome only under `not_came_true`, as before (`outcome_has_evidence` unchanged; `evidence_is_primary` widened).
+  `confirm()` finds it there, so a renounced promise is past its deadline whatever the outcome verdict, and
+  `pending` is refused. The ledger still never reads the pack file.
+- Why this and not a link from the claim to its renunciation (one sentence, principle 5): a link would still need the
+  evidence rule widened for a vote that cites law and renunciation, plus a new column, a desk write path and a new
+  snapshot field, so the evidence row alone is the smaller change.
+- The vote checks (`src/pack.js`) apply the same rule: the wait ends only when the vote cites the renunciation, and a
+  stop names the cause (not cited, dated after today, dated before the promise), for every renunciation given, and
+  never suggests citing one where that is refused. Two stricter checks stay on the pack side: `pending` is refused
+  when any document of the pack is a renunciation that ends the wait, cited or not, or a renunciation with no date.
+- **The snapshot's verdict carries `based_on_round`.** The site counts and lists only the votes of that round; a
+  verdict resting on no round (written from the wording alone) shows no jury. Earlier rounds stay in the snapshot.
+- **A closed round keeps its votes' text.** `tally` (closeRound) writes each vote file's exact text into the round's
+  line of `<name>.rounds.jsonl` beside its sha256, so a re-vote overwriting a file cannot lose a closed round's votes
+  (decision 0003: every vote is recorded). A vote file that is not UTF-8, so that its text would not hash back to
+  its sha256, stops the round from closing; a round line whose text is missing or does not hash back is skipped.
+  The desk still reads the vote files and stops if one changed.
+- **A round overwritten before the desk saw it is kept on disk only** (coordinator's decision, Fable review 7): its
+  votes are in the rounds file, but they are not written to `jury_votes` and do not appear in any snapshot. The desk
+  reads only the newest closed round.
+- Known limit, accepted: a `pending` verdict written by hand with no evidence on a renounced promise, confirmed by
+  calling `confirm()` directly, is not caught: the ledger has no record of the renunciation then. The desk refuses it
+  (pack-side check). Linking the claim to its renunciation would close this; not done (see above).
+- Data: `data/kanverify.db` upgraded as for formats 8-10 (backup `data/kanverify-format10-backup-20261123.db`),
+  then rebuilt once more with the final format-11 views after Fable review 7 (the first format-11 file is kept as
+  `data/kanverify-format11-draft-backup-20261123.db`). Both scripts: `docs/log/2026-11-23-format11-migration.md`.
+- The review desk no longer passes its own date to `confirm()`; the ledger uses this machine's date.
+- Principles: 2 (the ledger decides from what is in the database, not a file), 3 (one rule for judges, desk and
+  ledger), 5 (no new column or table), 1 (decision 0003's "record every vote").
+
+## Addendum: migration exemption (2026-11-23, coordinator, after Fable review 7 re-check)
+
+Format upgrades so far (8, 9, 10, 11) read the old file read-only with `DatabaseSync` and copy rows with their ids into a
+fresh file made by `openDatabase`. Both acts are on the reviewer's always-send-back list; they are now a written,
+narrow exemption (`.claude/agents/code-reviewer.md`, item 7): one-off migrations only, byte-identical backup first,
+plain INSERTs in one transaction, no pragma / `writable_schema` / REPLACE, `sqlite_sequence` never written, every row,
+the `sources` counter and every archived file verified before the swap, script text saved in `docs/log/`.
+
+**Open before the first real confirmation:** this method only works while the ledger is empty (it copies `sources`
+and refuses otherwise). Once `publications` holds entries, plain INSERTs cannot carry them (`ledger_now`,
+`ledger_exact`). A migration route for a non-empty ledger must be designed and reviewed before the founder confirms
+the first verdict (principle 4).

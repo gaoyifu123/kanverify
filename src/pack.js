@@ -26,7 +26,10 @@ import { DEFAULT_EVIDENCE_DIR, evidencePath } from './archive.js';
 import { openDatabase } from './db.js';
 import { candidateProblems, checkVerbatim, htmlToParagraphs, normalizeForMatch } from './extract.js';
 import { isLegifranceSource, legifranceToUnits } from './legifrance.js';
-import { deadlineProblem, filled, renunciationCounts, renunciationEndsWait, twoIndependent } from './rules.js';
+import {
+  deadlineProblem, filled, futureRenunciation, renunciationAdmitted, renunciationAlone, renunciationCounts, renunciationEndsWait, renunciationFits,
+  twoIndependent, waitHint,
+} from './rules.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 export const DEFAULT_TEXT_DIR = resolve(here, '../data/candidates');
@@ -321,9 +324,13 @@ export function checkPack(db, pack, opts = {}) {
  *
  * Deadlines (team/run/judge-prompt.md, step 2): the deadline day is still inside the deadline.
  * On or before it, only came_true, pending, and unverifiable on a vague or hedged claim; after it,
- * never pending. A public renunciation among the given documents (docs) ends the wait whatever the
- * verdict (founder, 2026-11-23): the claim is then judged as if its deadline had passed. As the only
- * evidence, a renunciation still counts for not_came_true alone.
+ * never pending. A public renunciation ends the wait whatever the verdict (founder, 2026-11-23): the
+ * claim is then judged as if its deadline had passed. It ends the wait only when the vote cites it,
+ * because the ledger sees it only among the verdict's evidence (record format 11); it may be cited
+ * alone under not_came_true, and beside other evidence under partly_came_true, came_true, to_evaluate
+ * and unverifiable on a measurable promise, where it is no evidence of a result. Stricter than the
+ * ledger in one direction only: pending is refused once any given document is a renunciation that
+ * ends the wait, cited or not, or a renunciation with no date (whether it ends the wait is unknown).
  */
 export function voteProblems(vote, claim, docs, texts, today, { withinUnit = false } = {}) {
   const problems = [];
@@ -337,17 +344,37 @@ export function voteProblems(vote, claim, docs, texts, today, { withinUnit = fal
   if (verdict === 'to_evaluate' && !(filled(vote.open_question_fr) && filled(vote.open_question_en))) problems.push('to_evaluate without an open question in both languages');
   // The renunciation and deadline rules are shared with confirm() (src/rules.js). A pack's
   // claim carries the day it was said as its origin's publication date.
-  const said = { type: claim.type, said_on: claim.said_on ?? claim.origin?.published_on ?? null };
-  const renounced = evidence.some((e) => renunciationCounts(byId.get(e?.source_id)?.meta, said, verdict));
-  const waitEnded = docs.some((d) => renunciationEndsWait(d.meta, said, today));
-  const late = deadlineProblem(claim, verdict, today, waitEnded);
+  const said = { type: claim.type, verifiability: claim.verifiability, said_on: claim.said_on ?? claim.origin?.published_on ?? null };
+  const cited = evidence.map((e) => byId.get(e?.source_id)?.meta).filter(Boolean);
+  const renounced = cited.some((m) => renunciationCounts(m, said, verdict));
+  const waitEnded = cited.some((m) => renunciationEndsWait(m, said, today));
+  const given = docs.map((d) => d.meta);
+  const inPack = given.filter((m) => renunciationEndsWait(m, said, today));
+  let hint = waitHint(said, verdict, cited, today);
+  // A renunciation in the pack that would end the wait but is not cited: say so, only where citing it is allowed.
+  const uncited = inPack.filter((m) => !cited.includes(m));
+  if (uncited.length > 0 && !waitEnded && renunciationFits(said, verdict)) {
+    hint = `${uncited.map((m) => `source ${m.source_id}`).join(', ')} ${uncited.length === 1 ? 'is a renunciation' : 'are renunciations'} that would end the wait, but this verdict does not cite ${uncited.length === 1 ? 'it' : 'them'}; cite ${uncited.length === 1 ? 'it' : 'one'} among the evidence${verdict === 'not_came_true' ? '' : ', beside the evidence of what was done'}`;
+  }
+  const late = deadlineProblem(claim, verdict, today, waitEnded || (verdict === 'pending' && inPack.length > 0), hint);
   if (late) problems.push(late);
+  if (verdict === 'pending' && said.type === 'promise') {
+    for (const m of given.filter((x) => x.kind === 'renunciation' && typeof x.published_on !== 'string')) {
+      problems.push(`source ${m.source_id} is a renunciation with no date, so whether it ends the wait cannot be told; record its publication date before judging`);
+    }
+  }
+  const future = futureRenunciation(cited, today);
+  if (future) problems.push(future);
+  if (renunciationAlone(cited, verdict) && cited.some((m) => renunciationAdmitted(m, said, verdict))) {
+    problems.push(`a renunciation is never the only evidence for ${verdict}; cite the evidence of what was done beside it`);
+  }
   for (const e of evidence) {
     const doc = byId.get(e?.source_id);
     if (!doc) { problems.push(`evidence cites source_id ${e?.source_id}, which was not given`); continue; }
     if (['platform', 'statement'].includes(doc.meta.kind)) problems.push(`source ${doc.meta.source_id} is a ${doc.meta.kind}, never evidence`);
-    if (doc.meta.kind === 'renunciation' && !(verdict === 'not_came_true' && claim.type === 'promise')) problems.push(`source ${doc.meta.source_id} is a renunciation, evidence only for not_came_true on a promise`);
-    else if (doc.meta.kind === 'renunciation' && !renunciationCounts(doc.meta, said, verdict)) {
+    if (doc.meta.kind === 'renunciation' && !renunciationFits(said, verdict)) {
+      problems.push(`source ${doc.meta.source_id} is a renunciation, which may be cited only on a promise: alone under not_came_true, or beside other evidence under partly_came_true, came_true, to_evaluate, or unverifiable on a measurable promise`);
+    } else if (doc.meta.kind === 'renunciation' && !renunciationAdmitted(doc.meta, said, verdict)) {
       problems.push(`source ${doc.meta.source_id} is a renunciation published before the promise was made (or with no date), so it is no evidence`);
     }
     if (!filled(e.excerpt)) { problems.push(`empty excerpt for source ${doc.meta.source_id}`); continue; }

@@ -1,7 +1,10 @@
--- KANVERIFY record format, version 10. (9: the snapshot carries the origin's source id and
+-- KANVERIFY record format, version 11. (9: the snapshot carries the origin's source id and
 -- each evidence item's source id. 10: Fable review 3 — source ids and files fixed, one
 -- publisher normalisation, renunciation dated, measurable claims have a deadline, and the
--- review desk's round bookkeeping: jury_votes.pack_sha256, verdicts.based_on_round.)
+-- review desk's round bookkeeping: jury_votes.pack_sha256, verdicts.based_on_round.
+-- 11: a renunciation may be cited beside other evidence under partly_came_true, came_true,
+-- to_evaluate and unverifiable on a measurable promise, so the ledger sees that the wait ended
+-- (decision 0013); the snapshot's verdict says which jury round it rests on.)
 --
 -- Verdicts (docs/decisions/0008-five-verdicts.md and its revision, verdict-standard.md
 -- v0.3 section 5): six values shared by promises and predictions —
@@ -120,8 +123,12 @@ END;
 --   one exception — 'renunciation': the speaker's own public, explicit abandonment of
 --     a promise, verbatim (decision 0008, source-rule.md last section). Against the
 --     speaker's interest, so for "not_came_true" on a promise alone it is evidence, and
---     one is enough. On a prediction (taking back a forecast says nothing about whether
---     the event happened) and under any other verdict it is a lead like 'statement'. It
+--     one is enough. It also ends the wait for a promise's deadline (decision 0013), so
+--     under "partly_came_true", "came_true", "to_evaluate", and "unverifiable" on a
+--     measurable promise, it may be cited beside other evidence, never alone, as the record
+--     that the wait ended; there it is never evidence of a result (format 11). On a
+--     prediction (taking back a forecast says nothing about whether the event happened),
+--     on a vague or hedged promise, and under "pending" it is a lead like 'statement'. It
 --     must be published on or after the day the promise was made. Never an origin;
 --   official — issued by a public institution and recording something: 'law',
 --     'gazette', 'statistic', 'budget', 'parliament', 'court', 'audit', and 'official'
@@ -237,7 +244,8 @@ CREATE TABLE verdicts (
   open_question_fr TEXT,
   open_question_en TEXT,
   decided_by       TEXT NOT NULL CHECK (decided_by IN ('human', 'jury')),
-  -- The jury round this working verdict was based on (review desk bookkeeping).
+  -- The jury round this working verdict was based on (review desk bookkeeping). It is in the
+  -- snapshot, so the site counts the votes of that round only (format 11).
   based_on_round   INTEGER,
   -- Principle 1: "to_evaluate" says where it is stuck and what is missing — in at least
   -- one language. Both languages are required only to publish (rule "bilingual").
@@ -347,16 +355,25 @@ SELECT
                      AND s1.kind IN ('media', 'dataset_study') AND s2.kind IN ('media', 'dataset_study')
                      AND kv_publisher_key(s1.publisher) IS NOT kv_publisher_key(s2.publisher)
                      AND s1.sha256 <> s2.sha256))) AS outcome_has_evidence,
-  -- A statement is a lead, never evidence — whoever made it. So is a renunciation, except
-  -- under "not_came_true" on a promise, published on or after the day it was made.
+  -- A statement is a lead, never evidence — whoever made it. A renunciation may stand among
+  -- the evidence only on a promise, published on or after the day it was made, and only
+  -- under "not_came_true" (alone or not) or, beside at least one other evidence row, under
+  -- "partly_came_true", "came_true", "to_evaluate", or "unverifiable" on a measurable
+  -- promise (format 11). It counts as evidence of an outcome only under "not_came_true"
+  -- (outcome_has_evidence above).
   -- Evidence whose source is missing does not count.
   (NOT EXISTS (SELECT 1 FROM verdict_evidence e LEFT JOIN sources s ON s.id = e.source_id
                WHERE e.verdict_id = v.id
                  AND (s.id IS NULL
                       OR s.kind IN ('platform', 'statement')
                       OR (s.kind = 'renunciation'
-                          AND (v.verdict IS NOT 'not_came_true' OR c.type IS NOT 'promise'
-                               OR s.published_on IS NULL OR s.published_on < c.said_on))))) AS evidence_is_primary,
+                          AND (c.type IS NOT 'promise'
+                               OR s.published_on IS NULL OR s.published_on < c.said_on
+                               OR v.verdict NOT IN ('not_came_true', 'partly_came_true', 'came_true', 'to_evaluate', 'unverifiable')
+                               OR (v.verdict = 'unverifiable' AND c.verifiability IS NOT 'measurable')
+                               OR (v.verdict IS NOT 'not_came_true'
+                                   AND NOT EXISTS (SELECT 1 FROM verdict_evidence e2 JOIN sources s2 ON s2.id = e2.source_id
+                                                   WHERE e2.verdict_id = v.id AND s2.kind <> 'renunciation'))))))) AS evidence_is_primary,
   -- Both sites show the same record (decision 0007). Blank counts as missing.
   --   Quoted text: the claim's quote, and every evidence excerpt, has a translation into
   --     French unless its own language is French, and into English unless it is English.
@@ -411,7 +428,7 @@ SELECT
     'verdict', json_object(
       'verdict', v.verdict, 'summary_fr', v.summary_fr, 'summary_en', v.summary_en,
       'open_question_fr', v.open_question_fr, 'open_question_en', v.open_question_en,
-      'decided_by', v.decided_by),
+      'decided_by', v.decided_by, 'based_on_round', v.based_on_round),
     'evidence', json((
       SELECT json_group_array(json_object(
                'source_id', e.source_id,
@@ -423,6 +440,7 @@ SELECT
       FROM verdict_evidence e
       JOIN sources s ON s.id = e.source_id
       WHERE e.verdict_id = v.id)),
+    -- Every recorded vote, of every round; verdict.based_on_round says which round counts.
     'jury', json((
       SELECT json_group_array(json_object(
                'round', j.round, 'provider', j.provider, 'model', j.model,

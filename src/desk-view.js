@@ -314,7 +314,7 @@ const BLOCKER_TEXT = [
   [/vague or hedged claim can only be/, 'A vague or hedged item can only be “Unverifiable”'],
   [/needs a summary explaining it/, 'Every verdict except “Pending” needs a summary'],
   [/needs one official document, or two independent/, 'This verdict needs one official document, or independent reports from two different publishers (a public renunciation counts only for “Did not come true” on a promise)'],
-  [/is used as evidence; evidence must be/, 'The evidence includes a speech, a platform, a renunciation or a missing source; evidence must be official documents or independent reports'],
+  [/is used as evidence; evidence must be/, 'The evidence includes a speech, a platform, a missing source, or a renunciation where none is allowed (on a promise only, dated on or after the promise, and alone only for “Did not come true”); evidence must be official documents or independent reports'],
   [/missing its French or English version/, 'A French or English version is missing'],
 ];
 export function blockerText(message) {

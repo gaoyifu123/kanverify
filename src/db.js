@@ -18,7 +18,7 @@ import { publisherKey } from './rules.js';
 const here = dirname(fileURLToPath(import.meta.url));
 const SCHEMA_PATH = resolve(here, '../db/schema.sql');
 const DEFAULT_DB_PATH = resolve(here, '../data/kanverify.db');
-const SCHEMA_VERSION = 10;
+const SCHEMA_VERSION = 11;
 const BUSY_WAIT_MS = 5000;
 
 /**

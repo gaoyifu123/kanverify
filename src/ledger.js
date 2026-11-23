@@ -5,7 +5,7 @@
 // the jury's vote checks). confirm() is the one way into the ledger and applies both.
 // These functions explain a refusal in terms a reviewer can act on.
 
-import { deadlineProblem, localToday, renunciationEndsWait } from './rules.js';
+import { deadlineProblem, futureRenunciation, localToday, renunciationEndsWait, waitHint } from './rules.js';
 
 // In the order a reviewer would fix them. Those in NEEDS_VERDICT only make sense once a
 // verdict exists; translations come last because they are done after the content.
@@ -16,26 +16,31 @@ const CHECK_MESSAGES = [
   ['verdict_fits_verifiability', 'a vague or hedged claim can only be "unverifiable"'],
   ['summary_stated', 'every verdict except "pending" needs a summary explaining it'],
   ['outcome_has_evidence', 'a verdict that asserts an outcome ("came_true", "partly_came_true", "not_came_true", or "unverifiable" on a measurable claim) needs one official document, or two independent sources from different publishers, as evidence ("not_came_true" on a promise may instead rest on the speaker\'s own renunciation)'],
-  ['evidence_is_primary', 'a statement, a platform, a renunciation (evidence only for "not_came_true" on a promise), or a missing source is used as evidence; evidence must be an official document or independent reporting'],
+  ['evidence_is_primary', 'a statement, a platform, a renunciation (on a promise only: alone for "not_came_true", or beside other evidence for "partly_came_true", "came_true", "to_evaluate" or "unverifiable" on a measurable promise; dated on or after the promise), or a missing source is used as evidence; evidence must be an official document or independent reporting'],
   ['bilingual', 'a published text is missing its French or English version: the quote and each evidence excerpt need a translation into French and into English, except into their own language (where there must be none); speaker role, criteria, summary and open question must be in both languages or in neither'],
 ];
 const NEEDS_VERDICT = new Set(['verdict_fits_verifiability', 'summary_stated', 'outcome_has_evidence', 'evidence_is_primary']);
 
 /**
- * The deadline rule for a claim's working verdict on a given local date, or null.
- * The same function the jury's vote checks use (src/rules.js).
+ * The deadline rule for a claim's working verdict on a given local date, or null; also refuses a cited
+ * renunciation dated after that date. The same functions the jury's vote checks use (src/rules.js).
  */
 function deadlineBlocker(db, claimId, today) {
   const claim = db.prepare('SELECT type, verifiability, deadline, said_on FROM claims WHERE id = ?').get(claimId);
   const verdict = db.prepare('SELECT id, verdict FROM verdicts WHERE claim_id = ?').get(claimId);
   if (!claim || !verdict) return null;
   const sources = db
-    .prepare('SELECT s.kind, s.published_on FROM verdict_evidence e JOIN sources s ON s.id = e.source_id WHERE e.verdict_id = ?')
+    .prepare('SELECT s.id, s.kind, s.published_on FROM verdict_evidence e JOIN sources s ON s.id = e.source_id WHERE e.verdict_id = ?')
     .all(verdict.id);
-  // A renunciation ends the wait whatever the verdict (founder, 2026-11-23). Here it can only be found
-  // among the verdict's evidence, where publication_checks admits it under not_came_true alone.
+  // A renunciation ends the wait whatever the verdict (founder, 2026-11-23). The ledger sees one among the
+  // verdict's evidence, where publication_checks admits it beside other evidence under partly_came_true,
+  // came_true and to_evaluate, and alone under not_came_true (record format 11). Never from the pack file.
   const renounced = sources.some((s) => renunciationEndsWait(s, claim, today));
-  return deadlineProblem(claim, verdict.verdict, today, renounced);
+  const problems = [
+    futureRenunciation(sources, today),
+    deadlineProblem(claim, verdict.verdict, today, renounced, waitHint(claim, verdict.verdict, sources, today)),
+  ].filter(Boolean);
+  return problems.length > 0 ? problems.join('; ') : null;
 }
 
 function checkToday(today) {

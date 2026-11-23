@@ -61,7 +61,7 @@ test('voteProblems: the evidence rule of publication_checks', () => {
   // Renunciation: enough for not_came_true on a promise, refused under any other verdict.
   const ren = okVote({ verdict: 'not_came_true', evidence: [{ source_id: 3, excerpt: 'Article 16', locator: '§1' }] });
   assert.deepEqual(voteProblems(ren, { ...CLAIM, deadline: '2027-05-13' }, [doc(3, 'renunciation')], texts, '2026-11-22'), []);
-  assert.match(voteProblems(okVote({ evidence: ren.evidence }), CLAIM, [doc(3, 'renunciation')], texts, '2026-11-22').join(), /renunciation/);
+  assert.match(voteProblems(okVote({ evidence: ren.evidence }), CLAIM, [doc(3, 'renunciation')], texts, '2026-11-22').join(), /never the only evidence for came_true/);
   assert.match(voteProblems(ren, { ...CLAIM, type: 'prediction' }, [doc(3, 'renunciation')], texts, '2026-11-22').join(), /renunciation/);
   // A renunciation must come on or after the day the promise was made (review 3, finding 4).
   const future = { ...CLAIM, deadline: '2027-05-13' };
@@ -84,9 +84,9 @@ test('voteProblems: verdict values, deadlines, open question, summaries, vague c
   assert.deepEqual(voteProblems(okVote(), early, d, texts, '2026-11-22'), []);
   assert.match(voteProblems(okVote({ verdict: 'partly_came_true' }), early, d, texts, '2026-11-22').join(), /not over .*but verdict is partly_came_true/);
   assert.deepEqual(voteProblems(okVote({ verdict: 'partly_came_true' }), CLAIM, d, texts, '2026-11-22'), []);
-  // A renunciation is still no evidence for partly_came_true (see below); whether it ends the wait is another question.
+  // A renunciation is still no evidence of a result for partly_came_true, and never its only evidence (see below).
   const renEarly = okVote({ verdict: 'partly_came_true', evidence: [{ source_id: 3, excerpt: 'Article 16', locator: '§1' }] });
-  assert.match(voteProblems(renEarly, early, [doc(3, 'renunciation')], new Map([[3, UNITS]]), '2026-11-22').join(), /renunciation, evidence only for not_came_true/);
+  assert.match(voteProblems(renEarly, early, [doc(3, 'renunciation')], new Map([[3, UNITS]]), '2026-11-22').join(), /never the only evidence for partly_came_true/);
   // Before the deadline, part done is pending: the summary says what has been done so far.
   assert.deepEqual(voteProblems({ verdict: 'pending', reasoning: 'r', summary_fr: 'f', summary_en: 'e', evidence: [] }, early, d, texts, '2026-11-22'), []);
   assert.match(voteProblems(okVote({ verdict: 'not_came_true' }), early, d, texts, '2026-11-22').join(), /not reached/);
@@ -94,8 +94,10 @@ test('voteProblems: verdict values, deadlines, open question, summaries, vague c
   assert.match(voteProblems(teEarly, early, d, texts, '2026-11-22').join(), /not reached/);
   // partly_came_true is held to the same evidence rule as came_true; a renunciation is no evidence for it.
   assert.match(voteProblems(okVote({ verdict: 'partly_came_true', evidence: [] }), CLAIM, d, texts, '2026-11-22').join(), /one official document/);
-  assert.match(voteProblems(okVote({ verdict: 'partly_came_true', evidence: [{ source_id: 3, excerpt: 'Article 16', locator: '§1' }] }), CLAIM,
-    [doc(3, 'renunciation')], new Map([[3, UNITS]]), '2026-11-22').join(), /renunciation, evidence only for not_came_true/);
+  const renOnly = voteProblems(okVote({ verdict: 'partly_came_true', evidence: [{ source_id: 3, excerpt: 'Article 16', locator: '§1' }] }), CLAIM,
+    [doc(3, 'renunciation')], new Map([[3, UNITS]]), '2026-11-22').join();
+  assert.match(renOnly, /never the only evidence for partly_came_true/);
+  assert.match(renOnly, /one official document/);
   assert.deepEqual(voteProblems({ verdict: 'pending', reasoning: 'r', evidence: [] }, early, d, texts, '2026-11-22'), []);
   assert.match(voteProblems({ verdict: 'pending', reasoning: 'r', evidence: [] }, CLAIM, d, texts, '2026-11-22').join(), /passed, but verdict is pending/);
   const te = { verdict: 'to_evaluate', reasoning: 'r', summary_fr: 'f', summary_en: 'e', evidence: [], open_question_fr: 'q', open_question_en: '' };
@@ -110,30 +112,78 @@ test('voteProblems: verdict values, deadlines, open question, summaries, vague c
   assert.match(voteProblems({ verdict: 'unverifiable', reasoning: 'r', summary_fr: 'f', summary_en: 'e', evidence: [] }, CLAIM, d, texts, '2026-11-22').join(), /one official document/);
 });
 
-test('voteProblems: a public renunciation ends the wait, whatever the verdict (founder, 2026-11-23)', () => {
+test('voteProblems: a public renunciation ends the wait, whatever the verdict, when the vote cites it (format 11)', () => {
   const early = { ...CLAIM, deadline: '2029-01-20', deadline_basis: 'inferred' };
-  const texts = new Map([[1, UNITS]]);
-  const partial = okVote({ verdict: 'partly_came_true' }); // cites the law: the partial result on the measure
+  const texts = new Map([[1, UNITS], [3, UNITS]]);
+  const LAW = { source_id: 1, excerpt: "La taxe d'habitation sur les résidences principales est supprimée", locator: '§1' };
+  const REN = { source_id: 3, excerpt: 'Article 16', locator: '§1' };
   const ren = (published_on) => doc(3, 'renunciation', 'Pub', { published_on });
-  // With a renunciation in the pack (not cited: it is no evidence for partly_came_true), partly_came_true is accepted early.
-  assert.deepEqual(voteProblems(partial, early, [doc(1, 'law'), ren('2025-06-01')], texts, '2026-11-22'), []);
+  const docs = [doc(1, 'law'), ren('2025-06-01')];
+  const q = { open_question_fr: 'q', open_question_en: 'q' };
+  // Law + renunciation: partly_came_true, to_evaluate, not_came_true and came_true are valid before the deadline,
+  // exactly what confirm() accepts (decision 0013; Fable review 2, second re-check, finding 1).
+  for (const verdict of ['partly_came_true', 'to_evaluate', 'not_came_true', 'came_true']) {
+    assert.deepEqual(voteProblems(okVote({ verdict, ...q, evidence: [LAW, REN] }), early, docs, texts, '2026-11-22'), [], verdict);
+  }
+  // A renunciation in the pack that the vote does not cite does not end the wait (the ledger could not see it),
+  // and the stop names that cause.
+  assert.match(voteProblems(okVote({ verdict: 'partly_came_true', evidence: [LAW] }), early, docs, texts, '2026-11-22').join(),
+    /not over .*partly_came_true; source 3 is a renunciation that would end the wait, but this verdict does not cite it; cite it among the evidence, beside/);
   // Without one, it still waits for the deadline.
-  assert.match(voteProblems(okVote({ verdict: 'partly_came_true' }), early, [doc(1, 'law')], texts, '2026-11-22').join(), /not over .*but verdict is partly_came_true/);
+  assert.match(voteProblems(okVote({ verdict: 'partly_came_true', evidence: [LAW] }), early, [doc(1, 'law')], texts, '2026-11-22').join(),
+    /not over .*partly_came_true; only a public renunciation cited among the evidence ends the wait/);
   // Dated before the promise was made, after today, or not dated: it does not count.
   for (const published_on of ['2022-03-16', '2026-11-23', null]) {
-    assert.match(voteProblems(okVote({ verdict: 'partly_came_true' }), early, [doc(1, 'law'), ren(published_on)], texts, '2026-11-22').join(),
+    assert.match(voteProblems(okVote({ verdict: 'partly_came_true', evidence: [LAW, REN] }), early, [doc(1, 'law'), ren(published_on)], texts, '2026-11-22').join(),
       /not over .*but verdict is partly_came_true/, String(published_on));
   }
-  // The wait is over, so pending no longer fits; came_true and not_came_true are judged as usual.
-  assert.match(voteProblems({ verdict: 'pending', reasoning: 'r', summary_fr: 'f', summary_en: 'e', evidence: [] }, early, [ren('2025-06-01')], texts, '2026-11-22').join(),
-    /renounced, which ends the wait, but verdict is pending/);
-  assert.deepEqual(voteProblems(okVote(), early, [doc(1, 'law'), ren('2025-06-01')], texts, '2026-11-22'), []);
-  assert.deepEqual(voteProblems(okVote({ verdict: 'not_came_true' }), early, [doc(1, 'law'), ren('2025-06-01')], texts, '2026-11-22'), []);
-  // A renunciation of a prediction is nothing: the wait goes on.
-  assert.match(voteProblems(okVote({ verdict: 'partly_came_true' }), { ...early, type: 'prediction' }, [doc(1, 'law'), ren('2025-06-01')], texts, '2026-11-22').join(), /not over/);
-  // A vague promise stays unverifiable, renounced or not.
-  assert.match(voteProblems(okVote({ verdict: 'not_came_true' }), { ...early, verifiability: 'vague' }, [doc(1, 'law'), ren('2025-06-01')], texts, '2026-11-22').join(),
+  // Never the only evidence of partly_came_true, came_true or to_evaluate.
+  assert.match(voteProblems(okVote({ verdict: 'to_evaluate', ...q, evidence: [REN] }), early, docs, texts, '2026-11-22').join(), /never the only evidence for to_evaluate/);
+  // The wait is over, so pending no longer fits — cited or not (stricter than the ledger, the safe way).
+  const pend = (evidence) => ({ verdict: 'pending', reasoning: 'r', summary_fr: 'f', summary_en: 'e', evidence });
+  assert.match(voteProblems(pend([]), early, [ren('2025-06-01')], texts, '2026-11-22').join(), /renounced, which ends the wait, but verdict is pending/);
+  assert.match(voteProblems(pend([REN]), early, docs, texts, '2026-11-22').join(), /renunciation, which may be cited only/);
+  // A renunciation of a prediction is nothing: the wait goes on, and citing it is refused.
+  const pred = voteProblems(okVote({ verdict: 'partly_came_true', evidence: [LAW, REN] }), { ...early, type: 'prediction' }, docs, texts, '2026-11-22').join();
+  assert.match(pred, /not over/);
+  assert.match(pred, /renunciation, which may be cited only on a promise/);
+  // A vague promise stays unverifiable, renounced or not, and the renunciation is not cited under unverifiable.
+  assert.match(voteProblems(okVote({ verdict: 'not_came_true', evidence: [REN] }), { ...early, verifiability: 'vague' }, docs, texts, '2026-11-22').join(),
     /vague or hedged claim, verdict must be unverifiable/);
+  assert.match(voteProblems(okVote({ verdict: 'unverifiable', evidence: [REN] }), { ...early, verifiability: 'vague' }, docs, texts, '2026-11-22').join(),
+    /renunciation, which may be cited only/);
+});
+
+test('Fable review 7: unverifiable on a renounced measurable promise; hints never recommend a refused move; undated and future renunciations', () => {
+  const early = { ...CLAIM, deadline: '2029-01-20', deadline_basis: 'inferred' };
+  const texts = new Map([[1, UNITS], [3, UNITS], [4, UNITS]]);
+  const LAW = { source_id: 1, excerpt: "La taxe d'habitation sur les résidences principales est supprimée", locator: '§1' };
+  const REN = { source_id: 3, excerpt: 'Article 16', locator: '§1' };
+  const ren = (published_on, id = 3) => doc(id, 'renunciation', 'Pub', { published_on });
+  const unv = (evidence) => okVote({ verdict: 'unverifiable', evidence });
+  // Finding 3: unverifiable on a measurable promise (its condition never arose) may cite the renunciation beside other evidence.
+  assert.deepEqual(voteProblems(unv([LAW, REN]), early, [doc(1, 'law'), ren('2025-06-01')], texts, '2026-11-22'), []);
+  assert.match(voteProblems(unv([REN]), early, [ren('2025-06-01')], texts, '2026-11-22').join(), /never the only evidence for unverifiable/);
+  // Not cited: the hint tells the judge to cite it, which is allowed.
+  assert.match(voteProblems(unv([LAW]), early, [doc(1, 'law'), ren('2025-06-01')], texts, '2026-11-22').join(), /does not cite it; cite it among the evidence/);
+  // Where citing is refused (a prediction), no hint recommends it.
+  const pred = voteProblems(okVote({ verdict: 'partly_came_true', evidence: [LAW] }), { ...early, type: 'prediction' }, [doc(1, 'law'), ren('2025-06-01')], texts, '2026-11-22');
+  assert.match(pred.join(), /not over/);
+  assert.doesNotMatch(pred.join(), /cite/);
+  // Vague promise: citing a renunciation under unverifiable is still refused.
+  assert.match(voteProblems(unv([LAW, REN]), { ...early, verifiability: 'vague' }, [doc(1, 'law'), ren('2025-06-01')], texts, '2026-11-22').join(), /renunciation, which may be cited only/);
+  // Finding 4: an undated renunciation in the pack stops pending, by name.
+  const pend = { verdict: 'pending', reasoning: 'r', summary_fr: 'f', summary_en: 'e', evidence: [] };
+  assert.match(voteProblems(pend, early, [doc(1, 'law'), ren(null)], texts, '2026-11-22').join(), /source 3 is a renunciation with no date/);
+  assert.deepEqual(voteProblems(pend, { ...early, type: 'prediction' }, [doc(1, 'law'), ren(null)], texts, '2026-11-22'), []);
+  // Finding 6: a cited renunciation dated after today is refused, also after the deadline.
+  assert.match(voteProblems(okVote({ verdict: 'partly_came_true', evidence: [LAW, REN] }), CLAIM, [doc(1, 'law'), ren('2026-12-01')], texts, '2026-11-22').join(),
+    /dated 2026-12-01, after 2026-11-22; it cannot be cited before it is published/);
+  // Every renunciation is considered: a later valid one ends the wait even if the first listed does not.
+  const two = [doc(1, 'law'), ren('2026-12-01'), ren('2025-06-01', 4)];
+  const REN4 = { source_id: 4, excerpt: 'Article 16', locator: '§1' };
+  assert.deepEqual(voteProblems(okVote({ verdict: 'partly_came_true', evidence: [LAW, REN4] }), early, two, texts, '2026-11-22'), []);
+  assert.match(voteProblems(okVote({ verdict: 'partly_came_true', evidence: [LAW] }), early, two, texts, '2026-11-22').join(), /source 4 is a renunciation that would end the wait/);
 });
 
 test('voteProblems: the deadline day is inside the deadline (Fable review 1, finding 3)', () => {

@@ -13,7 +13,7 @@
 //      vote         codex (and Gemini if its key is set) -> <name>.vote-<provider>-<channel>.json
 //      tally        every vote file -> checks, comparison -> <name>.result.json and a report; then
 //                   closes a jury round: appends one line to <name>.rounds.jsonl (pack sha256, the
-//                   vote files and their sha256, time, round number) once the subscription judges
+//                   vote files, their sha256 and text, time, round number) once the subscription judges
 //                   have voted on this pack. The review desk reads votes only through closed
 //                   rounds (step-back 2026-11-23): only this step knows when a set of votes is complete.
 //    The Anthropic API judge is still there but off unless --anthropic-api-model is given.
@@ -674,7 +674,9 @@ export function roundsFileName(packPath) {
 /**
  * The closed rounds of a pack, in file order, each with `id`: the sha256 of its line. A line that is
  * not a well-formed round (an interrupted write) is skipped. Vote files must be plain names of this
- * pack's vote files, so a round file can never point the desk at another file.
+ * pack's vote files, so a round file can never point the desk at another file. Each vote must carry
+ * its file's text, and that text must hash back to the vote's sha256 (record format 11); a line where
+ * one does not is skipped like any malformed line.
  */
 export function readRounds(packPath) {
   const path = roundsFileName(packPath);
@@ -691,7 +693,8 @@ export function readRounds(packPath) {
       continue;
     }
     const filesOk = Array.isArray(r?.votes) && r.votes.length > 0 && r.votes.every((v) => typeof v?.file === 'string'
-      && v.file === basename(v.file) && v.file.startsWith(`${stem}.vote-`) && v.file.endsWith('.json') && HEX64.test(v.sha256 ?? ''));
+      && v.file === basename(v.file) && v.file.startsWith(`${stem}.vote-`) && v.file.endsWith('.json') && HEX64.test(v.sha256 ?? '')
+      && typeof v.text === 'string' && sha256Of(Buffer.from(v.text, 'utf8')) === v.sha256);
     if (r?.kind !== ROUND_KIND || !Number.isInteger(r.round) || !HEX64.test(r.pack_sha256 ?? '') || !filesOk) continue;
     out.push({ ...r, id: sha256Of(Buffer.from(line, 'utf8')) });
   }
@@ -699,7 +702,7 @@ export function readRounds(packPath) {
 }
 
 /**
- * Closes a jury round for a pack: appends { round, pack_sha256, votes: [{file, sha256}], closed_at }
+ * Closes a jury round for a pack: appends { round, pack_sha256, votes: [{file, sha256, text}], closed_at }
  * to <name>.rounds.jsonl. Only the vote files about this version of the pack are in it. Nothing is
  * written while the judge input is stale or a subscription judge (Codex, Claude) has not voted on
  * this pack yet; a vote arriving later (Gemini) goes into the next round. Closing again with the
@@ -715,6 +718,7 @@ export function closeRound(packPath, { now = () => new Date() } = {}) {
   const dir = dirname(packPath);
   const votes = [];
   const leftOut = [];
+  const notText = [];
   for (const f of readdirSync(dir).filter((n) => n.startsWith(`${stem}.vote-`) && n.endsWith('.json')).sort()) {
     const b = readFileSync(join(dir, f));
     let vote = null;
@@ -724,9 +728,23 @@ export function closeRound(packPath, { now = () => new Date() } = {}) {
       // not a vote; left out
     }
     if (vote?.pack_sha256 !== packSha256) { leftOut.push(f); continue; }
-    votes.push({ file: f, sha256: sha256Of(b) });
+    // The file's exact text goes into the round line too, so a later re-vote that overwrites the file
+    // cannot lose this round's vote (decision 0003: every vote is recorded). The text must be the file
+    // byte for byte: strict UTF-8, byte order mark kept, hashing back to the file's sha256.
+    let text = null;
+    try {
+      text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(b);
+    } catch {
+      // not UTF-8
+    }
+    const sha256 = sha256Of(b);
+    if (text === null || sha256Of(Buffer.from(text, 'utf8')) !== sha256) { notText.push(f); continue; }
+    votes.push({ file: f, sha256, text });
   }
   if (ctx.problem) return { closed: null, problem: `round not closed: ${ctx.problem}`, leftOut };
+  if (notText.length > 0) {
+    return { closed: null, problem: `round not closed: vote file ${notText.join(', ')} is not UTF-8 text, so its text cannot be recorded exactly; rewrite it as UTF-8`, leftOut };
+  }
   const missing = PACK_JURY.filter((m) => m.channel === 'subscription' && !votes.some((v) => v.file === `${stem}.vote-${m.provider}-${m.channel}.json`));
   if (missing.length > 0) {
     return { closed: null, problem: `round not closed: no vote on this pack yet from ${missing.map((m) => `${m.provider} (${m.channel})`).join(', ')}`, leftOut };

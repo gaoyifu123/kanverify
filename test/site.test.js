@@ -465,6 +465,34 @@ test('"partly came true" is labelled in both languages and has its own chart pat
   assert.equal(new Set(patterns).size, order.length, 'patterns are distinct');
 });
 
+test('format 11: the jury shown is the round the verdict rests on, not every round', () => {
+  const snap = currentSnapshot(ids.cameTrue);
+  const vote = (round, provider, verdict) => ({ round, provider, model: `m-${provider}-${round}`, prompt_version: 'judge-0.6', verdict });
+  snap.jury = [vote(1, 'p1', 'pending'), vote(1, 'p2', 'pending'), vote(2, 'p1', 'came_true'), vote(2, 'p2', 'came_true')];
+  const dir = mkdtempSync(join(tmpdir(), 'kv-round-'));
+  try {
+    const build = (based_on_round) => {
+      snap.verdict.based_on_round = based_on_round;
+      const site = join(dir, `site-${based_on_round}`);
+      buildSite(fakeLedger(snap), site, { today: TODAY });
+      return readFileSync(join(site, 'en', 'claim', String(snap.claim.id), 'index.html'), 'utf8');
+    };
+    const two = build(2);
+    assert.match(two, /AI jury: 2 votes</, 'a 2:0 round is two votes');
+    assert.doesNotMatch(two, /not unanimous/);
+    assert.match(two, /m-p1-2/);
+    assert.doesNotMatch(two, /m-p1-1/, 'earlier rounds are not counted or listed as this jury');
+    const one = build(1);
+    assert.match(one, /AI jury: 2 votes</);
+    assert.match(one, /m-p1-1/);
+    assert.doesNotMatch(one, /m-p1-2/);
+    // A verdict resting on no round shows no jury.
+    assert.doesNotMatch(build(null), /AI jury/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 function currentSnapshot(id) {
   return JSON.parse(db.prepare('SELECT snapshot FROM current_publications WHERE claim_id = ?').get(id).snapshot);
 }

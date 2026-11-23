@@ -1141,12 +1141,12 @@ ${p.pack.claim?.quote_original}`) ?? [];
     if (!p0.direct && entry.p.roundProblems.length > 0) {
       throw new DeskError(`item #${p0.claimId}: the files of the jury round changed during the window (${entry.p.roundProblems.join('; ')}); nothing was written`);
     }
-    const today = localDate(now());
     const publicationId = inTransaction(db, () => {
       if (p0.adoptVote) applyVote(entry.p, p0.claimId, p0.adoptVote, p0.round);
       const snap = db.prepare('SELECT snapshot FROM publishable WHERE claim_id = ?').get(p0.claimId)?.snapshot ?? null;
       if (snap !== p0.snapshot) throw new DeskError('the item changed during the window, so what would be published is not what you saw; nothing was written');
-      const pubId = confirm(db, p0.claimId, 'founder', { reviewSeconds: p0.seconds, today });
+      // No date passed: confirm() applies the deadline rule on this machine's date (only tests pass one).
+      const pubId = confirm(db, p0.claimId, 'founder', { reviewSeconds: p0.seconds });
       log({
         queue: 'verdict', item: p0.item, action: 'confirm', claim_id: p0.claimId, quote_sha256: p0.quoteSha256, round: p0.round,
         adopted_vote: p0.adoptVote, publication_id: pubId, pack_sha256: p0.packSha256, round_id: p0.roundId,

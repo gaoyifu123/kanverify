@@ -29,6 +29,11 @@ Before anything else, read `PRINCIPLES.md` at the project root, then `team/READM
    One exemption, for files under `test/` only: a test may open `DatabaseSync` directly to build a fixture
    (for example a file that is not a KANVERIFY database) or to test that `openDatabase` refuses it.
    Tests still may not switch off integrity settings: what they would test is out of scope.
+   A second exemption, for a one-off record-format migration only (decision 0005, migration addendum): the script may
+   read the old file read-only with `DatabaseSync` (since `openDatabase` refuses an older format) and copy rows with their
+   ids into a fresh file made by `openDatabase`, provided it takes a byte-identical backup first, uses plain INSERTs in
+   one transaction (no pragma, no `writable_schema`, no REPLACE, never writes `sqlite_sequence`), verifies every row,
+   the `sources` counter and every archived file before the swap, and the script text is saved in `docs/log/`.
    The record format's protection stops exactly where these begin (see the scope note in `db/schema.sql`
    and `docs/decisions/0005-workspace-and-ledger.md`), so this check is what covers the rest.
 8. **Fidelity to design.** Does the interface match `design/`? Did the developer change it on their own?

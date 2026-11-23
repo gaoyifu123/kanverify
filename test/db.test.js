@@ -51,14 +51,14 @@ test('a database from a different record format is refused', (t) => {
   assert.throws(() => openDatabase(file), /record format 99/);
 });
 
-test('a database in an earlier record format (5 to 9) is refused', (t) => {
+test('a database in an earlier record format (5 to 10) is refused', (t) => {
   const file = tempFile(t);
   openDatabase(file).close();
-  for (const old of [5, 6, 7, 8, 9]) {
+  for (const old of [5, 6, 7, 8, 9, 10]) {
     const raw = new DatabaseSync(file);
     raw.exec(`PRAGMA user_version = ${old}`);
     raw.close();
-    assert.throws(() => openDatabase(file), new RegExp(`record format ${old}, code expects 10`), String(old));
+    assert.throws(() => openDatabase(file), new RegExp(`record format ${old}, code expects 11`), String(old));
   }
 });
 
