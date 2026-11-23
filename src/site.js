@@ -21,6 +21,7 @@ import { randomUUID } from 'node:crypto';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openDatabase } from './db.js';
+import { loadStandard } from './standard.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const MOCKUPS = resolve(here, '../design/mockups');
@@ -43,7 +44,7 @@ const T = {
     v: { unverifiable: 'Unverifiable', pending: 'Pending', to_evaluate: 'To be assessed', came_true: 'Came true', partly_came_true: 'Partly came true', not_came_true: 'Did not come true' },
     ty: { promise: 'Promise', prediction: 'Prediction' },
     d: { economy: 'Economy', tax: 'Tax', employment: 'Employment and work', health: 'Health', education: 'Education and research', environment: 'Environment', energy: 'Energy', defence: 'Defence', security: 'Internal security', justice: 'Justice', immigration: 'Immigration and asylum', foreign_affairs: 'Foreign and European affairs', institutions: 'Institutions and public life', social: 'Social protection', housing: 'Housing', transport: 'Transport', agriculture: 'Agriculture and fisheries', digital: 'Digital', culture: 'Culture, media and sport', other: 'Other topics' },
-    kind: { platform: 'Platform', statement: 'Statement', renunciation: 'Public renunciation', law: 'Law', gazette: 'Official gazette', statistic: 'Official statistics', budget: 'Budget document', parliament: 'Parliamentary record', court: 'Court decision', audit: 'Public audit report', official: 'Official document', media: 'News report', dataset_study: 'Study with published data' },
+    kind: { platform: 'Platform', statement: 'Statement', renunciation: 'Public reversal by the speaker', law: 'Law', gazette: 'Official gazette', statistic: 'Official statistics', budget: 'Budget document', parliament: 'Parliamentary record', court: 'Court decision', audit: 'Public audit report', official: 'Official document', media: 'News report', dataset_study: 'Study with published data' },
     sk: { person: 'Person', party: 'Party', government: 'Government', institution: 'Institution' },
     verif: { measurable: 'Measurable', vague: 'Vague', hedged: 'Hedged' },
     m: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'],
@@ -73,15 +74,18 @@ const T = {
     basedOn: 'Based on', and: 'and', wording: 'the wording itself', noDeadline: 'No deadline',
     confirmedOn: (d) => `Confirmed by a person on ${d}`,
     fullRecord: 'Full record', evidence: (n) => `Evidence ${n}`,
-    // A renunciation under any verdict but not_came_true ends the wait and is not evidence (components.md).
-    renWait: 'public renunciation, the wait for the deadline ends here', renTitle: 'Public renunciation', renEnds: 'Ends the wait',
-    renPara: (name, d) => `${name} publicly gave up this promise on ${d}. From that date, the promise is judged on what had been done; this document is not evidence of that result.`,
+    // Decision 0014: the rules a verdict was judged by, under it (one muted line; for the designer to refine).
+    // Decision 0014; design/components.md "Rules applied and the rules page".
+    rulesApplied: (v) => `Rules applied, version ${v}`, rulesTitle: (v) => `Verdict rules, version ${v}`,
+    rulesIntro: (v) => `Each verdict on this site names the rules it was judged by. These are the rules of version ${v}, in plain words. A rule is never changed in place: a changed rule gets a new id, in a new version.`,
+    rulesNewer: (link) => `A newer version exists: ${link}. Each verdict keeps the version it was judged under.`,
+    rulesVersion: (v) => `version ${v}`, rulesStandards: 'Standards', rulesRules: 'Rules',
     document: 'Document', location: 'Location', address: 'Original address', retrieved: 'Retrieved on', fingerprint: 'Fingerprint (SHA-256)',
     whereSaid: 'Where it was said', who: 'Who', publishedBy: 'Published by',
     copies: 'We keep a copy of each file; copies are not published. The fingerprint lets anyone check that a copy they hold is the same file.',
     criteria: 'Criteria',
     basisStated: (type) => `The deadline is stated in the ${type === 'prediction' ? 'prediction' : 'promise'}.`,
-    basisInferred: (type, d) => `The ${type === 'prediction' ? 'prediction' : 'promise'} gives no date. The deadline is the end of the term sought, ${d}.`,
+    basisInferred: (d) => `The promise gives no date. The deadline is the end of the term sought, ${d}.`, // promises only (VG-3)
     howDecided: 'How this was decided', confirmedShort: 'Confirmed by a person',
     jurySummary: (n, unanimous) => `AI jury: ${n === 1 ? '1 vote' : `${n} votes`}${unanimous ? '' : ', not unanimous'}`,
     decidedHuman: 'Verdict written by a person.', decidedJury: 'Verdict proposed by the AI jury.',
@@ -118,7 +122,7 @@ const T = {
     v: { unverifiable: 'Invérifiable', pending: 'En attente', to_evaluate: 'À évaluer', came_true: 'Réalisée', partly_came_true: 'Partiellement réalisée', not_came_true: 'Non réalisée' },
     ty: { promise: 'Promesse', prediction: 'Prévision' },
     d: { economy: 'Économie', tax: 'Fiscalité', employment: 'Emploi et travail', health: 'Santé', education: 'Éducation et recherche', environment: 'Environnement', energy: 'Énergie', defence: 'Défense', security: 'Sécurité intérieure', justice: 'Justice', immigration: 'Immigration et asile', foreign_affairs: 'Affaires étrangères et européennes', institutions: 'Institutions et vie publique', social: 'Protection sociale', housing: 'Logement', transport: 'Transports', agriculture: 'Agriculture et pêche', digital: 'Numérique', culture: 'Culture, médias et sport', other: 'Autres sujets' },
-    kind: { platform: 'Programme', statement: 'Déclaration', renunciation: 'Renonciation publique', law: 'Texte de loi', gazette: 'Journal officiel', statistic: 'Statistique officielle', budget: 'Document budgétaire', parliament: 'Document parlementaire', court: 'Décision de justice', audit: 'Rapport d’audit public', official: 'Document officiel', media: 'Article de presse', dataset_study: 'Étude avec données publiées' },
+    kind: { platform: 'Programme', statement: 'Déclaration', renunciation: 'Revirement public de l’auteur', law: 'Texte de loi', gazette: 'Journal officiel', statistic: 'Statistique officielle', budget: 'Document budgétaire', parliament: 'Document parlementaire', court: 'Décision de justice', audit: 'Rapport d’audit public', official: 'Document officiel', media: 'Article de presse', dataset_study: 'Étude avec données publiées' },
     sk: { person: 'Personne', party: 'Parti', government: 'Gouvernement', institution: 'Institution' },
     verif: { measurable: 'Mesurable', vague: 'Imprécise', hedged: 'Assortie de réserves' },
     m: ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'],
@@ -148,14 +152,16 @@ const T = {
     basedOn: 'Fondé sur', and: 'et', wording: 'la formulation elle-même', noDeadline: 'Pas d’échéance',
     confirmedOn: (d) => `Confirmé par une personne le ${d}`,
     fullRecord: 'Dossier complet', evidence: (n) => `Preuve ${n}`,
-    renWait: 'renonciation publique, l’attente de l’échéance s’arrête ici', renTitle: 'Renonciation publique', renEnds: 'Met fin à l’attente',
-    renPara: (name, d) => `${name} a renoncé publiquement à cette promesse le ${d}. À partir de cette date, la promesse est jugée sur ce qui avait été fait${NB}; ce document n’est pas la preuve de ce résultat.`,
+    rulesApplied: (v) => `Règles appliquées, version ${v}`, rulesTitle: (v) => `Règles de verdict, version ${v}`,
+    rulesIntro: (v) => `Chaque verdict de ce site indique les règles selon lesquelles il a été rendu. Voici les règles de la version ${v}, en mots simples. Une règle n’est jamais modifiée sur place${NB}: une règle changée reçoit un nouvel identifiant, dans une nouvelle version.`,
+    rulesNewer: (link) => `Une version plus récente existe${NB}: ${link}. Chaque verdict garde la version selon laquelle il a été rendu.`,
+    rulesVersion: (v) => `version ${v}`, rulesStandards: 'Principes de jugement', rulesRules: 'Règles',
     document: 'Document', location: 'Emplacement', address: 'Adresse d’origine', retrieved: 'Date de collecte', fingerprint: 'Empreinte (SHA-256)',
     whereSaid: 'Source de la promesse', who: 'Qui', publishedBy: 'Publié par',
     copies: `Nous conservons une copie de chaque fichier${NB}; les copies ne sont pas publiées. L’empreinte permet à chacun de vérifier qu’une copie en sa possession est bien le même fichier.`,
     criteria: 'Critères',
     basisStated: (type) => `L’échéance est fixée dans la ${type === 'prediction' ? 'prévision' : 'promesse'}.`,
-    basisInferred: (type, d) => `La ${type === 'prediction' ? 'prévision' : 'promesse'} ne donne pas de date. L’échéance est la fin du mandat brigué, le ${d}.`,
+    basisInferred: (d) => `La promesse ne donne pas de date. L’échéance est la fin du mandat brigué, le ${d}.`,
     howDecided: 'Comment le verdict a été établi', confirmedShort: 'Confirmé par une personne',
     jurySummary: (n, unanimous) => `jury d’IA${NB}: ${n === 1 ? '1 vote' : `${n} votes`}${unanimous ? '' : ', non unanimes'}`,
     decidedHuman: 'Verdict rédigé par une personne.', decidedJury: 'Verdict proposé par le jury d’IA.',
@@ -231,14 +237,6 @@ function isLegifrance(source) {
 }
 
 /** Publisher as shown: the Légifrance label for its texts, the recorded publisher otherwise. */
-/**
- * A public renunciation is evidence only under not_came_true; under any other verdict it only ends
- * the wait and is shown unnumbered, in its own wording (decision 0013, design/components.md).
- */
-function endsWaitOnly(e, verdict) {
-  return e.kind === 'renunciation' && verdict !== 'not_came_true';
-}
-
 function publisherOf(source, lang) {
   return isLegifrance(source) ? T[lang].legifrance : source.publisher;
 }
@@ -553,9 +551,7 @@ function rowBody(it, lang, up) {
       `<p class="row-body-h">${L.basedOn}</p><ul class="row-basis">${it.evidence
         .map(
           (e) =>
-            endsWaitOnly(e, it.verdict)
-              ? `<li><span lang="${esc(e.lang)}">${esc(e.title)}</span> <span class="muted">· ${esc(L.renWait)}</span></li>`
-              : `<li><span lang="${esc(e.lang)}">${esc(e.title)}</span> <span class="muted">· ${esc(lowerFirst(L.kind[e.kind]))}, ${isLegifrance(e) ? esc(L.legifrance) : `<span lang="${esc(e.lang)}">${esc(e.publisher)}</span>`}</span></li>`
+            `<li><span lang="${esc(e.lang)}">${esc(e.title)}</span> <span class="muted">· ${esc(lowerFirst(L.kind[e.kind]))}, ${isLegifrance(e) ? esc(L.legifrance) : `<span lang="${esc(e.lang)}">${esc(e.publisher)}</span>`}</span></li>`
         )
         .join('')}</ul>`
     );
@@ -960,18 +956,12 @@ function claimPage(lang, m, claim) {
   const o = s.origin;
   const chain = [];
   chain.push({ date: c.said_on, rank: 0, html: L.saidIn(o.kind, `<a href="#src-${c.id}">${esc(L.kindLower[o.kind] ?? lowerFirst(L.kind[o.kind]))}, ${esc(c.source_locator)}</a>`) });
-  // Evidence is numbered 1…n; a renunciation that only ends the wait is numbered apart (#ren-…), so
-  // "Evidence n" and #ev-… keep counting evidence alone. Under not_came_true it is evidence.
-  const proofs = evidence.filter((e) => !endsWaitOnly(e, v.verdict));
-  const renunciations = evidence.filter((e) => endsWaitOnly(e, v.verdict));
-  proofs.forEach((e, i) => {
+  // Evidence is numbered 1…n. A public reversal by the speaker can only be cited under not_came_true,
+  // where it is evidence like any other (record format 12, RN-1 row 5).
+  evidence.forEach((e, i) => {
     const kind = esc(lowerFirst(L.kind[e.kind])) +
       (isLegifrance(e) ? `, ${esc(L.legifrance)}` : e.kind === 'media' || e.kind === 'dataset_study' ? `, <span lang="${esc(e.lang)}">${esc(e.publisher)}</span>` : '');
     chain.push({ date: e.published_on || null, rank: 1, undated: L.dateNotStated, html: `<a href="#ev-${c.id}-${i + 1}" lang="${esc(e.lang)}">${esc(e.title)}</a> · ${kind}` });
-  });
-  // Same date as a piece of evidence: after it (rank 1.5).
-  renunciations.forEach((e, k) => {
-    chain.push({ date: e.published_on || null, rank: 1.5, undated: L.dateNotStated, html: `<a href="#ren-${c.id}-${k + 1}" lang="${esc(e.lang)}">${esc(e.title)}</a> · ${esc(L.renWait)}` });
   });
   if (c.deadline) chain.push({ date: c.deadline, rank: 2, html: esc(L.chainDeadline(c.deadline_basis, c.type)) });
   if (!evidence.length && c.verifiability !== 'measurable') {
@@ -984,7 +974,7 @@ function claimPage(lang, m, claim) {
   const wording = chain.filter((x) => !x.date && x.rank === 2);
   const confirmedAt = ordered.findIndex((x) => x.rank === 3);
   ordered.splice(confirmedAt, 0, ...wording);
-  ordered.push(...chain.filter((x) => !x.date && (x.rank === 1 || x.rank === 1.5)));
+  ordered.push(...chain.filter((x) => !x.date && x.rank === 1));
   const chainHtml = ordered
     .map((x) =>
       x.date
@@ -998,7 +988,7 @@ function claimPage(lang, m, claim) {
   else if (openQ) questionBlock = `\n      <h2>${L.openQuestion}</h2>\n      <p>${esc(openQ)}</p>`;
 
   const layers = [];
-  // One layer per document: evidence first ("Evidence n"), then each renunciation that only ends the wait.
+  // One layer per piece of evidence ("Evidence n").
   const docLayer = (e, id, title, first, intro) => {
     const sum = [first, esc(publisherOf(e, lang)), e.published_on ? fmt(e.published_on, lang) : null].filter(Boolean).join(' · ');
     return `<details class="layer" id="${id}">
@@ -1015,11 +1005,7 @@ function claimPage(lang, m, claim) {
           </dl>
         </details>`;
   };
-  proofs.forEach((e, i) => layers.push(docLayer(e, `ev-${c.id}-${i + 1}`, L.evidence(i + 1), L.kind[e.kind])));
-  // A renunciation is always dated (rules.js renunciationAdmitted); fmt() stops the build if one is not.
-  renunciations.forEach((e, k) =>
-    layers.push(docLayer(e, `ren-${c.id}-${k + 1}`, L.renTitle, L.renEnds, L.renPara(esc(subject.name), fmt(e.published_on, lang))))
-  );
+  evidence.forEach((e, i) => layers.push(docLayer(e, `ev-${c.id}-${i + 1}`, L.evidence(i + 1), L.kind[e.kind])));
   layers.push(`<details class="layer" id="src-${c.id}">
           <summary><span class="t">${L.whereSaid}</span><span class="s">${L.kind[o.kind]} · ${esc(c.source_locator)}</span></summary>
           <dl class="meta">
@@ -1035,7 +1021,7 @@ function claimPage(lang, m, claim) {
         </details>`);
   if (criteria || c.deadline) {
     const basisLine = c.deadline
-      ? `\n          <p class="muted">${c.deadline_basis === 'inferred' ? L.basisInferred(c.type, fmt(c.deadline, lang)) : L.basisStated(c.type)}</p>`
+      ? `\n          <p class="muted">${c.deadline_basis === 'inferred' ? L.basisInferred(fmt(c.deadline, lang)) : L.basisStated(c.type)}</p>`
       : '';
     layers.push(`<details class="layer">
           <summary><span class="t">${L.criteria}</span><span class="s">${L.verif[c.verifiability]}${c.deadline ? ` · ${L.deadline.toLowerCase()} ${c.deadline_basis === 'inferred' ? L.inferred : L.stated}` : ''}</span></summary>${criteria ? `\n          <p>${esc(criteria)}</p>` : ''}${basisLine}
@@ -1079,7 +1065,7 @@ function claimPage(lang, m, claim) {
       <h2>${L.chainH}</h2>
       <ol class="chain">
         ${chainHtml}
-      </ol>
+      </ol>${rulesBlock(v, lang, up)}
     </div>
 
     <div class="detail-layer">
@@ -1092,6 +1078,54 @@ function claimPage(lang, m, claim) {
   </div>
 </article>`;
   return shell({ lang, path, title: `${L.by(L.ty[c.type], subject.name, fmt(c.said_on, lang))} — KANVERIFY`, body });
+}
+
+/** The page the rules line links to (`<lang>/method/rules-<version>/`). */
+function rulesHref(up, lang, version, id) {
+  return `${up}${lang}/method/rules-${version}/#${id}`;
+}
+
+/**
+ * Decision 0014 (design/components.md "Rules applied and the rules page"): last in the summary layer, after the
+ * chain, the rules the verdict was judged by: one line each, the sentence in the page's language, then the id as the
+ * link to its rule in that version. In the standard's order, each once. A version or an id the kept standard of that
+ * version does not hold stops the build (src/standard.js; confirm() refuses them too).
+ */
+function rulesBlock(v, lang, up) {
+  const ids = Array.isArray(v.rules_applied) ? v.rules_applied : [];
+  if (!ids.length) return '';
+  const standard = loadStandard(v.rules_version);
+  for (const id of ids) if (!standard.rules.has(id)) throw new Error(`rule ${id} is not in the verdict standard ${v.rules_version}`);
+  const items = [...standard.rules.values()].filter((r) => ids.includes(r.id))
+    .map((r) => `<li>${esc(r[lang])} <a href="${rulesHref(up, lang, standard.version, r.id)}">${esc(r.id)}</a></li>`);
+  return `\n      <p class="muted">${esc(T[lang].rulesApplied(standard.version))}</p>
+      <ul class="rules-applied">
+        ${items.join('\n        ')}
+      </ul>`;
+}
+
+/** The rules of one version: standards, then rules, each with its id as anchor; a note when a newer version exists. */
+function rulesPage(lang, version, built) {
+  const L = T[lang];
+  const standard = loadStandard(version);
+  const current = loadStandard().version;
+  const path = [lang, 'method', `rules-${version}`];
+  const up = '../'.repeat(path.length);
+  const dl = (rules) => `<dl class="rules">
+${rules.map((r) => `    <div class="rule" id="${esc(r.id)}"><dt>${esc(r.id)}</dt><dd>${esc(r[lang])}</dd></div>`).join('\n')}
+  </dl>`;
+  const all = [...standard.rules.values()];
+  const newer = version === current ? ''
+    : `\n  <p class="muted">${L.rulesNewer(built.has(current) ? `<a href="${up}${lang}/method/rules-${current}/">${esc(L.rulesVersion(current))}</a>` : esc(L.rulesVersion(current)))}</p>`;
+  const body = `<div class="wrap prose">
+  <h1>${esc(L.rulesTitle(version))}</h1>
+  <p>${L.rulesIntro(esc(version))}</p>${newer}
+  <h2>${L.rulesStandards}</h2>
+  ${dl(all.filter((r) => r.id.startsWith('ST-')))}
+  <h2>${L.rulesRules}</h2>
+  ${dl(all.filter((r) => !r.id.startsWith('ST-')))}
+</div>`;
+  return shell({ lang, path, title: `${L.rulesTitle(version)} — KANVERIFY`, body, current: 'method' });
 }
 
 function correctionsPage(lang, m) {
@@ -1183,6 +1217,13 @@ function indexJson(m, lang) {
 
 // ------------------------------------------------------------------ build
 
+/** The rules versions of every snapshot the site shows. */
+function rulesVersions(m) {
+  const out = new Set();
+  for (const c of m.claims.values()) for (const e of c.entries) if (e.snap?.verdict?.rules_version) out.add(e.snap.verdict.rules_version);
+  return [...out].sort();
+}
+
 /** Refuses to replace a folder the generator did not make. */
 function checkOutDir(outDir) {
   if (!existsSync(outDir)) return;
@@ -1234,6 +1275,9 @@ export function buildSite(db, outDir, { today = localToday(), rename = renameSyn
       }
       for (const c of m.claims.values()) write(`${lang}/claim/${c.id}/index.html`, claimPage(lang, m, c));
       write(`${lang}/method/index.html`, methodPage(lang));
+      // Every version of the verdict rules a shown verdict was judged by (decision 0014).
+      const versions = rulesVersions(m);
+      for (const version of versions) write(`${lang}/method/rules-${version}/index.html`, rulesPage(lang, version, new Set(versions)));
       write(`${lang}/corrections/index.html`, correctionsPage(lang, m));
     }
   } catch (error) {

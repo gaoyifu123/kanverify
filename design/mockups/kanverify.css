@@ -343,6 +343,19 @@ details[open] > summary { margin-bottom: var(--s2); }
   .split .rows > li:last-child { border-bottom: 0; }
 }
 
+/* ---------- Rules applied and the rules page (components.md, record format 12; built by the developer from the spec) ---------- */
+.rules-applied { list-style: none; padding: 0; margin: 0 0 var(--s4); color: var(--ink-2); }
+.rules-applied li + li { margin-top: var(--s1); }
+.rules { margin: 0 0 var(--s4); }
+.rules .rule { padding: var(--s3) 0; border-top: 1px solid var(--rule); scroll-margin-top: 5rem; }
+.rules .rule:first-child { border-top: 0; }
+.rules dt { font-family: var(--sans); font-weight: var(--bold); color: var(--ink); }
+.rules dd { margin: 0; color: var(--ink); }
+.rules .rule:target { border-left: 3px solid var(--accent); padding-left: var(--s3); }
+@media (min-width: 40rem) {
+  .rules .rule { display: grid; grid-template-columns: 4.5rem minmax(0, 1fr); }
+}
+
 @media print {
   .tools, .sample, .mock-variant { display: none; }
   .layer > * { display: block; }

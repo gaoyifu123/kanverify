@@ -40,6 +40,7 @@ Static files, one set per language (`fr`, `en`), no server code:
 | `/{lang}/subject/{subject.id}/index.html` | same | a redirect (meta refresh + link) to the slugged URL |
 | `/{lang}/claim/{claim.id}/index.html` | one per claim that has ever had a ledger entry | newest entry; history from all entries |
 | `/{lang}/method/index.html` | 1 | static text (mockup `method.{lang}.html`) |
+| `/{lang}/method/rules-{version}/index.html` | one per `rules_version` in any ledger entry | `src/standard.js` (components.md "Rules applied and the rules page") |
 | `/{lang}/corrections/index.html` | 1 | all of `publications` |
 | `/index.html` | 1 | language choice, links to `/fr/` and `/en/` |
 | `/assets/kanverify.css`, `/assets/site.js` | 1 each | mockup CSS; `stats.js` + view scripts + theme script |
@@ -148,6 +149,8 @@ Summary layer:
      no deadline";
    - `confirmed_at`: "Confirmed by a person".
    A deadline later than the confirmation (early Came true / Partly came true) is simply placed last.
+   After the chain, last in the summary layer: "Rules applied, version {rules_version}" and one line per id in
+   `rules_applied`, plain words + id linking to `/{lang}/method/rules-{version}/#{id}` (components.md).
 
 Detail layer ("Full record"), one `<details>` each, in this order, omitted when empty:
 
@@ -208,6 +211,6 @@ index, native disclosure), 8 (no external requests).
    the founder decided to hide. Worth a test.
 4. Not drawn: Corrections page, review desk, the root language page (specified in §3).5. Person-page groups by document: a person quoted in many interviews gets many one-item groups.
    Proposed fallback (not built): above 8 groups, group by year of `said_on` instead.
-6. Wanted later, need the record format (not changed here): a method version on each verdict ("judged
-   under method v…"), and a topic/dossier link per claim for focus pages (one policy, everyone's words
+6. Done in record format 12: the method version and rules on each verdict ("Rules applied"). Still wanted, needs
+   the record format: a topic/dossier link per claim for focus pages (one policy, everyone's words
    and the official documents in date order).

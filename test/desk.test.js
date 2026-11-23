@@ -16,7 +16,7 @@ import { closeRound, judgeInputText, readRounds, voteContext } from '../src/jury
 import { publicationBlockers, withdraw } from '../src/ledger.js';
 import { packPromptVersion, sha256Of } from '../src/pack.js';
 import { sameSessionProblem } from '../src/rules.js';
-import { addClaim, addSource, freshDb } from './helpers.js';
+import { addClaim, addSource, addVerdict, freshDb } from './helpers.js';
 
 const ORIGIN_HTML = '<html><body><p>Préambule.</p><p>Nous ferons X avant 2027. Nous baisserons Y.</p><p>Nous continuerons Z.</p></body></html>';
 const LAW_HTML = '<html><body><p>Article 1.</p><p>X est en vigueur depuis 2025.</p></body></html>';
@@ -83,11 +83,11 @@ function setup(t, { subjectInFile = true, pdfLaw = false, lawKind = 'law' } = {}
   const opts = { evidenceDir, textDir, logPath, reviewPath, now };
   const desk = createDesk({ db, packDirs: [packDir], ...opts });
   const key = (i) => candidateKey(candName, CANDIDATES[i - 1].quote_original);
-  return { db, dir, desk, opts, origin, law, candPath, candName, reviewPath, logPath, packDir, advance, store, key, evidenceDir };
+  return { db, dir, desk, opts, origin, law, candPath, candName, reviewPath, logPath, packDir, advance, now, store, key, evidenceDir };
 }
 
 /** A pack for workspace claim `claimId` (candidate 1) and its votes; then the jury step closes the round, as tally does (close: false leaves it open). */
-function writePack(s, verdicts = ['came_true', 'came_true'], { claim: claimOver = {}, cutSession = null, sessions = [], close = true } = {}) {
+function writePack(s, verdicts = ['came_true', 'came_true'], { claim: claimOver = {}, cutSession = null, sessions = [], close = true, notUsed = [], made = '2026-11-22' } = {}) {
   const c = CANDIDATES[0];
   const law = s.db.prepare('SELECT * FROM sources WHERE id = ?').get(s.law);
   const where = law.media_type === 'application/pdf' ? { locator: 'p. 2', pdf_page: 2 } : { locator: '§2', pdf_page: null };
@@ -100,26 +100,26 @@ function writePack(s, verdicts = ['came_true', 'came_true'], { claim: claimOver 
     },
     sources: [{ source_id: s.law, kind: law.kind, title: 'Loi', publisher: 'JO', published_on: '2025-01-01', url: 'https://example.org/l', lang: 'fr' }],
     excerpts: [{ source_id: s.law, locator: where.locator, pdf_page: where.pdf_page, text: 'X est en vigueur depuis 2025.', text_en: 'X has been in force since 2025.' }],
-    considered_not_used: [], gaps: null,
+    considered_not_used: notUsed, gaps: null,
     read: [{ source_id: s.law, units: 'all', not_read_why: null }],
     before_reading: { met: 'X in force', not_met: 'X not in force, or only in part' }, transcription_doubts: [],
   };
   // What node src/pack.js start writes: the program's header with its session.
   pack.header = {
     written_by: 'node src/pack.js start', started_at: '2026-11-22T09:00:00Z', prompt_version: packPromptVersion(),
-    session: cutSession ?? 'pack-desk-test', given_sources: [s.law], claim: JSON.parse(JSON.stringify(pack.claim)),
+    session: cutSession ?? 'pack-desk-test', given_sources: [s.law, ...notUsed.map((u) => u.source_id)], claim: JSON.parse(JSON.stringify(pack.claim)),
   };
   const bytes = Buffer.from(JSON.stringify(pack));
   const packPath = join(s.packDir, 'c1.pack.json');
   writeFileSync(packPath, bytes);
-  writeFileSync(join(s.packDir, 'c1.judge-input.md'), judgeInputText(pack, sha256Of(bytes), '2026-11-22'));
+  writeFileSync(join(s.packDir, 'c1.judge-input.md'), judgeInputText(pack, sha256Of(bytes), made));
   const ctx = voteContext(packPath, sha256Of(bytes));
   const members = [['anthropic', 'subscription'], ['openai', 'subscription'], ['gemini', 'api']];
   verdicts.forEach((verdict, i) => {
     const [provider, channel] = members[i];
     writeFileSync(join(s.packDir, `c1.vote-${provider}-${channel}.json`), JSON.stringify({
       kind: 'kanverify-vote', format: 1, claim: 'C1', pack_file: 'c1.pack.json', pack_sha256: sha256Of(bytes), provider, channel,
-      model: `model-${provider}`, promptVersion: ctx.promptVersion, system_sha256: ctx.systemSha256, verdict,
+      model: `model-${provider}`, promptVersion: ctx.promptVersion, system_sha256: ctx.systemSha256, verdict, rules_applied: ['EA-1', 'EV-1'],
       evidence: [{ source_id: s.law, excerpt: 'X est en vigueur depuis 2025.', locator: where.locator, pdf_page: where.pdf_page }],
       ...(sessions[i] && { made_by: { session: sessions[i] } }),
       reasoning: `reasoning ${i + 1}`, open_question_fr: null, open_question_en: null,
@@ -520,19 +520,19 @@ test('review 3: the founder\'s verdict meets the judges\' rules, and every path 
   writePack(s, ['came_true', 'partly_came_true']);
   const [item] = s.desk.verdictQueue().items;
   // Split, nothing adopted: an outcome verdict without evidence is refused, nothing is written.
-  assert.throws(() => s.desk.verdictAction({ item: item.id, round: roundOf(s, item.id), action: 'edit', fields: { verdict: 'came_true', summary_fr: 'Fait.', summary_en: 'Done.' } }), /official document/);
+  assert.throws(() => s.desk.verdictAction({ item: item.id, round: roundOf(s, item.id), action: 'edit', fields: { rules_applied: 'DL-4, EV-1', verdict: 'came_true', summary_fr: 'Fait.', summary_en: 'Done.' } }), /official document/);
   assert.equal(s.db.prepare('SELECT count(*) AS n FROM verdicts').get().n, 0);
   assert.equal(s.db.prepare('SELECT count(*) AS n FROM jury_votes').get().n, 2, 'votes are recorded on first sight, before any decision (decision 9)');
   // Summary in one language only: refused as for a judge.
-  assert.throws(() => s.desk.verdictAction({ item: item.id, round: roundOf(s, item.id), action: 'edit', fields: { verdict: 'to_evaluate', summary_fr: 'Manque.', open_question_fr: 'Quoi ?', open_question_en: 'What?' } }), /summary missing/);
+  assert.throws(() => s.desk.verdictAction({ item: item.id, round: roundOf(s, item.id), action: 'edit', fields: { rules_applied: 'DL-4, EV-1', verdict: 'to_evaluate', summary_fr: 'Manque.', open_question_fr: 'Quoi ?', open_question_en: 'What?' } }), /summary missing/);
   // A verdict that passes: written, and both valid votes are recorded although none was adopted.
-  s.desk.verdictAction({ item: item.id, round: roundOf(s, item.id), action: 'edit', fields: { verdict: 'to_evaluate', summary_fr: 'Manque.', summary_en: 'Missing.', open_question_fr: 'Quoi ?', open_question_en: 'What?' } });
+  s.desk.verdictAction({ item: item.id, round: roundOf(s, item.id), action: 'edit', fields: { rules_applied: 'DL-4, EV-1', verdict: 'to_evaluate', summary_fr: 'Manque.', summary_en: 'Missing.', open_question_fr: 'Quoi ?', open_question_en: 'What?' } });
   assert.equal(s.db.prepare('SELECT decided_by FROM verdicts').get().decided_by, 'human');
   assert.equal(s.db.prepare('SELECT count(*) AS n FROM jury_votes WHERE round = 1').get().n, 2);
   // Before the deadline only came_true may be given: partly_came_true is refused even with evidence.
   s.db.prepare("UPDATE claims SET deadline = '2030-01-01'").run();
   s.desk.verdictAction({ item: item.id, round: roundOf(s, item.id), action: 'adopt', vote: 1 });
-  assert.throws(() => s.desk.verdictAction({ item: item.id, round: roundOf(s, item.id), action: 'edit', fields: { verdict: 'partly_came_true', summary_fr: 'En partie.', summary_en: 'In part.' } }), /not reached/);
+  assert.throws(() => s.desk.verdictAction({ item: item.id, round: roundOf(s, item.id), action: 'edit', fields: { rules_applied: 'DL-4, EV-1', verdict: 'partly_came_true', summary_fr: 'En partie.', summary_en: 'In part.' } }), /not reached/);
   // A verdict that breaks the rules outside the desk blocks C.
   s.db.prepare("UPDATE verdicts SET verdict = 'partly_came_true'").run();
   const again = s.desk.verdictQueue().items[0];
@@ -805,7 +805,7 @@ test('decision 9: text that only looks blank counts as missing', (t) => {
   for (const blank of ['⠀', '᠎', 'ᅟ', 'ㅤ', ' ​­ ']) {
     assert.throws(() => s.desk.verdictAction({
       item: item.id, round: 1, action: 'edit',
-      fields: { verdict: 'to_evaluate', summary_fr: 'Manque.', summary_en: blank, open_question_fr: 'Quoi ?', open_question_en: 'What?' },
+      fields: { rules_applied: 'DL-4, EV-1', verdict: 'to_evaluate', summary_fr: 'Manque.', summary_en: blank, open_question_fr: 'Quoi ?', open_question_en: 'What?' },
     }), /summary missing/, JSON.stringify(blank));
   }
   assert.equal(s.db.prepare('SELECT count(*) AS n FROM verdicts').get().n, 0);
@@ -1162,17 +1162,18 @@ test('re-check F: sessions compared without case; figures written in words count
   for (const text of ['une baisse', 'one plan', 'Article premier', null]) assert.equal(hasFigures(text), false, String(text));
 });
 
-test('Fable review 7: the desk stop for misused evidence names the renunciation conditions', () => {
+test('format 12: the desk stop for misused evidence names the RN-1 conditions', () => {
   const db = freshDb();
   const platform = addSource(db, 'platform');
-  const claim = addClaim(db, platform, { type: 'prediction' });
-  const v = db.prepare("INSERT INTO verdicts (claim_id, verdict, summary_fr, summary_en, decided_by) VALUES (?, 'not_came_true', 'r', 's', 'human')").run(claim).lastInsertRowid;
-  const ren = addSource(db, 'renunciation', { url: 'https://example.org/ren/desk' });
+  const claim = addClaim(db, platform); // said 2022-03-17, due 2027-05-13
+  const v = addVerdict(db, claim, 'not_came_true');
+  // Dated after the deadline: RN-1 row 7, it changes nothing and is no evidence.
+  const ren = addSource(db, 'renunciation', { url: 'https://example.org/ren/desk', published_on: '2028-01-01' });
   db.prepare("INSERT INTO verdict_evidence (verdict_id, source_id, excerpt, excerpt_en, locator) VALUES (?, ?, 'x', 'x', '§1')").run(v, ren);
   const message = publicationBlockers(db, claim, { today: '2030-01-01' }).find((b) => /is used as evidence/.test(b));
   const text = blockerText(message);
-  assert.match(text, /dated on or after the promise/);
-  assert.match(text, /alone only for “Did not come true”/);
+  assert.match(text, /outside RN-1 row 5/);
+  assert.match(text, /dated between the day the claim was made and its deadline/);
   db.close();
 });
 
@@ -1204,4 +1205,126 @@ test('Fable review 6 (A9, decision 0012 item 1): coverage per cited source, "dec
   closeRound(path2, { now: () => new Date(Date.now()) });
   [item] = s2.desk.verdictQueue().items;
   assert.ok(item.p.votes.every((v) => !v.valid && /no session stamped by the program/.test(v.problems.join())));
+});
+
+test('format 12: the desk records the rules a vote names, shows them, and lets the founder correct them', (t) => {
+  const s = setup(t);
+  importOne(s);
+  writePack(s, ['came_true', 'came_true']);
+  let [item] = s.desk.verdictQueue().items;
+  let html = s.desk.verdictPage(item.id);
+  assert.match(html, /· rules EA-1, EV-1<\/p>/, 'each vote shows its rules');
+  assert.match(html, /Rules applied \(verdict standard 0\.8\): <span class="mono">EA-1<\/span> “Came true” may be given before the deadline once the evidence shows the criteria fully met; it is provisional and is judged again at the deadline; <span class="mono">EV-1<\/span>/);
+  assert.match(html, /name="rules_applied" class="mono" value="EA-1, EV-1"/);
+  s.desk.verdictAction({ item: item.id, round: roundOf(s, item.id), action: 'adopt', vote: 1 });
+  const v = () => s.db.prepare('SELECT * FROM verdicts').get();
+  assert.deepEqual([v().rules_version, v().rules_applied], ['0.8', '["EA-1","EV-1"]']);
+  // Corrected at the desk: typed ids, case and separators aside; a text-only change keeps the jury's decision.
+  [item] = s.desk.verdictQueue().items;
+  const edit = (rules) => s.desk.verdictAction({ item: item.id, round: roundOf(s, item.id), action: 'edit', fields: { verdict: 'came_true', summary_fr: v().summary_fr, summary_en: v().summary_en, rules_applied: rules } });
+  edit('oc-1; ev-1 ST-3');
+  assert.deepEqual([v().rules_applied, v().decided_by], ['["OC-1","EV-1","ST-3"]', 'jury']);
+  assert.deepEqual(JSON.parse(readActions(s.logPath).at(-1).after.verdict.rules_applied), ['OC-1', 'EV-1', 'ST-3']);
+  // An id the current standard does not have is refused; nothing changes.
+  assert.throws(() => edit('ZZ-9'), /"ZZ-9" is not a rule of the verdict standard 0\.8/);
+  assert.equal(v().rules_applied, '["OC-1","EV-1","ST-3"]');
+  // Blank keeps the current ones.
+  edit('');
+  assert.equal(v().rules_applied, '["OC-1","EV-1","ST-3"]');
+  // A verdict judged under another version of the standard keeps C off until it is looked at again.
+  s.db.prepare("UPDATE verdicts SET rules_version = '0.5'").run();
+  [item] = s.desk.verdictQueue().items;
+  assert.equal(item.canConfirm, false);
+  assert.match(item.stops.join(), /judged under verdict standard 0\.5, the current one is 0\.8/);
+  edit('OC-1, EV-1');
+  [item] = s.desk.verdictQueue().items;
+  assert.equal(item.canConfirm, true, item.stops.join(' | '));
+  s.desk.verdictAction({ item: item.id, round: roundOf(s, item.id), action: 'confirm' });
+  s.advance(5_200);
+  const { publicationId } = s.desk.commit(s.desk.pending.id);
+  const snap = JSON.parse(s.db.prepare('SELECT snapshot FROM publications WHERE id = ?').get(publicationId).snapshot);
+  assert.deepEqual([snap.verdict.rules_version, snap.verdict.rules_applied], ['0.8', ['OC-1', 'EV-1']]);
+});
+
+test('format 12: a vague item is recorded under VG-1; a vote without rules does not count', (t) => {
+  const s = setup(t);
+  addClaim(s.db, s.origin, {
+    quote_original: 'Nous baisserons Y.', quote_en: 'We will lower Y.', source_locator: '§2', verifiability: 'vague',
+    criteria_fr: null, criteria_en: null, deadline: null, deadline_basis: null, said_on: '2022-03-17',
+  });
+  const [item] = s.desk.verdictQueue().items;
+  s.desk.verdictAction({ item: item.id, action: 'edit', fields: { summary_fr: 'Rien de mesurable.', summary_en: 'Nothing measurable.', rules_applied: 'EV-1' } });
+  assert.equal(s.db.prepare('SELECT rules_applied FROM verdicts').get().rules_applied, '["VG-1"]');
+  assert.match(s.desk.verdictPage(item.id), /Rules applied \(verdict standard 0\.8\): <span class="mono">VG-1<\/span>/);
+});
+
+test('R2: every given source that could be evidence but has no excerpt is listed in the open, with its why', (t) => {
+  const s = setup(t);
+  importOne(s);
+  const stat = addSource(s.db, 'statistic', { url: 'https://example.org/stat', title: 'Taux X', publisher: 'Insee', sha256: 'e'.repeat(64) });
+  const st = addSource(s.db, 'statement', { url: 'https://example.org/st', title: 'Discours', sha256: 'f'.repeat(64) });
+  writePack(s, ['came_true', 'came_true'], { notUsed: [
+    { source_id: stat, locator: null, pdf_page: null, text: null, why: 'another year' },
+    { source_id: st, locator: null, pdf_page: null, text: null, why: 'a statement, never evidence' },
+  ] });
+  const [item] = s.desk.verdictQueue().items;
+  const html = s.desk.verdictPage(item.id);
+  const open = html.slice(0, html.indexOf('<details id="unused">'));
+  assert.match(open, /Given as possible evidence, not excerpted \(1\):/);
+  assert.match(open, new RegExp(`source ${stat} · Official statistics · <span class="doc-title" lang="fr">Taux X</span>, Insee — why: “another year”`));
+  assert.doesNotMatch(open, /Discours/, 'a statement is never evidence: it stays in the collapsed list');
+});
+
+test('review 8, finding 5: a vague prediction is recorded under VG-1 and VG-3', (t) => {
+  const s = setup(t);
+  addClaim(s.db, s.origin, {
+    type: 'prediction', quote_original: 'Nous baisserons Y.', quote_en: 'We will lower Y.', source_locator: '§2', verifiability: 'vague',
+    criteria_fr: null, criteria_en: null, deadline: null, deadline_basis: null, said_on: '2022-03-17',
+  });
+  const [item] = s.desk.verdictQueue().items;
+  s.desk.verdictAction({ item: item.id, action: 'edit', fields: { summary_fr: 'Sans période.', summary_en: 'No time range.' } });
+  assert.equal(s.db.prepare('SELECT rules_applied FROM verdicts').get().rules_applied, '["VG-1","VG-3"]');
+});
+
+test('review 8, finding 1: an early “came true” comes back after the deadline and C waits for a new round', (t) => {
+  const s = setup(t);
+  importOne(s);
+  // A deadline that today (this machine's date, which confirm() uses) has not passed.
+  const pad = (n) => String(n).padStart(2, '0');
+  const d = new Date(Date.now() + 2 * 86400_000);
+  const deadline = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  s.db.prepare('UPDATE claims SET deadline = ?').run(deadline);
+  writePack(s, ['came_true', 'came_true'], { claim: { deadline } });
+  let [item] = s.desk.verdictQueue().items;
+  s.desk.verdictAction({ item: item.id, round: roundOf(s, item.id), action: 'confirm' });
+  s.advance(5_200);
+  s.desk.commit(s.desk.pending.id);
+  assert.equal(s.desk.verdictQueue().items.length, 0, 'done while the deadline has not passed');
+  // The desk's clock passes the deadline: the item is back, marked, and C is off.
+  s.advance(Date.parse(`${deadline}T12:00:00`) + 2 * 86400_000 - s.now().getTime());
+  [item] = s.desk.verdictQueue().items;
+  assert.ok(item, 'back in queue B after the deadline');
+  assert.match(item.recheck, /Deadline re-check: “came true” was confirmed on .*, before the deadline/);
+  assert.equal(item.canConfirm, false);
+  assert.match(item.stops.join(), /provisional and the state at the deadline decides \(EA-1, DL-2\)/);
+  assert.match(s.desk.verdictPage(item.id), /Deadline re-check/);
+  // Re-check R2: a newer round whose judges were shown a date on or before the deadline does not clear it.
+  writePack(s, ['came_true', 'came_true', 'came_true'], { claim: { deadline }, made: deadline }); // a third member: a new round
+  [item] = s.desk.verdictQueue().items;
+  s.desk.verdictAction({ item: item.id, round: roundOf(s, item.id), action: 'adopt', vote: 3 });
+  [item] = s.desk.verdictQueue().items;
+  assert.equal(item.round, 2);
+  assert.match(item.stops.join(), /provisional .*adopt a new round judged after the deadline/);
+  assert.equal(item.canConfirm, false);
+  // A round judged after the deadline, adopted: C is on again.
+  const after = new Date(Date.parse(`${deadline}T12:00:00`) + 86400_000);
+  const made = `${after.getFullYear()}-${pad(after.getMonth() + 1)}-${pad(after.getDate())}`;
+  rmSync(join(s.packDir, 'c1.vote-gemini-api.json')); // only the two members of this round vote
+  writePack(s, ['came_true', 'came_true'], { claim: { deadline }, made });
+  [item] = s.desk.verdictQueue().items;
+  assert.equal(item.round, 3);
+  s.desk.verdictAction({ item: item.id, round: roundOf(s, item.id), action: 'adopt', vote: 1 });
+  [item] = s.desk.verdictQueue().items;
+  assert.doesNotMatch(item.stops.join(), /provisional/);
+  assert.equal(item.canConfirm, true, item.stops.join(' | '));
 });

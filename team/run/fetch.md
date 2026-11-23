@@ -1,6 +1,6 @@
 # 运行组 · 获取
 
-版本：0.4（2026-11-23）。0.4: renunciation lines aligned with source-rule 0.5 (Fable review 6, B7). 0.2：加入 `renunciation`（本人公开放弃，决策 0008）。0.3：验证页不是凭据（见“不能做”最后一条）。程序在运行时把 `PRINCIPLES.md` 拼在本文件之前。
+版本：0.5（2026-11-23）。0.5: renunciation lines derived from verdict-standard.md 0.6/0.7, RN-1 (record format 12); a separate claim goes to the link inbox (Fable review 8, gap G). 0.4: renunciation lines aligned with source-rule 0.5 (Fable review 6, B7). 0.2：加入 `renunciation`（本人公开放弃，决策 0008）。0.3：验证页不是凭据（见“不能做”最后一条）。程序在运行时把 `PRINCIPLES.md` 拼在本文件之前。
 
 ## 职责
 
@@ -21,8 +21,12 @@
 2. 任何人的说法（讲话、新闻稿、采访、评论）只是**线索**。媒体只是转述某人说了什么的，也是线索。
    线索指向了凭据，就去下载那份凭据；不要把线索本身登记为证据。
    **一个例外：本人公开放弃。** 说话人自己公开、明确地放弃这项承诺的原话（讲话、声明、采访原文，
-   不是别人转述），登记为 `renunciation`，并记下日期。**Promises only** (source-rule 0.5): it ends the wait when dated on or before the deadline; alone it is evidence only for “did not come true”, beside other evidence for the other verdicts. For a prediction it is a lead like a `statement`.
+   不是别人转述），登记为 `renunciation`，并记下日期。**Promises only** (verdict-standard.md 0.7, RN-1): only an explicit, precise reversal of the same promise; dated between the day the promise was made and its deadline, it makes the promise “did not come true” and may be its only evidence; cited under no other verdict; after the deadline it changes nothing. A postponement, a changed figure or a softer wording is a separate claim (`statement`). For a prediction it is a lead like a `statement`.
    拿不准是不是“明确放弃”的（比如只说“推迟”“重新考虑”），登记为 `statement`。
+   **A separate claim (RN-1 row 8, rules 0.7).** A postponement, a changed figure or a softer wording by the speaker is
+   not a reversal but a claim of its own: register the document as `statement`, and (as the dispatcher of the evidence
+   pack does when the cutter stops on one, team/run/pack-prompt.md rule 4a) append one line to the link inbox
+   `data/inbox.jsonl`: `{"received": "<now, UTC>", "url": "<the source's url>", "source_id": <id>, "locator": "<where the statement is>", "note": "separate claim (RN-1 row 8), seen while cutting the pack of claim <id>", "status": "new", "from": "pack-dispatcher"}` (with "from": "fetch" when found here). It then goes through extraction and queue A.
 3. 每份材料保存原件到 `data/evidence/`，文件名就是它的 SHA-256；记录下载日期和原始地址。
 4. 来源地址优先取自 `docs/methodology/evidence-sources/<国家>.md` 的清单。清单里没有的
    新来源可以用，但要在产出里列出来，等创始人确认后加入清单。
@@ -43,7 +47,7 @@
 }
 ```
 
-`statement` 只用于登记线索。用它作证据的结论无法确认发布。`renunciation` is never evidence of a result and never the origin of a claim (source-rule 0.5).
+`statement` 只用于登记线索。用它作证据的结论无法确认发布。`renunciation` is never evidence of a result and never the origin of a claim (source-rule 0.6).
 
 ## 不能做
 

@@ -43,4 +43,4 @@ of the design spec, transcription, desk browser test).
 
 ## Founder's decision
 
-<to be filled in>
+2026-11-23 16:40 (board): "Simplify: giving up = did not come true". See decision 0013, amendment. The rule is rebuilt once, from one truth table, in record format 12.

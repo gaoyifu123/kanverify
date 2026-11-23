@@ -52,3 +52,20 @@ be checked. They are cheap to confirm (no evidence search), so they add to the p
 - Installed: `@anthropic-ai/claude-code` 2.1.330 (npm, global). The founder signs in once himself (`claude`, then
   follow the login); the coordinator never handles the login. Wiring the isolated Claude judge (`src/ai/claude-cli.js`,
   like `codex-cli.js`) comes after the desk fix, as one writer at a time.
+
+## Amendment (2026-11-23 afternoon, founder on the board): simpler rules
+
+| Board item | Founder's choice | Rule from now on |
+| --- | --- | --- |
+| `stepback-renunciation` | Simplify: giving up = did not come true | A public, explicit renunciation of a promise, dated on or after the day it was made and on or before its deadline, makes the verdict `not_came_true`, whatever was done in part. It may be the only evidence. A renunciation after the deadline changes nothing (the state at the deadline counts). Replaces "ends the wait only". |
+| `renounced-then-delivered` | The renunciation verdict stays | A promise delivered after it was renounced stays `not_came_true`; the delivery is mentioned in the summary. |
+| `early-act-state` | "achieved once = achieved" | Early `came_true` whenever the evidence shows the criteria fully met before the deadline, whether the result could later be undone or not. Replaces "only for one-off results". |
+
+Unchanged: a vague or hedged promise stays `unverifiable` even when renounced; the state at the deadline counts.
+One case follows from "achieved once = achieved" and goes into the truth table for review: criteria fully met before
+the renunciation → `came_true`.
+
+Consequence (coordinator): record format 11's widening (a renunciation beside other evidence under partly / came_true /
+to_evaluate / unverifiable) and the site's "the wait ends here" display are no longer needed and are removed in record
+format 12, the same change that puts decision 0014 into effect (rules recorded with each verdict; 0014 stays in force). The step-back
+(docs/log/2026-11-23-step-back-renunciation.md) is closed by this choice.

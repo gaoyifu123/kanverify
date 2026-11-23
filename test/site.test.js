@@ -211,7 +211,7 @@ test('writes exactly the files listed in ia.md, for both languages', () => {
     'justice', 'immigration', 'foreign_affairs', 'institutions', 'social', 'housing', 'transport', 'agriculture',
     'digital', 'culture', 'other'];
   for (const lang of ['fr', 'en']) {
-    for (const p of ['index.html', 'index.json', 'method/index.html', 'corrections/index.html']) expected.add(`${lang}/${p}`);
+    for (const p of ['index.html', 'index.json', 'method/index.html', 'method/rules-0.8/index.html', 'corrections/index.html']) expected.add(`${lang}/${p}`);
     for (const d of domains) expected.add(`${lang}/topic/${d}/index.html`);
     expected.add(`${lang}/subject/1-test-subject/index.html`);
     expected.add(`${lang}/subject/1/index.html`);
@@ -676,7 +676,7 @@ test('the root page offers both languages without any script', () => {
   assert.ok(root.includes('<a href="fr/" hreflang="fr" lang="fr">') && root.includes('<a href="en/" hreflang="en" lang="en">'));
 });
 
-// ------------------------------------------------ renunciation on the item page (components.md, 2026-11-23)
+// ------------------------------------------------ a reversal by the speaker on the item page (record format 12)
 
 /** cameTrue's snapshot with a renunciation before the law (same date), a second law and a later renunciation. */
 function renouncedSnapshot(verdict) {
@@ -708,69 +708,98 @@ function buildRenounced(verdict, fn) {
 const layerIds = (html) => [...html.matchAll(/<details class="layer" id="([^"]+)">\s*<summary><span class="t">([^<]+)<\/span>/g)].map((m) => `${m[1]}=${m[2]}`);
 const chainOf = (html) => between(html, '<ol class="chain">', '</ol>');
 
-for (const verdict of ['came_true', 'partly_came_true', 'to_evaluate', 'unverifiable']) {
-  test(`renunciation under ${verdict}: unnumbered, its own anchor, chain line and layer; evidence numbering skips it`, () => {
-    buildRenounced(verdict, (read, id) => {
-      const en = read(`en/claim/${id}/index.html`);
-      const fr = read(`fr/claim/${id}/index.html`);
-      // 1. Numbering and anchors: evidence first (1, 2), then renunciations (1, 2), before "Where it was said".
-      assert.deepEqual(layerIds(en), [`ev-${id}-1=Evidence 1`, `ev-${id}-2=Evidence 2`, `ren-${id}-1=Public renunciation`, `ren-${id}-2=Public renunciation`, `src-${id}=Where it was said`]);
-      assert.deepEqual(layerIds(fr).slice(0, 4), [`ev-${id}-1=Preuve 1`, `ev-${id}-2=Preuve 2`, `ren-${id}-1=Renonciation publique`, `ren-${id}-2=Renonciation publique`]);
-      assert.doesNotMatch(en, /Evidence 3|>Evidence \d<\/span><span class="s">Public renunciation/);
-      assert.match(en, new RegExp(`id="ev-${id}-1">\\s*<summary><span class="t">Evidence 1</span><span class="s">Law · `));
-      // 2. Chain: renunciation after evidence of the same date; links to #ren-…; never "Evidence".
-      const chain = chainOf(en);
-      const order = [...chain.matchAll(/href="#((?:ev|ren)-\d+-\d+)"/g)].map((m) => m[1]);
-      assert.deepEqual(order, [`ev-${id}-1`, `ren-${id}-1`, `ev-${id}-2`, `ren-${id}-2`]);
-      assert.ok(chain.includes(`<a href="#ren-${id}-1" lang="fr">Renonciation A</a> · public renunciation, the wait for the deadline ends here`));
-      assert.ok(chainOf(fr).includes(`<a href="#ren-${id}-2" lang="fr">Renonciation B</a> · renonciation publique, l’attente de l’échéance s’arrête ici`));
-      // 4. Layer: description, first paragraph, then excerpt and the usual meta.
-      const layer = between(en, `id="ren-${id}-2">`, '</details>');
-      assert.ok(layer.includes(`<span class="s">Ends the wait · Ren Publisher · 1${NBSP}March 2026</span>`));
-      assert.ok(layer.includes(`<p class="muted">Test Subject publicly gave up this promise on 1${NBSP}March 2026. From that date, the promise is judged on what had been done; this document is not evidence of that result.</p>`));
-      assert.ok(layer.indexOf('<p class="muted">') < layer.indexOf('Renonciation B excerpt.'));
-      assert.ok(layer.includes('<dd class="mono">' + 'e'.repeat(64) + '</dd>'));
-      const frLayer = between(fr, `id="ren-${id}-1">`, '</details>');
-      assert.ok(frLayer.includes(`<span class="s">Met fin à l’attente · Ren Publisher · 1er${NBSP}janvier 2025</span>`));
-      assert.ok(frLayer.includes(`Test Subject a renoncé publiquement à cette promesse le 1er${NBSP}janvier 2025. À partir de cette date, la promesse est jugée sur ce qui avait été fait${NBSP}; ce document n’est pas la preuve de ce résultat.`));
-      // 3. Row body in lists (generated HTML), without the link.
-      const subj = read('en/subject/1-test-subject/index.html');
-      assert.ok(subj.includes('<li><span lang="fr">Renonciation A</span> <span class="muted">· public renunciation, the wait for the deadline ends here</span></li>'));
-      assert.doesNotMatch(subj, /· public renunciation, Ren Publisher/);
-      assert.ok(read('fr/subject/1-test-subject/index.html').includes('<span class="muted">· renonciation publique, l’attente de l’échéance s’arrête ici</span>'));
-    });
-  });
-}
-
-test('renunciation under not_came_true: unchanged, numbered among the evidence', () => {
+test('reversal under not_came_true: numbered among the evidence; the format-11 "wait ends here" display is gone', () => {
   buildRenounced('not_came_true', (read, id) => {
     const en = read(`en/claim/${id}/index.html`);
     assert.deepEqual(layerIds(en), [1, 2, 3, 4].map((n) => `ev-${id}-${n}=Evidence ${n}`).concat(`src-${id}=Where it was said`));
-    assert.match(en, new RegExp(`id="ev-${id}-1">\\s*<summary><span class="t">Evidence 1</span><span class="s">Public renunciation · Ren Publisher · `));
-    assert.doesNotMatch(en, /ren-\d|the wait for the deadline ends here|Ends the wait|publicly gave up/);
-    assert.ok(chainOf(en).includes(`<a href="#ev-${id}-1" lang="fr">Renonciation A</a> · public renunciation`));
-    assert.ok(read(`fr/claim/${id}/index.html`).includes('<span class="t">Preuve 4</span><span class="s">Renonciation publique · '));
-    assert.ok(read('en/subject/1-test-subject/index.html').includes('<span class="muted">· public renunciation, <span lang="fr">Ren Publisher</span></span>'));
+    assert.match(en, new RegExp(`id="ev-${id}-1">\\s*<summary><span class="t">Evidence 1</span><span class="s">Public reversal by the speaker · Ren Publisher · `));
+    assert.doesNotMatch(en, /ren-\d|wait for the deadline|Ends the wait|publicly gave up/);
+    assert.ok(chainOf(en).includes(`<a href="#ev-${id}-1" lang="fr">Renonciation A</a> · public reversal by the speaker`));
+    assert.ok(read(`fr/claim/${id}/index.html`).includes('<span class="t">Preuve 4</span><span class="s">Revirement public de l’auteur · '));
+    assert.ok(read('en/subject/1-test-subject/index.html').includes('<span class="muted">· public reversal by the speaker, <span lang="fr">Ren Publisher</span></span>'));
   });
+  const site = readFileSync(new URL('../src/site.js', import.meta.url), 'utf8') + readFileSync(new URL('../src/site-assets/views.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(site, /endsWaitOnly|renWait|renPara/);
 });
 
-test('rows drawn by the page script show the renunciation the same way as the generated rows', async () => {
+test('rows drawn by the page script show the reversal the same way as the generated rows', async () => {
   const { runInNewContext } = await import('node:vm');
   const views = readFileSync(new URL('../src/site-assets/views.js', import.meta.url), 'utf8');
-  for (const [verdict, lang, line] of [
-    ['came_true', 'en', '· public renunciation, the wait for the deadline ends here</span></li>'],
-    ['to_evaluate', 'fr', '· renonciation publique, l’attente de l’échéance s’arrête ici</span></li>'],
-    ['not_came_true', 'en', '· public renunciation, <span lang="fr">Ren Publisher</span></span></li>'],
+  for (const [lang, line] of [
+    ['en', '· public reversal by the speaker, <span lang="fr">Ren Publisher</span></span></li>'],
+    ['fr', '· revirement public de l’auteur, <span lang="fr">Ren Publisher</span></span></li>'],
   ]) {
-    buildRenounced(verdict, (read) => {
+    buildRenounced('not_came_true', (read) => {
       const index = JSON.parse(read(`${lang}/index.json`));
       const window = { KV: index, addEventListener() {} };
       const document = { documentElement: { lang }, body: { getAttribute: () => '' }, addEventListener() {} };
       runInNewContext(views, { window, document, Intl });
       const el = {};
       window.KVStats.rows(el, index.items, false);
-      assert.ok(el.innerHTML.includes(`<li><span lang="fr">Renonciation A</span> <span class="muted">${line}`), `${verdict} ${lang}`);
-      if (verdict !== 'not_came_true') assert.doesNotMatch(el.innerHTML, /Ren Publisher/);
+      assert.ok(el.innerHTML.includes(`<li><span lang="fr">Renonciation A</span> <span class="muted">${line}`), lang);
     });
+  }
+});
+
+// ------------------------------------------------ rules applied (decision 0014, record format 12)
+
+test('each verdict shows the rules it was judged by after the chain, sentence then id link, in the standard\'s order (components.md)', () => {
+  const en = page(`en/claim/${ids.cameTrue}/index.html`);
+  const fr = page(`fr/claim/${ids.cameTrue}/index.html`);
+  const block = (html) => between(html, '</ol>', '</div>');
+  assert.match(block(en), /<p class="muted">Rules applied, version 0\.8<\/p>\s*<ul class="rules-applied">\s*<li>“Came true” may be given before the deadline once the evidence shows the criteria fully met; it is provisional and is judged again at the deadline\. <a href="\.\.\/\.\.\/\.\.\/en\/method\/rules-0\.8\/#EA-1">EA-1<\/a><\/li>\s*<li>An outcome needs one official document, or two independent sources from different publishers\. <a href="\.\.\/\.\.\/\.\.\/en\/method\/rules-0\.8\/#EV-1">EV-1<\/a><\/li>\s*<li>“Came true” means every criterion fully met; a bundle of measures needs every measure\. <a href="\.\.\/\.\.\/\.\.\/en\/method\/rules-0\.8\/#OC-1">OC-1<\/a><\/li>\s*<\/ul>/);
+  assert.match(block(fr), /Règles appliquées, version 0\.8<\/p>\s*<ul class="rules-applied">\s*<li>« Réalisée » peut être donné avant l’échéance/);
+  // After the dated chain, last in the summary layer; nowhere else (rows, cards).
+  assert.ok(en.indexOf('<ol class="chain">') < en.indexOf('rules-applied') && en.indexOf('rules-applied') < en.indexOf('class="detail-layer"'));
+  assert.doesNotMatch(page('en/subject/1-test-subject/index.html'), /rules-applied/);
+  // The standard's order and each id once, whatever order the verdict lists them in.
+  const snap = currentSnapshot(ids.cameTrue);
+  snap.verdict.rules_applied = ['OC-1', 'ST-3', 'EV-1', 'OC-1'];
+  const dir = mkdtempSync(join(tmpdir(), 'kv-rules-order-'));
+  try {
+    buildSite(fakeLedger(snap), join(dir, 'site'), { today: TODAY });
+    const html = readFileSync(join(dir, 'site', 'en', 'claim', String(snap.claim.id), 'index.html'), 'utf8');
+    assert.deepEqual([...html.matchAll(/rules-0\.8\/#([A-Z]{2}-\d+)">/g)].map((m) => m[1]), ['ST-3', 'EV-1', 'OC-1']);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+  // The rules page: h1, intro, standards then rules, each a div.rule with its id as anchor; no "newer" note on the current version.
+  const rules = page('en/method/rules-0.8/index.html');
+  assert.ok(rules.includes('<h1>Verdict rules, version 0.8</h1>'));
+  assert.ok(rules.includes('These are the rules of version 0.8, in plain words. A rule is never changed in place'));
+  assert.ok(rules.indexOf('<h2>Standards</h2>') < rules.indexOf('<div class="rule" id="ST-1"><dt>ST-1</dt>'));
+  assert.ok(rules.indexOf('<h2>Rules</h2>') < rules.indexOf('<div class="rule" id="VG-1"><dt>VG-1</dt>'));
+  for (const id of ['ST-1', 'ST-3', 'VG-1', 'VG-3', 'DL-2', 'EA-1', 'RN-1', 'EV-1', 'OC-1']) assert.ok(rules.includes(`<div class="rule" id="${id}">`), id);
+  assert.doesNotMatch(rules, /A newer version exists/);
+  const frRules = page('fr/method/rules-0.8/index.html');
+  assert.ok(frRules.includes('Règles de verdict, version 0.8') && frRules.includes('<h2>Principes de jugement</h2>'));
+  assert.doesNotMatch(frRules, /reniée|prédiction/, 'finding 4: no blame word, the site says « prévision »');
+});
+
+test('a page of an older rules version says a newer one exists', () => {
+  const snap = currentSnapshot(ids.cameTrue);
+  snap.verdict.rules_version = '0.6';
+  const dir = mkdtempSync(join(tmpdir(), 'kv-rules-old-'));
+  try {
+    buildSite(fakeLedger(snap), join(dir, 'site'), { today: TODAY });
+    const old = readFileSync(join(dir, 'site', 'en', 'method', 'rules-0.6', 'index.html'), 'utf8');
+    assert.ok(old.includes('<p class="muted">A newer version exists: version 0.8. Each verdict keeps the version it was judged under.</p>'), 'no link: 0.8 has no page in this build');
+    assert.ok(readFileSync(join(dir, 'site', 'en', 'claim', String(snap.claim.id), 'index.html'), 'utf8').includes('Rules applied, version 0.6'));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('a verdict whose rules version or rule id is not kept stops the build before anything is replaced', () => {
+  for (const [field, value, message] of [['rules_version', '0.1', /verdict standard 0.1 is not kept/], ['rules_applied', ['ZZ-9'], /rule ZZ-9 is not in the verdict standard 0.8/]]) {
+    const snap = currentSnapshot(ids.cameTrue);
+    snap.verdict[field] = value;
+    const dir = mkdtempSync(join(tmpdir(), 'kv-rules-'));
+    try {
+      assert.throws(() => buildSite(fakeLedger(snap), join(dir, 'site'), { today: TODAY }), message, field);
+      assert.equal(existsSync(join(dir, 'site')), false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   }
 });

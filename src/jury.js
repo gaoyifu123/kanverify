@@ -46,6 +46,7 @@ import {
   judgeView, sha256Of, voteProblems,
 } from './pack.js';
 import { sameSessionProblem } from './rules.js';
+import { loadStandard } from './standard.js';
 
 export { INDEPENDENT_KINDS, OFFICIAL_KINDS, VERDICTS, voteProblems };
 
@@ -369,13 +370,8 @@ export async function judgeClaim(claim, docs, { provider = 'anthropic', model, t
     system_sha256: systemSha256,
     usage: { inputTokens: reply.usage?.inputTokens ?? 0, outputTokens: reply.usage?.outputTokens ?? 0 },
     call: callRecord('judge', reply),
-    verdict: j.verdict ?? null,
-    evidence: Array.isArray(j.evidence) ? j.evidence.map((e) => ({ source_id: e?.source_id ?? null, excerpt: e?.excerpt ?? null, locator: e?.locator ?? null, pdf_page: e?.pdf_page ?? null })) : [],
-    reasoning: j.reasoning ?? null,
-    open_question_fr: j.open_question_fr ?? null,
-    open_question_en: j.open_question_en ?? null,
-    summary_fr: j.summary_fr ?? null,
-    summary_en: j.summary_en ?? null,
+    // The answer fields, rules_applied included, as for pack votes (one shape, pack.js answerOf).
+    ...answerOf(j),
   };
 }
 
@@ -455,7 +451,7 @@ export async function judgeRun(db, run, {
 export const JUDGE_SCHEMA = Object.freeze({
   type: 'object',
   additionalProperties: false,
-  required: ['verdict', 'evidence', 'reasoning', 'open_question_fr', 'open_question_en', 'summary_fr', 'summary_en'],
+  required: ['verdict', 'evidence', 'rules_applied', 'reasoning', 'open_question_fr', 'open_question_en', 'summary_fr', 'summary_en'],
   properties: {
     verdict: { type: 'string', enum: [...VERDICTS] },
     evidence: {
@@ -469,6 +465,8 @@ export const JUDGE_SCHEMA = Object.freeze({
         },
       },
     },
+    // The ids of the rules that decided the verdict (verdict-standard.md; decision 0014).
+    rules_applied: { type: 'array', items: { type: 'string' } },
     reasoning: { type: 'string' },
     open_question_fr: { type: ['string', 'null'] },
     open_question_en: { type: ['string', 'null'] },
@@ -546,10 +544,14 @@ export function judgeInputHeader(text) {
  */
 export function voteContext(packPath, packSha256) {
   const { version: promptVersion, systemSha256 } = systemFor(JUDGE_PROMPT_PATH);
+  // Decision 0014: the judge prompt names the verdict standard its rule ids come from; votes count only
+  // while that is the current standard, whose ids the vote checks accept.
+  const rulesProblem = judgeRulesProblem();
   const inputPath = `${packStem(packPath)}.judge-input.md`;
   const header = existsSync(inputPath) ? judgeInputHeader(readFileSync(inputPath, 'utf8')) : null;
-  let problem = null;
-  if (!header) problem = `the judge input ${basename(inputPath)} is missing or has no header: the date the judges were shown is unknown`;
+  let problem = rulesProblem ? `${rulesProblem}; no vote of this pack counts` : null;
+  if (problem) { /* the rule ids the judges were given are not the current ones */ }
+  else if (!header) problem = `the judge input ${basename(inputPath)} is missing or has no header: the date the judges were shown is unknown`;
   else if (header.pack_sha256 !== packSha256 || header.promptVersion !== promptVersion || header.system_sha256 !== systemSha256) {
     problem = `the judge input ${basename(inputPath)} was made for another pack, prompt or system text; make it again and re-vote`;
   }
@@ -560,6 +562,19 @@ function readPack(db, packPath, checkOptions) {
   const bytes = readFileSync(packPath);
   const pack = JSON.parse(bytes.toString('utf8'));
   return { pack, packSha256: sha256Of(bytes), checked: checkPack(db, pack, checkOptions) };
+}
+
+/** The verdict standard version the judge prompt is written for: its "Rules: verdict standard X.Y" line. */
+export function judgeRulesVersion(path = JUDGE_PROMPT_PATH) {
+  return /^Rules: verdict standard (\d+\.\d+)\s*$/m.exec(readFileSync(path, 'utf8'))?.[1] ?? null;
+}
+
+/** A problem when the judge prompt's rules version is not the current verdict standard, else null. */
+export function judgeRulesProblem(path = JUDGE_PROMPT_PATH) {
+  const written = judgeRulesVersion(path);
+  const current = loadStandard().version;
+  if (written === current) return null;
+  return `the judge prompt is written for verdict standard ${written ?? '(none named)'}, but the standard is ${current}: update the prompt and its rule ids before judges vote`;
 }
 
 /** One vote through ask(): Codex (subscription), Gemini or Anthropic (API). Returns the vote record. */

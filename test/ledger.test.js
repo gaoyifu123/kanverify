@@ -10,9 +10,9 @@ import { join } from 'node:path';
 import {
   confirm as confirmOn, withdraw, hasUnconfirmedChanges, publicationBlockers as blockersOn,
 } from '../src/ledger.js';
-import { publisherKey } from '../src/rules.js';
+import { REVERSAL_TYPES, publisherKey, renunciationAdmitted } from '../src/rules.js';
 import {
-  freshDb, addSource, addClaim, addVerdict, addEvidence, addVote, readyClaim, OUTCOMES, VERDICTS,
+  freshDb, addSource, addClaim, addVerdict, addEvidence, addVote, readyClaim, OUTCOMES, VERDICTS, RULES_VERSION,
   ledger, publicRecord, publishableSnapshot,
 } from './helpers.js';
 
@@ -31,7 +31,7 @@ const publicationBlockers = (db, claimId, opts = {}) => blockersOn(db, claimId, 
 const SOURCE_KEYS = ['kind', 'url', 'title', 'publisher', 'published_on', 'retrieved_on', 'sha256', 'media_type', 'lang'];
 
 const REASON = { noteFr: 'Raison.', noteEn: 'Reason.' };
-const PRIMARY_MSG = 'a statement, a platform, a renunciation (on a promise only: alone for "not_came_true", or beside other evidence for "partly_came_true", "came_true", "to_evaluate" or "unverifiable" on a measurable promise; dated on or after the promise), or a missing source is used as evidence; evidence must be an official document or independent reporting';
+const PRIMARY_MSG = 'a statement, a platform, a missing source, or a renunciation outside RN-1 row 5 (cited only under "not_came_true" on a measurable promise, dated on or after the day it was made and on or before its deadline) is used as evidence; evidence must be an official document or independent reporting (EV-2)';
 
 function timestamp(offsetSeconds) {
   return new Date(Date.now() + offsetSeconds * 1000).toISOString().replace(/\.\d{3}Z$/, 'Z');
@@ -74,7 +74,7 @@ test('confirming stores the complete content as one snapshot', () => {
   assert.deepEqual(s.verdict, {
     verdict: 'came_true', summary_fr: 'Résumé du résultat.', summary_en: 'Summary of the outcome.',
     open_question_fr: null, open_question_en: null,
-    decided_by: 'human', based_on_round: null,
+    decided_by: 'human', based_on_round: null, rules_version: RULES_VERSION, rules_applied: ['EA-1', 'OC-1', 'EV-1'],
   });
   assert.deepEqual(Object.keys(s.evidence[0]), ['source_id', 'excerpt', 'excerpt_fr', 'excerpt_en', 'locator', ...SOURCE_KEYS]);
   assert.deepEqual(s.evidence.map((e) => e.source_id), [law]);
@@ -155,75 +155,6 @@ test('"unverifiable" on a measurable claim needs evidence; on a vague or hedged 
   }
 });
 
-test("the speaker's own renunciation is evidence for \"not_came_true\" only, and never an origin", () => {
-  const db = freshDb();
-  const platform = addSource(db, 'platform');
-  const renunciation = addSource(db, 'renunciation', { title: 'Interview: "we are dropping X"' });
-
-  // One renunciation alone is enough for "not_came_true".
-  const given_up = addClaim(db, platform);
-  addEvidence(db, addVerdict(db, given_up, 'not_came_true'), renunciation);
-  confirm(db, given_up, 'founder');
-  assert.equal(publicRecord(db, given_up).snapshot.evidence[0].kind, 'renunciation');
-
-  // Format 11: beside other evidence it may be cited under partly_came_true, came_true and to_evaluate
-  // (it records that the wait ended), but it is never evidence of a result and never the only row.
-  const QUESTION = { open_question_fr: 'Le chiffre manque.', open_question_en: 'The figure is missing.' };
-  for (const verdict of ['came_true', 'partly_came_true', 'to_evaluate', 'unverifiable']) {
-    const claim = addClaim(db, platform);
-    const id = addVerdict(db, claim, verdict, verdict === 'to_evaluate' ? QUESTION : {});
-    addEvidence(db, id, renunciation);
-    assert.ok(publicationBlockers(db, claim).includes(PRIMARY_MSG), verdict); // never alone
-    assert.throws(() => confirm(db, claim, 'founder'), /cannot be confirmed/, verdict);
-    addEvidence(db, id, addSource(db, 'law'));
-    assert.deepEqual(publicationBlockers(db, claim), [], verdict);
-    confirm(db, claim, 'founder');
-    assert.deepEqual(publicRecord(db, claim).snapshot.evidence.map((e) => e.kind), ['renunciation', 'law'], verdict);
-  }
-  // Two independent reports beside it are enough for partly_came_true; the renunciation adds nothing to the count.
-  {
-    const claim = addClaim(db, platform);
-    const id = addVerdict(db, claim, 'partly_came_true');
-    addEvidence(db, id, renunciation);
-    addEvidence(db, id, addSource(db, 'media', { publisher: 'A', sha256: '1'.repeat(64) }));
-    assert.throws(() => confirm(db, claim, 'founder'), /needs one official document/);
-    addEvidence(db, id, addSource(db, 'media', { publisher: 'B', sha256: '2'.repeat(64) }));
-    confirm(db, claim, 'founder');
-  }
-  // Beside a statement it is still alone among real evidence.
-  {
-    const claim = addClaim(db, platform);
-    const id = addVerdict(db, claim, 'to_evaluate', QUESTION);
-    addEvidence(db, id, renunciation);
-    addEvidence(db, id, addSource(db, 'statement'));
-    assert.deepEqual(publicationBlockers(db, claim), [PRIMARY_MSG]);
-  }
-  // Under pending, and under unverifiable on a vague or hedged promise, it is a lead: alone or beside a real document.
-  for (const [verdict, over] of [['pending', {}], ['unverifiable', { verifiability: 'vague', criteria_fr: null, criteria_en: null }],
-    ['unverifiable', { verifiability: 'hedged', criteria_fr: null, criteria_en: null }]]) {
-    const claim = addClaim(db, platform, over);
-    const id = addVerdict(db, claim, verdict);
-    addEvidence(db, id, renunciation);
-    addEvidence(db, id, addSource(db, 'law'));
-    assert.ok(publicationBlockers(db, claim).includes(PRIMARY_MSG), `${verdict} ${JSON.stringify(over)}`);
-    assert.throws(() => confirm(db, claim, 'founder'), /evidence must be an official document/, verdict);
-  }
-
-  // Taking back a forecast says nothing about whether the event happened: on a
-  // prediction a renunciation is a lead, alone or beside a real document.
-  const forecast = addClaim(db, platform, { type: 'prediction' });
-  const forecastVerdict = addVerdict(db, forecast, 'not_came_true');
-  addEvidence(db, forecastVerdict, renunciation);
-  assert.throws(() => confirm(db, forecast, 'founder'), /needs one official document/);
-  addEvidence(db, forecastVerdict, addSource(db, 'statistic'));
-  assert.throws(() => confirm(db, forecast, 'founder'), /evidence must be an official document/);
-
-  // A renunciation is not where a claim was made.
-  const fromRenunciation = addClaim(db, renunciation);
-  addVerdict(db, fromRenunciation, 'pending');
-  assert.throws(() => confirm(db, fromRenunciation, 'founder'), /not the speaker's own published words/);
-});
-
 // ---- Record format 10 (Fable review 3) ------------------------------------------------
 
 test('confirm() applies the deadline rule, on the local date it is given', () => {
@@ -250,108 +181,169 @@ test('confirm() applies the deadline rule, on the local date it is given', () =>
   }
   const late = make('pending');
   assert.throws(() => confirmOn(db, late, 'founder', { today: '2027-05-14' }), /passed, but verdict is pending/);
-  assert.deepEqual(blockersOn(db, late, { today: '2027-05-14' }), ['deadline 2027-05-13 passed, but verdict is pending']);
+  assert.deepEqual(blockersOn(db, late, { today: '2027-05-14' }), ['deadline 2027-05-13 passed, but verdict is pending (DL-4)']);
   for (const bad of ['23/11/2026', '2026-11-23T10:00:00Z', 20261123]) {
     assert.throws(() => confirmOn(db, late, 'founder', { today: bad }), /local date/, String(bad));
   }
   assert.equal(db.prepare('SELECT count(*) AS n FROM publications WHERE claim_id = ?').get(late).n, 0);
 });
 
-test('a renunciation lets "not_came_true" come early only if it was published on or after the promise', () => {
+// ---- Record format 12: RN-1, one test per row of the truth table (verdict-standard.md 0.6 section 5) ----
+// The claim: said 2022-03-17, due 2027-05-13 (helpers.addClaim). The ledger sees only the cited evidence.
+
+function rnSetup() {
   const db = freshDb();
   const platform = addSource(db, 'platform');
-  const given = (published_on) => {
-    const claim = addClaim(db, platform); // said on 2022-03-17, due 2027-05-13
-    const ren = addSource(db, 'renunciation', { published_on, url: `https://example.org/ren/${published_on}` });
-    addEvidence(db, addVerdict(db, claim, 'not_came_true'), ren);
-    return claim;
-  };
-  confirmOn(db, given('2022-03-17'), 'founder', { today: '2026-11-23' });
-  for (const published_on of ['2022-03-16', null]) {
-    const claim = given(published_on);
-    const blockers = blockersOn(db, claim, { today: '2027-06-01' });
-    assert.ok(blockers.some((b) => /needs one official document/.test(b)), String(published_on));
-    assert.ok(blockers.some((b) => /evidence must be an official document/.test(b)), String(published_on));
-    assert.throws(() => confirmOn(db, claim, 'founder', { today: '2026-11-23' }), /not over/, String(published_on));
-  }
-});
-
-test('a renunciation ends the wait only once it is published', () => {
-  const db = freshDb();
-  const platform = addSource(db, 'platform');
-  // Published after the day of confirmation: the wait is not over yet (founder, 2026-11-23).
-  const claim = addClaim(db, platform); // said on 2022-03-17, due 2027-05-13
-  const ren = addSource(db, 'renunciation', { published_on: '2026-12-01', url: 'https://example.org/ren/late' });
-  addEvidence(db, addVerdict(db, claim, 'not_came_true'), ren);
-  assert.throws(() => confirmOn(db, claim, 'founder', { today: '2026-11-23' }), /not over.*renunciation \(source \d+\) is dated 2026-12-01, after 2026-11-23/);
-  confirmOn(db, claim, 'founder', { today: '2026-12-01' });
-});
-
-// ---- Record format 11 (Fable review 2, second re-check) --------------------------------
-
-test('format 11: a renounced promise is past its deadline in confirm(), whatever the outcome verdict', () => {
-  const db = freshDb();
-  const platform = addSource(db, 'platform');
-  const ren = addSource(db, 'renunciation', { published_on: '2025-06-01', url: 'https://example.org/ren/f11' });
-  const law = addSource(db, 'law', { url: 'https://example.org/law/f11', sha256: 'b'.repeat(64) });
+  let n = 0;
+  const ren = (published_on) => addSource(db, 'renunciation', { published_on, url: `https://example.org/ren/${++n}`, sha256: (n).toString(16).padStart(64, 'd') });
+  const law = addSource(db, 'law', { url: 'https://example.org/law/rn', sha256: 'b'.repeat(64) });
   const QUESTION = { open_question_fr: 'Le chiffre manque.', open_question_en: 'The figure is missing.' };
-  const make = (verdict, rows, over = {}) => {
-    const claim = addClaim(db, platform, over); // said on 2022-03-17, due 2027-05-13
-    const v = addVerdict(db, claim, verdict, verdict === 'to_evaluate' ? QUESTION : {});
+  const make = (verdict, rows, over = {}, rules = null) => {
+    const claim = addClaim(db, platform, over);
+    const v = addVerdict(db, claim, verdict, {
+      ...(verdict === 'to_evaluate' ? QUESTION : {}), ...(rules && { rules_applied: JSON.stringify(rules) }),
+    });
     for (const r of rows) addEvidence(db, v, r);
     return claim;
   };
-  const today = '2026-11-23'; // before the deadline, after the renunciation
-  // Decision 0013: partial result -> partly_came_true; no result -> not_came_true; unclear -> to_evaluate.
-  // Fable review 7: unverifiable on a measurable promise (its condition never arose) too.
-  for (const verdict of ['partly_came_true', 'to_evaluate', 'not_came_true', 'came_true', 'unverifiable']) {
-    const claim = make(verdict, [law, ren]);
-    assert.deepEqual(blockersOn(db, claim, { today }), [], verdict);
-    confirmOn(db, claim, 'founder', { today });
-  }
-  confirmOn(db, make('not_came_true', [ren]), 'founder', { today }); // alone, as before
-  // Without the renunciation among the evidence the ledger does not know of it: the wait goes on,
-  // and the stop says what would end it.
-  const plain = make('partly_came_true', [law]);
-  assert.throws(() => confirmOn(db, plain, 'founder', { today }),
-    /deadline 2027-05-13 not over .*partly_came_true; only a public renunciation cited among the evidence ends the wait/);
-  // A renounced promise cannot be pending: refused by the deadline rule (and as evidence).
-  const pending = make('pending', [ren]);
-  assert.ok(blockersOn(db, pending, { today }).includes('the promise was publicly renounced, which ends the wait, but verdict is pending'));
-  assert.throws(() => confirmOn(db, pending, 'founder', { today }), /cannot be confirmed/);
-  // A prediction is never renounced: the renunciation is refused and the wait goes on.
-  const forecast = make('partly_came_true', [law, ren], { type: 'prediction' });
-  const fb = blockersOn(db, forecast, { today });
-  assert.ok(fb.includes(PRIMARY_MSG));
-  assert.ok(fb.includes('deadline 2027-05-13 not over (not reached until the day after it), but verdict is partly_came_true'), fb.join(' | '));
-  // A vague promise stays unverifiable, renounced or not; the renunciation is not its evidence.
-  const vague = make('not_came_true', [ren], { verifiability: 'vague', criteria_fr: null, criteria_en: null });
-  assert.ok(blockersOn(db, vague, { today }).includes('a vague or hedged claim can only be "unverifiable"'));
-  const n = db.prepare('SELECT count(*) AS n FROM publications WHERE claim_id IN (?, ?, ?, ?)').get(plain, pending, forecast, vague).n;
-  assert.equal(n, 0);
+  return { db, platform, ren, law, make };
+}
+const VAGUE = { verifiability: 'vague', criteria_fr: null, criteria_en: null };
+
+test('RN-1 row 1: on a prediction a reversal is a lead, never evidence (the switch is off for predictions)', () => {
+  const { db, ren, law, make } = rnSetup();
+  const r = ren('2025-06-01');
+  const alone = make('not_came_true', [r], { type: 'prediction' });
+  const b = blockersOn(db, alone, { today: AFTER });
+  assert.ok(b.includes(PRIMARY_MSG));
+  assert.ok(b.some((x) => /needs one official document/.test(x)));
+  const beside = make('not_came_true', [law, r], { type: 'prediction' });
+  assert.deepEqual(blockersOn(db, beside, { today: AFTER }), [PRIMARY_MSG]);
+  // Before the deadline a prediction cannot be "not_came_true" at all: no reversal ends its wait.
+  assert.match(blockersOn(db, make('not_came_true', [law], { type: 'prediction' }), { today: BEFORE }).join(), /not over .*\(DL-3\)$/);
 });
 
-test('Fable review 7: a cited renunciation dated after today is refused, even after the deadline; every renunciation is named', () => {
+test('RN-1 switch: the ledger and src/rules.js admit a reversal on the same claim types', () => {
+  const { db, ren, make } = rnSetup();
+  for (const type of ['promise', 'prediction']) {
+    const claim = make('not_came_true', [ren('2025-06-01')], { type });
+    const ledgerSays = blockersOn(db, claim, { today: AFTER }).length === 0;
+    const rulesSay = renunciationAdmitted({ kind: 'renunciation', published_on: '2025-06-01' }, { type, verifiability: 'measurable', said_on: '2022-03-17', deadline: '2027-05-13' }, 'not_came_true');
+    assert.equal(ledgerSays, rulesSay, type);
+    assert.equal(rulesSay, REVERSAL_TYPES.includes(type), type);
+  }
+});
+
+test('RN-1 row 2: a vague or hedged promise stays unverifiable and cites no reversal', () => {
+  const { db, ren, make } = rnSetup();
+  for (const verifiability of ['vague', 'hedged']) {
+    const over = { ...VAGUE, verifiability };
+    const r = ren('2025-06-01');
+    assert.ok(blockersOn(db, make('unverifiable', [r], over), { today: BEFORE }).includes(PRIMARY_MSG), verifiability);
+    assert.ok(blockersOn(db, make('not_came_true', [r], over), { today: AFTER }).includes('a vague or hedged claim can only be "unverifiable"'), verifiability);
+    confirmOn(db, make('unverifiable', [], over), 'founder', { today: BEFORE });
+  }
+});
+
+test('RN-1 row 3: an undated reversal, or one dated before the promise, is no evidence', () => {
+  const { db, ren, make } = rnSetup();
+  for (const published_on of [null, '2022-03-16']) {
+    const claim = make('not_came_true', [ren(published_on)]);
+    const b = blockersOn(db, claim, { today: AFTER });
+    assert.ok(b.includes(PRIMARY_MSG), String(published_on));
+    assert.ok(b.some((x) => /needs one official document/.test(x)), String(published_on));
+    assert.throws(() => confirmOn(db, claim, 'founder', { today: BEFORE }), /not over.*RN-1 row 5/, String(published_on));
+  }
+});
+
+test('RN-1 row 4: criteria fully met before the reversal is came_true, on its evidence, without citing the reversal', () => {
+  const { db, ren, law, make } = rnSetup();
+  const r = ren('2025-06-01');
+  assert.ok(blockersOn(db, make('came_true', [law, r]), { today: BEFORE }).includes(PRIMARY_MSG));
+  confirmOn(db, make('came_true', [law], {}, ['EA-1', 'RN-1', 'EV-1']), 'founder', { today: BEFORE });
+});
+
+test('RN-1 row 5: a reversal between the promise and its deadline makes not_came_true, alone, before or after the deadline', () => {
+  const { db, ren, law, make } = rnSetup();
+  // Window bounds: the day the promise was made and the deadline day are inside.
+  for (const published_on of ['2022-03-17', '2025-06-01', '2027-05-13']) {
+    for (const today of [published_on, '2027-05-13', AFTER]) {
+      const claim = make('not_came_true', [ren(published_on)], {}, ['RN-1']);
+      assert.deepEqual(blockersOn(db, claim, { today }), [], `${published_on} ${today}`);
+    }
+    confirmOn(db, make('not_came_true', [ren(published_on)], {}, ['RN-1']), 'founder', { today: published_on });
+  }
+  // Beside the evidence of what was done (delivered later, or in part): still not_came_true.
+  confirmOn(db, make('not_came_true', [law, ren('2025-06-01')], {}, ['RN-1']), 'founder', { today: AFTER });
+  // No other verdict may cite it, alone or beside other evidence.
+  for (const verdict of ['partly_came_true', 'to_evaluate', 'unverifiable', 'pending']) {
+    const claim = make(verdict, [law, ren('2025-06-01')]);
+    assert.ok(blockersOn(db, claim, { today: AFTER }).includes(PRIMARY_MSG), verdict);
+    assert.throws(() => confirmOn(db, claim, 'founder', { today: AFTER }), /cannot be confirmed/, verdict);
+  }
+  // Without a reversal, not_came_true waits for the deadline (DL-3), and the stop says what would end it.
+  assert.throws(() => confirmOn(db, make('not_came_true', [law]), 'founder', { today: BEFORE }),
+    /deadline 2027-05-13 not over \(not reached until the day after it\), but verdict is not_came_true \(DL-3\); before the deadline, not_came_true needs a public reversal by the speaker/);
+});
+
+test('RN-1 row 6: a reversal dated after today cannot be cited yet', () => {
+  const { db, ren, make } = rnSetup();
+  const r = ren('2026-12-01');
+  const claim = make('not_came_true', [r], {}, ['RN-1']);
+  const b = blockersOn(db, claim, { today: BEFORE });
+  assert.ok(b.some((x) => x.includes(`the renunciation (source ${r}) is dated 2026-12-01, after ${BEFORE}; it cannot be cited before it is published`)), b.join(' | '));
+  assert.ok(b.some((x) => /not over/.test(x)), b.join(' | '));
+  assert.throws(() => confirmOn(db, claim, 'founder', { today: BEFORE }), /cannot be cited before it is published/);
+  confirmOn(db, claim, 'founder', { today: '2026-12-01' });
+});
+
+test('RN-1 row 7: a reversal after the deadline changes nothing and is no evidence (N2 closed)', () => {
+  const { db, ren, law, make } = rnSetup();
+  const late = make('not_came_true', [ren('2027-05-14')]);
+  const b = blockersOn(db, late, { today: AFTER });
+  assert.ok(b.includes(PRIMARY_MSG));
+  assert.ok(b.some((x) => /needs one official document/.test(x)));
+  // The state at the deadline decides, on its own evidence.
+  confirmOn(db, make('not_came_true', [law]), 'founder', { today: AFTER });
+});
+
+test('format 12: every verdict records its rules as distinct rule ids, in the snapshot', () => {
+  const { db, law, make } = rnSetup();
+  const claim = make('came_true', [law], {}, ['EA-1', 'EV-1']);
+  confirmOn(db, claim, 'founder', { today: BEFORE });
+  const s = publicRecord(db, claim).snapshot;
+  assert.equal(s.verdict.rules_version, RULES_VERSION);
+  assert.deepEqual(s.verdict.rules_applied, ['EA-1', 'EV-1']);
+  // Required and a non-empty list on every verdict row.
+  const other = addClaim(db, addSource(db, 'platform', { url: 'https://example.org/p2' }));
+  const insert = (version, rules) => db.prepare("INSERT INTO verdicts (claim_id, verdict, summary_fr, summary_en, decided_by, rules_version, rules_applied) VALUES (?, 'came_true', 'r', 's', 'human', ?, ?)").run(other, version, rules);
+  for (const [version, rules] of [[null, '["EV-1"]'], ['0.6', null], ['0.6', '[]'], ['0.6', '{"a":1}'], ['0.6', 'EV-1'], ['v0.6', '["EV-1"]'], ['0.6.1', '["EV-1"]'], ['', '["EV-1"]']]) {
+    assert.throws(() => insert(version, rules), /constraint/, `${version} ${rules}`);
+  }
+  // The form of each id is a publication check.
+  const RULES_MSG = 'the rules the verdict was judged by are not recorded as a list of distinct rule ids such as "DL-2" (decision 0014)';
+  for (const rules of [['ev-1'], ['EV-01'], ['EV-'], ['EV-1', 'EV-1'], ['EV-1x'], [1], ['EV-1\u0000x'], ['E-1']]) {
+    const c = make('came_true', [law], {}, rules);
+    assert.equal(blockersOn(db, c, { today: BEFORE })[0], RULES_MSG, JSON.stringify(rules));
+  }
+  // Changing the rules is a change of the public record.
+  db.prepare("UPDATE verdicts SET rules_applied = '[\"OC-1\",\"EV-1\"]' WHERE claim_id = ?").run(claim);
+  assert.equal(hasUnconfirmedChanges(db, claim), true);
+});
+
+test('VG-3: a prediction never has an inferred deadline', () => {
+  const { db, platform } = rnSetup();
+  assert.throws(() => addClaim(db, platform, { type: 'prediction', deadline_basis: 'inferred' }), /constraint/);
+  addClaim(db, platform, { type: 'prediction', deadline_basis: 'stated' });
+  addClaim(db, platform, { type: 'prediction', ...VAGUE, deadline: null, deadline_basis: null });
+  addClaim(db, platform, { type: 'promise', deadline_basis: 'inferred' });
+});
+
+test('a renunciation is never where a claim was made', () => {
   const db = freshDb();
-  const platform = addSource(db, 'platform');
-  const law = addSource(db, 'law', { url: 'https://example.org/law/r7', sha256: 'b'.repeat(64) });
-  const late = addSource(db, 'renunciation', { published_on: '2027-09-01', url: 'https://example.org/ren/r7-late' });
-  const early = addSource(db, 'renunciation', { published_on: '2022-03-01', url: 'https://example.org/ren/r7-early' });
-  const claim = addClaim(db, platform); // said on 2022-03-17, due 2027-05-13
-  const v = addVerdict(db, claim, 'partly_came_true');
-  addEvidence(db, v, law);
-  addEvidence(db, v, late);
-  const after = '2027-06-01';
-  assert.deepEqual(blockersOn(db, claim, { today: after }),
-    [`the renunciation (source ${late}) is dated 2027-09-01, after ${after}; it cannot be cited before it is published`]);
-  assert.throws(() => confirmOn(db, claim, 'founder', { today: after }), /cannot be cited before it is published/);
-  // Before the deadline: the hint names both renunciations, not only the first.
-  addEvidence(db, v, early);
-  const b = blockersOn(db, claim, { today: '2026-11-23' }).join(' | ');
-  assert.match(b, new RegExp(`renunciation \\(source ${late}\\) is dated 2027-09-01, after 2026-11-23, so it does not end the wait yet`));
-  assert.match(b, new RegExp(`renunciation \\(source ${early}\\) is undated or dated before the promise was made`));
-  // On the day it is published the late one may be cited; the early one (before the promise) is still no evidence.
-  assert.deepEqual(blockersOn(db, claim, { today: '2027-09-01' }), [PRIMARY_MSG]);
+  const fromRenunciation = addClaim(db, addSource(db, 'renunciation'));
+  addVerdict(db, fromRenunciation, 'pending');
+  assert.throws(() => confirm(db, fromRenunciation, 'founder'), /not the speaker's own published words/);
 });
 
 test('format 11: the snapshot says which jury round the verdict rests on', () => {
@@ -938,4 +930,50 @@ test('review 7 re-check: confirm() refuses a cited source of any kind dated afte
   confirmOn(db, claim, 'founder', { today: '2025-01-01' }); // the day it is published is fine
   assert.equal(ledger(db, claim).length, 1);
   db.close();
+});
+
+// ---- Fable review 8 ------------------------------------------------------------------
+
+test('review 8, finding 2: confirm() refuses a rules version or a rule id the kept standard does not hold', () => {
+  const { db, law, make } = rnSetup();
+  const claim = make('came_true', [law], {}, ['EA-1', 'EV-1']);
+  const set = (version, rules) => db.prepare('UPDATE verdicts SET rules_version = ?, rules_applied = ? WHERE claim_id = ?').run(version, JSON.stringify(rules), claim);
+  // A version of the right form that is not kept: the site could never build this entry.
+  set('9.9', ['EA-1', 'EV-1']);
+  assert.match(blockersOn(db, claim, { today: BEFORE }).join(), /judged under verdict standard "9\.9", the current one is/);
+  assert.throws(() => confirmOn(db, claim, 'founder', { today: BEFORE }), /judged under verdict standard "9\.9"/);
+  // An id of the right form that the version does not have.
+  set(RULES_VERSION, ['EA-1', 'ZZ-99']);
+  assert.match(blockersOn(db, claim, { today: BEFORE }).join(), /"ZZ-99" is not a rule of the verdict standard/);
+  assert.throws(() => confirmOn(db, claim, 'founder', { today: BEFORE }), /ZZ-99/);
+  // Re-check R4: only the current version is confirmed; a verdict stamped with a kept earlier version is looked at again first.
+  set('0.6', ['EA-1', 'EV-1']);
+  assert.throws(() => confirmOn(db, claim, 'founder', { today: BEFORE }), new RegExp(`judged under verdict standard "0\\.6", the current one is ${RULES_VERSION.replace('.', '\\.')}`));
+  set(RULES_VERSION, ['EA-1', 'EV-1']);
+  confirmOn(db, claim, 'founder', { today: BEFORE });
+  // Nothing hidden after a NUL or around the version: the row is refused.
+  for (const version of [RULES_VERSION + '\u0000x', ` ${RULES_VERSION}`, `${RULES_VERSION}\n`]) {
+    assert.throws(() => set(version, ['EV-1']), /constraint/, JSON.stringify(version));
+  }
+  assert.equal(db.prepare('SELECT count(*) AS n FROM publications').get().n, 1);
+});
+
+test('review 8, finding 5: a cited reversal means the verdict names RN-1', () => {
+  const { db, ren, make } = rnSetup();
+  const claim = make('not_came_true', [ren('2025-06-01')], {}, ['EV-3']);
+  assert.deepEqual(blockersOn(db, claim, { today: AFTER }), ['a reversal by the speaker is cited, so RN-1 decided the verdict: rules_applied must name RN-1']);
+  assert.throws(() => confirmOn(db, claim, 'founder', { today: AFTER }), /must name RN-1/);
+  db.prepare('UPDATE verdicts SET rules_applied = \'["RN-1"]\' WHERE claim_id = ?').run(claim);
+  confirmOn(db, claim, 'founder', { today: AFTER });
+});
+
+test('re-check R3: a "came_true" confirmed on or before the deadline names EA-1 (it is provisional)', () => {
+  const { db, law, make } = rnSetup();
+  const EA_MSG = '"came_true" on or before the deadline 2027-05-13 is the early, provisional verdict: rules_applied must name EA-1';
+  const early = make('came_true', [law], {}, ['OC-1', 'EV-1']);
+  for (const today of [BEFORE, '2027-05-13']) assert.deepEqual(blockersOn(db, early, { today }), [EA_MSG], today);
+  assert.throws(() => confirmOn(db, early, 'founder', { today: BEFORE }), /must name EA-1/);
+  // After the deadline it is the final verdict (DL-2): EA-1 is not required.
+  confirmOn(db, early, 'founder', { today: AFTER });
+  confirmOn(db, make('came_true', [law], {}, ['EA-1', 'OC-1', 'EV-1']), 'founder', { today: BEFORE });
 });

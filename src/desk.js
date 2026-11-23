@@ -28,6 +28,7 @@ import { readRounds, roundsFileName, voteContext } from './jury.js';
 import { publisherKey, sameSessionProblem, sessionsRecorded } from './rules.js';
 import { DEFAULT_TEXT_DIR, PACK_PROMPT_PATH, VERDICTS, checkCandidatesFile, checkPack, checkVote, sha256Of, sourceUnits, voteProblems, writeJsonAtomic } from './pack.js';
 import { renderCandidatePage, renderVerdictPage } from './desk-view.js';
+import { STANDARD_PATH, loadStandard, parseRuleList } from './standard.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(here, '..');
@@ -290,9 +291,9 @@ function restoreVerdict(db, claimId, state) {
   if (state.verdict) {
     const v = state.verdict;
     const verdictId = Number(db.prepare(
-      `INSERT INTO verdicts (claim_id, verdict, summary_fr, summary_en, open_question_fr, open_question_en, based_on_round, decided_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-    ).run(claimId, v.verdict, v.summary_fr, v.summary_en, v.open_question_fr, v.open_question_en, v.based_on_round ?? null, v.decided_by).lastInsertRowid);
+      `INSERT INTO verdicts (claim_id, verdict, summary_fr, summary_en, open_question_fr, open_question_en, based_on_round, decided_by, rules_version, rules_applied)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(claimId, v.verdict, v.summary_fr, v.summary_en, v.open_question_fr, v.open_question_en, v.based_on_round ?? null, v.decided_by, v.rules_version, v.rules_applied).lastInsertRowid);
     const add = db.prepare('INSERT INTO verdict_evidence (verdict_id, source_id, excerpt, excerpt_fr, excerpt_en, locator) VALUES (?, ?, ?, ?, ?, ?)');
     for (const e of state.evidence) add.run(verdictId, e.source_id, e.excerpt, e.excerpt_fr, e.excerpt_en, e.locator);
   }
@@ -671,7 +672,8 @@ export function createDesk({
       }
     }
     const validSig = roundSig(votes.filter((v) => v.valid).map((v) => voteRow(v.vote)));
-    return { path, pack, packSha256, checked, votes, closed, roundProblems, validSig, mtime: statSync(path).mtimeMs };
+    // judgedOn: the date the judges of this round were shown (the judge input's "made" date), for the deadline re-check.
+    return { path, pack, packSha256, checked, votes, closed, roundProblems, validSig, judgedOn: ctx.today ?? null, mtime: statSync(path).mtimeMs };
   }
 
   /** The rounds of a claim as recorded in jury_votes: round -> { pack_sha256, sig }. */
@@ -723,7 +725,7 @@ export function createDesk({
    * play no part. Vague and hedged claims are returned without a pack.
    */
   function scan(entries = readActions(logPath), world = worldKey()) {
-    const globalKey = `${world}|${statKey(JUDGE_PROMPT_PATH)}|${statKey(PACK_PROMPT_PATH)}|${statKey(PRINCIPLES_PATH)}`;
+    const globalKey = `${world}|${statKey(JUDGE_PROMPT_PATH)}|${statKey(PACK_PROMPT_PATH)}|${statKey(PRINCIPLES_PATH)}|${statKey(STANDARD_PATH)}`;
     const allClaims = db.prepare('SELECT id, source_id, quote_original, verifiability FROM claims').all();
     const claimsByQuote = new Map();
     for (const c of allClaims) {
@@ -780,15 +782,17 @@ ${p.pack.claim?.quote_original}`) ?? [];
     if (!v?.valid) throw new DeskError(`vote ${n} does not pass the program's checks and cannot be adopted`);
     const vote = v.vote;
     const existing = db.prepare('SELECT id FROM verdicts WHERE claim_id = ?').get(claimId);
-    const fields = [vote.verdict, vote.summary_fr ?? null, vote.summary_en ?? null, vote.open_question_fr ?? null, vote.open_question_en ?? null, round];
+    // Decision 0014: the rules the vote names, under the standard its ids were checked against (the current one).
+    const fields = [vote.verdict, vote.summary_fr ?? null, vote.summary_en ?? null, vote.open_question_fr ?? null, vote.open_question_en ?? null, round,
+      loadStandard().version, JSON.stringify(vote.rules_applied)];
     let verdictId;
     if (existing) {
-      db.prepare(`UPDATE verdicts SET verdict = ?, summary_fr = ?, summary_en = ?, open_question_fr = ?, open_question_en = ?, based_on_round = ?, decided_by = 'jury' WHERE id = ?`).run(...fields, existing.id);
+      db.prepare(`UPDATE verdicts SET verdict = ?, summary_fr = ?, summary_en = ?, open_question_fr = ?, open_question_en = ?, based_on_round = ?, rules_version = ?, rules_applied = ?, decided_by = 'jury' WHERE id = ?`).run(...fields, existing.id);
       verdictId = existing.id;
       db.prepare('DELETE FROM verdict_evidence WHERE verdict_id = ?').run(verdictId);
     } else {
       verdictId = Number(db.prepare(
-        `INSERT INTO verdicts (claim_id, verdict, summary_fr, summary_en, open_question_fr, open_question_en, based_on_round, decided_by) VALUES (?, ?, ?, ?, ?, ?, ?, 'jury')`
+        `INSERT INTO verdicts (claim_id, verdict, summary_fr, summary_en, open_question_fr, open_question_en, based_on_round, rules_version, rules_applied, decided_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'jury')`
       ).run(claimId, ...fields).lastInsertRowid);
     }
     const add = db.prepare('INSERT INTO verdict_evidence (verdict_id, source_id, excerpt, excerpt_fr, excerpt_en, locator) VALUES (?, ?, ?, ?, ?, ?)');
@@ -799,12 +803,21 @@ ${p.pack.claim?.quote_original}`) ?? [];
   function verdictRuleProblems(p, claim, state) {
     if (!state.verdict) return [];
     const v = state.verdict;
+    let rules = null;
+    try {
+      rules = JSON.parse(v.rules_applied);
+    } catch {
+      // reported below as rules_applied not being a list of ids
+    }
     const asVote = {
       verdict: v.verdict, summary_fr: v.summary_fr, summary_en: v.summary_en, open_question_fr: v.open_question_fr,
-      open_question_en: v.open_question_en, reasoning: `decided by ${v.decided_by}`,
+      open_question_en: v.open_question_en, reasoning: `decided by ${v.decided_by}`, rules_applied: rules,
       evidence: state.evidence.map((e) => ({ source_id: e.source_id, excerpt: e.excerpt, locator: e.locator })),
     };
     const problems = voteProblems(asVote, claim, p?.checked.docs ?? [], p?.checked.texts ?? new Map(), localDate(now()), { withinUnit: true });
+    // Decision 0014: a verdict is confirmed under the current rules; one judged under another version is looked at again (E).
+    const current = loadStandard().version;
+    if (v.rules_version !== current) problems.push(`the verdict was judged under verdict standard ${v.rules_version}, the current one is ${current}: check the rules applied and save (E)`);
     // Text made only of characters that look blank (decision 9, item 6) counts as missing.
     for (const f of ['summary_fr', 'summary_en', 'open_question_fr', 'open_question_en']) {
       if (typeof v[f] === 'string' && !deskFilled(v[f])) problems.push(`${f} looks blank`);
@@ -820,6 +833,24 @@ ${p.pack.claim?.quote_original}`) ?? [];
       const snap = db.prepare('SELECT snapshot FROM publishable WHERE claim_id = ?').get(claimId)?.snapshot ?? null;
       return { blockers: publicationBlockers(db, claimId, { today }), snapshot: snap, state: workspaceOf(db, claimId) };
     });
+  }
+
+  /**
+   * EA-1 and DL-2 (verdict-standard.md 0.7; founder, Fable review 8 finding 1): an early "came true" is provisional.
+   * When the claim's current ledger entry is "came true", confirmed on or before the deadline, and today is after the
+   * deadline, the item comes back to be judged again on the state at the deadline. Null otherwise. Why here and not a
+   * new table or a scheduled job (principle 5): the ledger already holds the verdict, its confirmation date and the
+   * deadline, and the desk is where a verdict is re-judged.
+   */
+  function earlyCameTrue(claimId, today) {
+    const cur = db.prepare("SELECT snapshot, confirmed_at FROM current_publications WHERE claim_id = ? AND status = 'published'").get(claimId);
+    if (!cur) return null;
+    const s = JSON.parse(cur.snapshot);
+    const deadline = s.claim?.deadline;
+    if (s.verdict?.verdict !== 'came_true' || !deadline || today <= deadline) return null;
+    const confirmedOn = localDate(new Date(cur.confirmed_at));
+    if (confirmedOn > deadline) return null;
+    return { confirmedOn, deadline, round: s.verdict.based_on_round ?? null };
   }
 
   /**
@@ -849,6 +880,7 @@ ${p.pack.claim?.quote_original}`) ?? [];
     }
     const stale = !!ws.verdict && ws.verdict.based_on_round !== round;
     const currentVerdict = stale ? null : ws.verdict;
+    const early = earlyCameTrue(claimId, localDate(now()));
     const valid = p.votes.filter((v) => v.valid);
     const tally = new Map();
     for (const v of valid) tally.set(v.vote.verdict, (tally.get(v.vote.verdict) ?? 0) + 1);
@@ -872,11 +904,20 @@ ${p.pack.claim?.quote_original}`) ?? [];
     if (after.blockers.length > 0 && !after.blockers.includes('there is no such claim')) stops.push(...after.blockers);
     if (ruleProblems.length > 0) stops.push(`the verdict breaks the rules every judge's vote must meet: ${ruleProblems.join('; ')}`);
     if (current && after.snapshot === current) stops.push('nothing has changed since the last confirmation');
+    // EA-1: the early "came true" is re-judged on the newest round, newer than the one it was confirmed on, and judged
+    // after the deadline (its judge input's date), so it is about the state at the deadline (Fable re-check R2).
+    const afterRound = after.snapshot ? JSON.parse(after.snapshot).verdict?.based_on_round ?? null : null;
+    const rejudged = afterRound !== null && afterRound === round && afterRound !== early?.round && typeof p.judgedOn === 'string' && p.judgedOn > early?.deadline;
+    if (early && !rejudged) {
+      stops.push(`“came true” was confirmed early (${early.confirmedOn}), before the deadline (${early.deadline}); it is provisional and the state at the deadline decides (EA-1, DL-2): send the pack back for the deadline's evidence (B, reason 1) and adopt a new round judged after the deadline`);
+    }
     const group = !p.closed || p.roundProblems.length > 0 || p.checked.problems.length > 0 || mismatch.length > 0 || valid.length < 2 || after.blockers.length > 0 || ruleProblems.length > 0 ? 2 : unanimous ? 0 : 1;
     return {
       id: `c${claimId}`, claimId, direct: false, p, round, verdictRound: ws.verdict?.based_on_round ?? null, stale, ws, after, valid, tally, unanimous,
       adopted, preselect, mismatch, stops, group, published, unconfirmed, current,
-      recheck: stale ? (published > 0 ? 'Re-check of a published item: new votes since it was published' : 'New votes since your last decision') : null,
+      recheck: early ? `Deadline re-check: “came true” was confirmed on ${early.confirmedOn}, before the deadline ${early.deadline}; the state at the deadline decides`
+        : stale ? (published > 0 ? 'Re-check of a published item: new votes since it was published' : 'New votes since your last decision') : null,
+      early,
       changed: unconfirmed && current ? snapshotDiff(current, after.snapshot) : [],
       bilingual: bilingualGaps(after.state, sourceLang),
     };
@@ -994,7 +1035,7 @@ ${p.pack.claim?.quote_original}`) ?? [];
         continue;
       }
       // Done: the verdict is from the newest round and the ledger already says exactly this.
-      if (!view.stale && view.current && view.after.snapshot === view.current) continue;
+      if (!view.stale && !view.early && view.current && view.after.snapshot === view.current) continue;
       items.push({ ...view, skippedAt: la?.action === 'skip' ? la.at : null });
     }
     items.sort((a, b) => (a.skippedAt ? 1 : 0) - (b.skippedAt ? 1 : 0) || (a.skippedAt ?? '').localeCompare(b.skippedAt ?? '')
@@ -1040,22 +1081,30 @@ ${p.pack.claim?.quote_original}`) ?? [];
       }
       if (view.direct) Object.assign(next, { verdict: 'unverifiable', open_question_fr: null, open_question_en: null });
       if (!VERDICTS.includes(next.verdict)) throw new DeskError('choose one of the six verdicts');
+      // Decision 0014: the founder may correct the rules applied; typed as ids ("DL-2, EV-1"). Blank keeps those of the
+      // verdict edited from; a vague or hedged item is always VG-1. Checked against the current standard below.
+      const typedRules = typeof fields?.rules_applied === 'string' ? parseRuleList(fields.rules_applied) : [];
       return inTransaction(db, () => {
         const before = workspaceOf(db, claimId);
         // A verdict from an older round is not a base to edit from: start from the pre-selected vote, or from nothing.
         if ((!before.verdict || view.stale) && view.preselect) applyVote(p, claimId, view.preselect, view.round);
         const cur = db.prepare('SELECT * FROM verdicts WHERE claim_id = ?').get(claimId);
         const baseRow = (view.stale && !view.preselect) || view.direct ? null : cur;
-        const values = [next.verdict, next.summary_fr, next.summary_en, next.open_question_fr, next.open_question_en, view.round];
-        const edited = baseRow ? ['verdict', 'summary_fr', 'summary_en', 'open_question_fr', 'open_question_en'].filter((f) => (baseRow[f] ?? null) !== next[f]) : ['verdict'];
+        // A vague or hedged item: VG-1; a vague prediction is vague for want of a time range too (VG-3).
+        const direct = before.claim.type === 'prediction' ? ['VG-1', 'VG-3'] : ['VG-1'];
+        const rulesApplied = view.direct ? direct : typedRules.length > 0 ? typedRules : baseRow ? JSON.parse(baseRow.rules_applied) : [];
+        if (rulesApplied.length === 0) throw new DeskError('name the rules applied (ids such as DL-2, EV-1; see the verdict standard)');
+        next.rules_applied = JSON.stringify(rulesApplied);
+        const values = [next.verdict, next.summary_fr, next.summary_en, next.open_question_fr, next.open_question_en, view.round, loadStandard().version, next.rules_applied];
+        const edited = baseRow ? ['verdict', 'summary_fr', 'summary_en', 'open_question_fr', 'open_question_en', 'rules_applied'].filter((f) => (baseRow[f] ?? null) !== next[f]) : ['verdict'];
         // decided_by: text-only edits keep the jury's; a changed verdict, or one with no jury at all, is the founder's (decision 6).
         const decidedBy = !baseRow || baseRow.verdict !== next.verdict ? 'human' : baseRow.decided_by;
         if (cur) {
-          db.prepare('UPDATE verdicts SET verdict = ?, summary_fr = ?, summary_en = ?, open_question_fr = ?, open_question_en = ?, based_on_round = ?, decided_by = ? WHERE id = ?').run(...values, decidedBy, cur.id);
+          db.prepare('UPDATE verdicts SET verdict = ?, summary_fr = ?, summary_en = ?, open_question_fr = ?, open_question_en = ?, based_on_round = ?, rules_version = ?, rules_applied = ?, decided_by = ? WHERE id = ?').run(...values, decidedBy, cur.id);
           // A stale verdict's evidence belongs to the old round; a decision without a vote has none.
           if (!baseRow) db.prepare('DELETE FROM verdict_evidence WHERE verdict_id = ?').run(cur.id);
         } else {
-          db.prepare('INSERT INTO verdicts (claim_id, verdict, summary_fr, summary_en, open_question_fr, open_question_en, based_on_round, decided_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(claimId, ...values, decidedBy);
+          db.prepare('INSERT INTO verdicts (claim_id, verdict, summary_fr, summary_en, open_question_fr, open_question_en, based_on_round, rules_version, rules_applied, decided_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(claimId, ...values, decidedBy);
         }
         // One ruler (principle 3): the founder's verdict meets the rules a judge's vote must meet.
         const problems = verdictRuleProblems(p, before.claim, workspaceOf(db, claimId));
@@ -1291,7 +1340,7 @@ ${p.pack.claim?.quote_original}`) ?? [];
     return renderVerdictPage({
       today: today(), counts: { candidates: q.items.length, verdicts: vq.items.length }, toast: toast?.queue === 'verdict' ? toast.text : null, pending: pendingInfo(),
       view: chosen, subject, origin, sources, originUnits: chosen && (chosen.entered === 'auto' || chosen.direct) && origin ? unitsOf(origin) : null,
-      viewNonce: chosen && nonce ? newViewNonce(chosen.claimId, chosen.round) : null,
+      viewNonce: chosen && nonce ? newViewNonce(chosen.claimId, chosen.round) : null, standard: loadStandard(),
       position: chosen ? { n: vq.items.indexOf(chosen) + 1, of: vq.items.length } : null, unlinked: vq.unlinked,
       onlySkipped: vq.items.length > 0 && vq.items.every((x) => x.skippedAt),
     });

@@ -75,7 +75,7 @@ test('voteProblems: a law excerpt is checked verbatim and its locator must name 
   const docs = [{ meta: { source_id: 38, kind: 'law', publisher: 'Légifrance (DILA)', title: 't' } }];
   const texts = new Map([[38, units]]);
   const vote = (excerpt, locator) => ({
-    verdict: 'came_true', reasoning: 'r', summary_fr: 'f', summary_en: 'e', evidence: [{ source_id: 38, excerpt, locator }],
+    verdict: 'came_true', rules_applied: ['OC-1', 'EV-1'], reasoning: 'r', summary_fr: 'f', summary_en: 'e', evidence: [{ source_id: 38, excerpt, locator }],
   });
   const excerpt = "L'âge est porté à soixante-quatre ans";
   for (const locator of ['art. 10', 'Article 10', 'ART 10']) {

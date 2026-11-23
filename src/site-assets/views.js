@@ -38,8 +38,7 @@
       noDeadline: 'No deadline', confirmed: 'Confirmed by a person on',
       full: function (id) { return 'Full record, item ' + id; },
       legifrance: 'Légifrance (official database)',
-      ek: { law: 'law', gazette: 'official gazette', statistic: 'official statistics', budget: 'budget document', parliament: 'parliamentary record', court: 'court decision', audit: 'public audit report', official: 'official document', media: 'news report', dataset_study: 'study with published data', renunciation: 'public renunciation', platform: 'platform', statement: 'statement' },
-      renWait: 'public renunciation, the wait for the deadline ends here'
+      ek: { law: 'law', gazette: 'official gazette', statistic: 'official statistics', budget: 'budget document', parliament: 'parliamentary record', court: 'court decision', audit: 'public audit report', official: 'official document', media: 'news report', dataset_study: 'study with published data', renunciation: 'public reversal by the speaker', platform: 'platform', statement: 'statement' }
     },
     fr: {
       v: { unverifiable: 'Invérifiable', pending: 'En attente', to_evaluate: 'À évaluer', came_true: 'Réalisée', partly_came_true: 'Partiellement réalisée', not_came_true: 'Non réalisée' },
@@ -62,8 +61,7 @@
       noDeadline: 'Pas d’échéance', confirmed: 'Confirmé par une personne le',
       full: function (id) { return 'Dossier complet, fiche n°' + String.fromCharCode(160) + id; },
       legifrance: 'Légifrance (base officielle)',
-      ek: { law: 'texte de loi', gazette: 'journal officiel', statistic: 'statistique officielle', budget: 'document budgétaire', parliament: 'document parlementaire', court: 'décision de justice', audit: 'rapport d’audit public', official: 'document officiel', media: 'article de presse', dataset_study: 'étude avec données publiées', renunciation: 'renonciation publique', platform: 'programme', statement: 'déclaration' },
-      renWait: 'renonciation publique, l’attente de l’échéance s’arrête ici'
+      ek: { law: 'texte de loi', gazette: 'journal officiel', statistic: 'statistique officielle', budget: 'document budgétaire', parliament: 'document parlementaire', court: 'décision de justice', audit: 'rapport d’audit public', official: 'document officiel', media: 'article de presse', dataset_study: 'étude avec données publiées', renunciation: 'revirement public de l’auteur', platform: 'programme', statement: 'déclaration' }
     }
   };
 
@@ -142,8 +140,6 @@
     if (it.verdict === 'to_evaluate' && it['sum_' + lang]) out.push('<p>' + esc(it['sum_' + lang]) + '</p>');
     if (ev.length) {
       out.push('<p class="row-body-h">' + L.basedOn + '</p><ul class="row-basis">' + ev.map(function (e) {
-        // Under any verdict but not_came_true a renunciation only ends the wait (site.js endsWaitOnly).
-        if (e.k === 'renunciation' && it.verdict !== 'not_came_true') return '<li><span lang="' + esc(e.l) + '">' + esc(e.t) + '</span> <span class="muted">· ' + esc(L.renWait) + '</span></li>';
         return '<li><span lang="' + esc(e.l) + '">' + esc(e.t) + '</span> <span class="muted">· ' + esc(L.ek[e.k]) + ', ' +
           (e.p === L.legifrance ? esc(e.p) : '<span lang="' + esc(e.l) + '">' + esc(e.p) + '</span>') + '</span></li>';
       }).join('') + '</ul>');

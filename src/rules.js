@@ -49,51 +49,88 @@ export function localToday(now = new Date()) {
 }
 
 /**
- * The verdicts under which a renunciation may be cited at all (record format 11): on a promise, under
- * "not_came_true", "partly_came_true", "came_true", "to_evaluate", and "unverifiable" when the promise
- * is measurable (its condition never arose; Fable review 7). Never under "pending", and never on a
- * vague or hedged promise, which stays "unverifiable" on its wording alone (decision 0013).
+ * RN-1's switch (verdict-standard.md 0.7 section 5; decision 0015 S1; predictions off, founder 2026-11-23): the
+ * claim types a public reversal by the speaker applies to. The same list is written once more, in
+ * db/schema.sql (outcome_has_evidence and evidence_is_primary, "c.type IN (...)"); test/ledger.test.js
+ * checks that the two agree. A type taken off the list falls under RN-1 row 1 (a lead only).
  */
-export const RENUNCIATION_VERDICTS = Object.freeze(['not_came_true', 'partly_came_true', 'came_true', 'to_evaluate', 'unverifiable']);
-
-/** Whether this verdict on this claim may cite a renunciation at all (RENUNCIATION_VERDICTS). */
-export function renunciationFits(claim, verdict) {
-  return claim?.type === 'promise'
-    && RENUNCIATION_VERDICTS.includes(verdict)
-    && (verdict !== 'unverifiable' || claim.verifiability === 'measurable');
-}
+export const REVERSAL_TYPES = Object.freeze(['promise']);
 
 /**
- * Whether a renunciation may stand among a verdict's evidence: renunciationFits, and published on or
- * after the day the promise was made (it cannot give up what was not yet said). Mirrors
- * evidence_is_primary in db/schema.sql, except "never the only evidence" (renunciationAlone), which
- * needs the other rows. The claim needs type, said_on and verifiability.
+ * RN-1 (docs/methodology/verdict-standard.md 0.7, the truth table), rows 4 and 5 without the date of
+ * judging: a public reversal by the speaker (source kind `renunciation`) of a measurable claim of a
+ * listed type, dated on or after the day the claim was made and on or before its deadline. Outside this
+ * window it negates nothing, for any verdict: a type not on the list (row 1), a vague or hedged claim
+ * (row 2), undated or dated before the claim (row 3), dated after the deadline (row 7). The claim needs
+ * type, verifiability, said_on and deadline.
  */
-export function renunciationAdmitted(source, claim, verdict) {
+export function renunciationInWindow(source, claim) {
   return source?.kind === 'renunciation'
-    && renunciationFits(claim, verdict)
+    && REVERSAL_TYPES.includes(claim?.type)
+    && claim.verifiability === 'measurable'
     && typeof source.published_on === 'string'
     && typeof claim.said_on === 'string'
-    && source.published_on >= claim.said_on;
+    && typeof claim.deadline === 'string'
+    && source.published_on >= claim.said_on
+    && source.published_on <= claim.deadline;
 }
 
 /**
- * A renunciation counts as evidence of an outcome only for "not_came_true", where it may be the only
- * evidence. Mirrors outcome_has_evidence in db/schema.sql.
+ * Whether a renunciation may stand among a verdict's evidence: RN-1 row 5 only, under "not_came_true",
+ * in the window (renunciationInWindow). There it is enough evidence on its own. Mirrors
+ * evidence_is_primary and outcome_has_evidence in db/schema.sql. That it is not dated after the date of
+ * judging is futureEvidence, as for every source.
  */
-export function renunciationCounts(source, claim, verdict) {
-  return verdict === 'not_came_true' && renunciationAdmitted(source, claim, verdict);
+export function renunciationAdmitted(source, claim, verdict) {
+  return verdict === 'not_came_true' && renunciationInWindow(source, claim);
 }
 
 /**
- * True when a renunciation would be the only evidence of a verdict that is not "not_came_true":
- * there it is never sole (record format 11). Mirrors evidence_is_primary.
- * @param {{kind: string}[]} sources the verdict's evidence sources
+ * Why a cited renunciation is refused, naming the row of the RN-1 table; null when it is admitted or
+ * the source is not a renunciation.
  */
-export function renunciationAlone(sources, verdict) {
-  return verdict !== 'not_came_true'
-    && sources.some((s) => s?.kind === 'renunciation')
-    && !sources.some((s) => s && s.kind !== 'renunciation');
+export function renunciationRefusal(source, claim, verdict) {
+  if (source?.kind !== 'renunciation' || renunciationAdmitted(source, claim, verdict)) return null;
+  const what = `source ${source.id ?? source.source_id} is a public reversal by the speaker (kind renunciation)`;
+  if (!REVERSAL_TYPES.includes(claim?.type)) return `${what}: on a ${claim?.type ?? 'claim'} it is a lead, never evidence (RN-1 row 1)`;
+  if (claim.verifiability !== 'measurable') return `${what}: a ${claim.verifiability} claim is "unverifiable" and cites none (VG-1, RN-1 row 2)`;
+  if (typeof source.published_on !== 'string') return `${what} with no date, so it is no evidence (RN-1 row 3)`;
+  if (source.published_on < claim.said_on) return `${what} dated ${source.published_on}, before the claim was made (${claim.said_on}), so it is no evidence (RN-1 row 3)`;
+  if (typeof claim.deadline === 'string' && source.published_on > claim.deadline) {
+    return `${what} dated ${source.published_on}, after the deadline ${claim.deadline}: it changes nothing, the state at the deadline counts (RN-1 row 7, DL-2); do not cite it`;
+  }
+  return `${what}: it is cited only under not_came_true (RN-1 row 5); under came_true it is mentioned in the summary only (row 4)`;
+}
+
+/**
+ * RN-1 rows 4 and 5 for the vote checks, which see every document the pack gives (the ledger sees only
+ * the cited evidence, so it cannot apply this; the desk does, with the pack). Once a given renunciation
+ * is in the window and dated on or before `today`, the only verdicts are "came_true" (criteria fully met
+ * before it, row 4) and "not_came_true" citing such a renunciation (row 5), and rules_applied names RN-1.
+ * Returns the problems.
+ * @param {{kind: string, published_on: string|null, id?: number, source_id?: number}[]} given every document of the pack
+ * @param {{id?: number, source_id?: number}[]} cited the documents the verdict cites
+ * @param {string[]|null} rulesApplied the vote's rules_applied
+ */
+export function renunciationProblems(claim, given, cited, verdict, rulesApplied, today) {
+  const idOf = (s) => s.id ?? s.source_id;
+  const live = given.filter((s) => renunciationInWindow(s, claim) && typeof today === 'string' && s.published_on <= today);
+  if (live.length === 0) return [];
+  const named = live.map((s) => `source ${idOf(s)} (${s.published_on})`).join(', ');
+  const problems = [];
+  if (verdict !== 'came_true' && verdict !== 'not_came_true') {
+    problems.push(`${named} ${live.length === 1 ? 'is a public reversal' : 'are public reversals'} by the speaker dated between the day the claim was made and its deadline: the verdict is not_came_true citing it, or came_true if the criteria were fully met before it (RN-1 rows 4, 5), not ${verdict}; if the document is not an explicit, precise reversal of this claim (a postponement, a changed figure, a softer wording: a separate claim), its kind needs correcting and the pack goes back (RN-1 rows 8, 9)`);
+  } else if (verdict === 'not_came_true') {
+    // The earliest reversal in the window counts (RN-1, truth table): it is the one cited (Fable review 8, finding 5).
+    const earliest = [...live].sort((a, b) => a.published_on.localeCompare(b.published_on) || idOf(a) - idOf(b))[0];
+    if (!cited.some((c) => idOf(c) === idOf(earliest))) {
+      problems.push(`not_came_true on a claim the speaker reversed: cite the earliest reversal, source ${idOf(earliest)} (${earliest.published_on}), among the evidence (RN-1 row 5)`);
+    }
+  }
+  if (!Array.isArray(rulesApplied) || !rulesApplied.includes('RN-1')) {
+    problems.push(`rules_applied must name RN-1: the speaker reversed the claim (${named}), so RN-1 decided the verdict`);
+  }
+  return problems;
 }
 
 /**
@@ -109,48 +146,6 @@ export function futureEvidence(sources, today) {
   return late.map((s) => `${what(s)} (source ${s.id ?? s.source_id}) is dated ${s.published_on}, after ${today}; it cannot be cited before it is published`).join('; ');
 }
 
-/**
- * A public renunciation ends the wait on a promise (founder, 2026-11-23): from its date the claim is
- * judged as if its deadline had passed, on what was actually done. Whether a renunciation does that
- * does not depend on the verdict, unlike renunciationCounts (the renunciation as the only evidence,
- * which stays limited to "not_came_true"). It must be of kind renunciation, about a promise, published
- * on or after the day the promise was made, and not after `today`. The ledger sees one only among the
- * verdict's evidence (record format 11), so the vote checks look there too.
- * @param {{kind: string, published_on: string|null}} source
- * @param {{type: string, said_on: string}} claim
- * @param {string} today YYYY-MM-DD, local date
- */
-export function renunciationEndsWait(source, claim, today) {
-  return source?.kind === 'renunciation'
-    && claim?.type === 'promise'
-    && typeof source.published_on === 'string'
-    && typeof claim.said_on === 'string'
-    && typeof today === 'string'
-    && source.published_on >= claim.said_on
-    && source.published_on <= today;
-}
-
-/**
- * Why no renunciation ended the wait, for the "not over" message, so a stop names the real cause.
- * Looks at every renunciation given. Null where citing one would itself be refused (a prediction, a
- * verdict that may not cite one), so a hint never recommends a move the rules refuse.
- * @param {{type: string, said_on: string, verifiability?: string}} claim
- * @param {{kind: string, published_on: string|null, id?: number, source_id?: number}[]} sources the verdict's evidence sources
- */
-export function waitHint(claim, verdict, sources, today) {
-  if (!renunciationFits(claim, verdict)) return null;
-  const ren = sources.filter((s) => s?.kind === 'renunciation');
-  if (ren.length === 0) return 'only a public renunciation cited among the evidence ends the wait before the deadline';
-  if (ren.some((s) => renunciationEndsWait(s, claim, today))) return null;
-  return ren.map((s) => {
-    const id = s.id ?? s.source_id;
-    if (typeof s.published_on !== 'string' || typeof claim.said_on !== 'string' || s.published_on < claim.said_on) {
-      return `the renunciation (source ${id}) is undated or dated before the promise was made, so it does not end the wait`;
-    }
-    return `the renunciation (source ${id}) is dated ${s.published_on}, after ${today}, so it does not end the wait yet`;
-  }).join('; ');
-}
-
 export const INDEPENDENT_KINDS = Object.freeze(['media', 'dataset_study']);
 
 /**
@@ -164,28 +159,26 @@ export function twoIndependent(sources) {
 }
 
 /**
- * The deadline rule (verdict-standard.md section 3 and section 5 as amended). The deadline
- * day itself is still inside the deadline. On or before it: only came_true, pending, and
- * unverifiable on a vague or hedged claim. After it: never pending. A renounced promise is
- * judged as if its deadline had passed (renunciationEndsWait). Returns the problem, or null.
- * @param {{deadline: string|null, verifiability: string}} claim
+ * The deadline rule (verdict-standard.md 0.7: DL-1, DL-3, DL-4, EA-1, RN-1 row 5). The deadline day itself
+ * is still inside the deadline (DL-1). On or before it: came_true (EA-1), pending, unverifiable on a vague
+ * or hedged claim (VG-1), and not_came_true when a renunciation of row 5 is cited (RN-1); nothing else
+ * (DL-3). After it: never pending (DL-4). Returns the problem, or null.
+ * @param {{deadline: string|null, verifiability: string, type?: string}} claim
  * @param {string} verdict
  * @param {string} today YYYY-MM-DD, local date
- * @param {boolean} renounced a renunciation has ended the wait (renunciationEndsWait), whatever the verdict
- * @param {string|null} [hint] why no renunciation ended it (waitHint), added to the "not over" message
+ * @param {boolean} renounced a cited renunciation is admitted (renunciationAdmitted) and dated on or before today
  */
-export function deadlineProblem(claim, verdict, today, renounced, hint = null) {
+export function deadlineProblem(claim, verdict, today, renounced) {
   if (!claim.deadline) return null;
-  const notOver = !renounced && today <= claim.deadline;
+  const before = today <= claim.deadline;
   const waits = ['to_evaluate', 'partly_came_true', 'not_came_true'].includes(verdict)
     || (verdict === 'unverifiable' && claim.verifiability === 'measurable');
-  if (notOver && waits) {
-    return `deadline ${claim.deadline} not over (not reached until the day after it), but verdict is ${verdict}${hint ? `; ${hint}` : ''}`;
+  if (before && waits && !(verdict === 'not_came_true' && renounced)) {
+    const how = verdict === 'not_came_true' && REVERSAL_TYPES.includes(claim.type)
+      ? '; before the deadline, not_came_true needs a public reversal by the speaker, dated on or before today, cited among the evidence (RN-1 row 5)' : '';
+    return `deadline ${claim.deadline} not over (not reached until the day after it), but verdict is ${verdict} (DL-3)${how}`;
   }
-  if (!notOver && verdict === 'pending') {
-    return renounced ? 'the promise was publicly renounced, which ends the wait, but verdict is pending'
-      : `deadline ${claim.deadline} passed, but verdict is pending`;
-  }
+  if (!before && verdict === 'pending') return `deadline ${claim.deadline} passed, but verdict is pending (DL-4)`;
   return null;
 }
 

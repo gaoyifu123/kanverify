@@ -1,6 +1,8 @@
 # Source rule: no evidence, no claim
 
-Version 0.5 (2026-11-23). 0.5: the renunciation lines brought in line with decision 0013 and record format 11
+Version 0.6 (2026-11-23). 0.6: the renunciation lines derived from verdict-standard.md 0.6, rule RN-1 (record
+format 12; decisions 0013 amendment and 0015): only an explicit, precise reversal of the same promise, cited only for
+"did not come true"; format 11's "ends the wait" is gone. Evidence rules carry their ids (EV-1, EV-2). 0.5: the renunciation lines brought in line with decision 0013 and record format 11
 (drift found by Fable review 6, B7); wording only, no new rule. 0.4: restored and consolidated after the file was found reverted to an early 0.1 draft
 (overwritten on 2026-11-22 around 17:06, cause unknown). Content follows the founder's decisions recorded in
 `docs/decisions/0002`, `0008` (renunciation), `0011`, and the founder's board answers of 2026-11-21/22.
@@ -14,9 +16,9 @@ media and commentators.
 
 1. **Claims only from the speaker's own words.** A promise or prediction is recorded only from material the person
    (or their own campaign) published, quoted verbatim with page or section.
-2. **A verdict needs evidence:** one document issued by an official body, **or** two independent sources from
+2. **A verdict needs evidence (EV-1):** one document issued by an official body, **or** two independent sources from
    different publishers that each establish the fact themselves.
-3. **Statements are leads, not evidence.** Nobody's statement counts as evidence, including the speaker's own.
+3. **Statements are leads, not evidence (EV-2).** Nobody's statement counts as evidence, including the speaker's own.
    If a statement points to evidence, find that evidence and cite it.
 4. **No evidence, no verdict.** After the deadline the verdict is "to be assessed" (`to_evaluate`), stating where it
    is stuck and what is missing (principle 1).
@@ -31,7 +33,7 @@ media and commentators.
 | Other documents issued by an official body | `official` | Yes — one is enough |
 | Independent, non-official: a news outlet's own reporting | `media` | Yes — but two from different publishers |
 | Independent, non-official: research that publishes its raw data | `dataset_study` | Yes — but two from different publishers |
-| The speaker's own public, explicit abandonment of a **promise** | `renunciation` | On a promise only: ends the wait; alone, only for "did not come true"; beside other evidence for the other verdicts. For a prediction, a lead |
+| The speaker's own public statement that explicitly and precisely reverses the same **promise** | `renunciation` | On a promise only, and only for "did not come true", dated between the day the promise was made and its deadline: one is enough (RN-1). Under every other verdict, after the deadline, and on a prediction, a lead |
 
 The database enforces the table (`db/schema.sql`, `publication_checks`): a verdict about an outcome needs one official
 document or two independent sources from different publishers; `platform` and `statement` are never accepted as evidence.
@@ -52,15 +54,17 @@ Test: does the document **record** something (a law, a budget figure, a statisti
 body did? The first is evidence; the second is a statement. The kind label is necessary, not sufficient: a judge who sees
 an `official` document that only assesses its own success treats it as a statement.
 
-## Exception: the speaker's own public renunciation (founder, 2026-11-22; decision 0008)
+## Exception: the speaker's own public reversal of a promise (RN-1)
 
-The speaker's own public, explicit words abandoning a **promise** are registered as `renunciation`. Anything unclear
-("postponed", "reconsidering") is a `statement`. For predictions a renunciation is a lead like any statement.
-A renunciation dated on or after the day the promise was made, and on or before its deadline, **ends the wait**
-(decision 0013): the promise is judged as if its deadline had passed on the renunciation's date, on what was actually
-done. It is never evidence of a result: it may be the only evidence for "did not come true", and stands beside the
-evidence of what was done under every other verdict (record format 11). One dated after the deadline changes nothing:
-the state at the deadline counts. How judges apply this: `team/run/judge-prompt.md`, steps 2e and 3d.
+The rule is stated once, as a truth table, in `docs/methodology/verdict-standard.md` section 5 (rule RN-1; founder,
+decision 0008, decision 0013 amendment, decision 0015 S1). In short: the speaker's own public words that **explicitly
+and precisely reverse the same promise** are registered as `renunciation` (the kind keeps its old name). Dated on or
+after the day the promise was made and on or before its deadline, such a reversal makes the promise "did not come
+true", whatever was done in part, and may be its only evidence; it stays so if the promise is delivered later; if the
+criteria were fully met before it, the promise came true and the reversal is not cited. Dated after the deadline it
+changes nothing. A postponement, a changed figure, a softer wording, "reconsidering", or a statement on a topic not
+exactly the same is not a reversal: it is a `statement`, and a claim of its own. For predictions it is a lead like any
+statement: a revised prediction is a separate prediction. How judges apply this: `team/run/judge-prompt.md`, step 2e.
 
 ## French law texts: Légifrance official API data (founder, 2026-11-22)
 

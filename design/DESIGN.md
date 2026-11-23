@@ -48,7 +48,7 @@ The site shows only the ledger: the snapshot JSON (`publishable` view, record fo
 | to_evaluate | To be assessed | À évaluer | the summary and, always, "What is missing / Ce qui manque" |
 | came_true | Came true | Réalisée | the summary; the criteria were met in full; may be given before the deadline |
 | partly_came_true | Partly came true | Partiellement réalisée | the summary with the figures (what was promised, what the documents show); may be given before the deadline |
-| not_came_true | Did not come true | Non réalisée | the summary; only after the deadline, or earlier if the person publicly gave it up (the renunciation is the evidence) |
+| not_came_true | Did not come true | Non réalisée | the summary; only after the deadline, or earlier if the speaker explicitly and publicly reversed the promise (RN-1; the reversal is numbered evidence) |
 
 - Vague and hedged claims are always Unverifiable; the "Based on" line says "the wording itself".
 
@@ -139,7 +139,7 @@ Source kind (`origin.kind`, `evidence[].kind`):
 | --- | --- | --- |
 | platform | Programme | Platform |
 | statement | Déclaration | Statement |
-| renunciation | Renonciation publique | Public renunciation |
+| renunciation | Revirement public de l’auteur | Public reversal by the speaker |
 | law | Texte de loi | Law |
 | gazette | Journal officiel | Official gazette |
 | statistic | Statistique officielle | Official statistics |
@@ -188,7 +188,8 @@ fictional data until confirmed records exist).
 Round 4: nothing cut. Added only what reuses existing fields: summary line, accordion rows, groups by
 source, dated chain (replaces the "Based on" list: same content, ordered by date), coverage sentence.
 Not added: breadcrumbs (the item title already links to the person), monospace for dates and ids, focus
-pages and a method version (both need record-format fields).
+pages and a method version (both need record-format fields; the method version arrived with record format 12 as
+"Rules applied").
 
 Round 3: the small type size, the third and fourth weights, serif headings, the verdict chip's large
 variant, the "not assessed" category (now a verdict), the sixth verdict, unused round-1 styles (side
@@ -204,7 +205,8 @@ person pages, evidence excerpts on the first screen (moved deeper).
 | Verdicts | six, one set for promises and predictions (decision 0008, revised 15:05: partly came true restored; came true / partly may be given early) |
 | Round 4 changes | six patterns ("\|" for partly), dated chain, summary line, accordion rows, groups by source, coverage + "counts, not a score" (coordinator, on the founder's delegation) |
 | Verdict colour | palette B: six muted hues, no red/green, always with pattern and label (founder, 2026-11-22, after comparing A and B side by side) |
-| Renunciation | the person's own public abandonment is evidence for Did not come true only (0008); under other verdicts it only ends the wait (0013) and is shown unnumbered, see `components.md` "Renunciation on the item page" |
+| Public reversal | the speaker's explicit public reversal of a promise is cited only under Did not come true, as ordinary numbered evidence (0013 amendment, 0015, RN-1; record format 12). The "the wait ends here" display is retired, see `components.md` |
+| Rules applied | every verdict shows, at the end of the item page's summary layer, the rules it was judged by in plain words, each id linking to a page per standard version (0014; `components.md` "Rules applied and the rules page") |
 | Corrections, archives, withdrawn items, jury | one email; files not public; notice only; shown as is, person first |
 | Statistics | donut per person, bars per topic, everyone side by side; counts only; neutral sort |
 | Home | timeline of the current year with cards that follow the period |

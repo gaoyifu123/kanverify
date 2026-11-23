@@ -1,6 +1,10 @@
 // Shared builders for the tests. Each returns the id of the row it created.
 
 import { openDatabase } from '../src/db.js';
+import { loadStandard } from '../src/standard.js';
+
+/** The current verdict standard's version (docs/methodology/verdict-standard.md). */
+export const RULES_VERSION = loadStandard().version;
 
 export const SHA = 'a'.repeat(64);
 
@@ -81,12 +85,15 @@ export function addVerdict(db, claimId, verdict, overrides = {}) {
     open_question_fr: null,
     open_question_en: null,
     decided_by: 'human',
+    // Decision 0014 (format 12): every verdict records the rules it was judged by.
+    rules_version: RULES_VERSION,
+    rules_applied: JSON.stringify(verdict === 'unverifiable' ? ['VG-1'] : verdict === 'not_came_true' ? ['EV-3', 'RN-1'] : verdict === 'came_true' ? ['EA-1', 'OC-1', 'EV-1'] : ['OC-1', 'EV-1']),
     ...overrides,
   };
   const result = db
     .prepare(
-      `INSERT INTO verdicts (claim_id, verdict, summary_fr, summary_en, open_question_fr, open_question_en, decided_by)
-       VALUES (:claim_id, :verdict, :summary_fr, :summary_en, :open_question_fr, :open_question_en, :decided_by)`
+      `INSERT INTO verdicts (claim_id, verdict, summary_fr, summary_en, open_question_fr, open_question_en, decided_by, rules_version, rules_applied)
+       VALUES (:claim_id, :verdict, :summary_fr, :summary_en, :open_question_fr, :open_question_en, :decided_by, :rules_version, :rules_applied)`
     )
     .run(row);
   return Number(result.lastInsertRowid);

@@ -3,6 +3,7 @@
 - Role: designer. Date: 2026-11-22. Status: frozen for the MVP; round 4 the same day (coordinator, on
   the founder's delegation). Tokens: `design/tokens.md`.
   Reference markup and CSS: `design/mockups/` (class names below are the ones used there).
+  2026-11-23: record format 12 — public reversal shown as ordinary evidence; rules line and rules page added.
 - Labels: six verdicts (decision 0008, revised) — Invérifiable / Unverifiable, En attente / Pending,
   À évaluer / To be assessed, Réalisée / Came true, Partiellement réalisée / Partly came true,
   Non réalisée / Did not come true. Fixed order: unverifiable, pending, to_evaluate, came_true,
@@ -31,46 +32,80 @@
 | Notice `.notice` | withdrawal | date, reason (`note_{lang}`) | — | nothing from the withdrawn snapshot |
 | Toggle `.toggle` | choose one option | radio buttons styled as bordered labels | checked = accent border | each label ≥ 44 px high |
 | Split `.split` | wide screens | side column + main column | ≥ 1024 px only | running text ≤ 44rem |
-| Renunciation entry (no new class; reuses `.chain` entry and `.layer`) | show a public renunciation in the role it has for this verdict | see "Renunciation on the item page" below | two roles, by verdict | never called "Evidence" unless the verdict is `not_came_true` |
+| Rules applied `.rules-applied` (record format 12, decision 0014) | the rules this verdict was judged by | item page only, see "Rules applied and the rules page" below | — | plain words, never ids alone; never on rows, cards or the timeline |
+| Rules page entry `.rules` (`dl`) | one rule of one version, the target of a rules link | id + plain-words sentence | `:target` = accent rule | see below |
 
-## Renunciation on the item page (2026-11-23, Fable review 7 finding 5)
+## Public reversal by the speaker (record format 12; replaces the 2026-11-23 "the wait ends here" spec)
 
-Since record format 11 an `evidence[]` entry with `kind = 'renunciation'` can stand beside real evidence. Its role
-depends only on the verdict (decision 0013, `renunciation-order`); no new field is needed.
+Retired: the unnumbered "ends the wait" entry, the `#ren-…` anchors and the "Public renunciation" layer. Since the
+founder's amendment to decision 0013 (and decision 0015, ST-1 / RN-1), a reversal can only be cited under
+`not_came_true`, where it is ordinary evidence: numbered "Evidence N" / « Preuve N », in the chain and the row body
+like any other document, anchor `#ev-…`. Kind label: "Public reversal by the speaker" / « Revirement public de
+l’auteur » (lower-case in the chain: "public reversal by the speaker" / « revirement public de l’auteur »). Nothing
+else is special; the rules line (RN-1) is what tells the reader why a speaker's own words count here.
 
-| Verdict | Role | Shown as |
-| --- | --- | --- |
-| `not_came_true` | evidence (alone, or beside other documents) | unchanged: numbered among the evidence, "Evidence N" / « Preuve N », kind "Public renunciation" / « Renonciation publique » |
-| `came_true`, `partly_came_true`, `to_evaluate`, `unverifiable` | ends the wait; not evidence of the result | **not numbered**; its own wording in the chain, the row body and the detail layer (below) |
+Label check: both are neutral and describe the act, not a motive. Rejected: "renunciation" (sounds like a confession),
+« reniement » (moral blame), "U-turn" / « volte-face » (mocking).
 
-For the second case only:
+## Rules applied and the rules page (record format 12, decision 0014)
 
-1. **Numbering.** "Evidence 1…n" counts the other evidence only, in their existing order with renunciations skipped.
-   Layer anchor `#ren-{claim id}-{k}` (k = 1… among renunciations), so `#ev-…` anchors keep pointing to evidence.
-2. **Dated chain** (`.chain`, same entry style, placed by `published_on` like evidence; tie with evidence on the same
-   date: after it). Entry text, title in serif as for any document title:
-   - EN: `{title link} · public renunciation, the wait for the deadline ends here`
-   - FR: `{lien titre} · renonciation publique, l’attente de l’échéance s’arrête ici`
-3. **Row body in lists** (`.row-basis`, the "Based on" list): the same line, without the link
-   (`{title} · public renunciation, the wait for the deadline ends here` / `{titre} · renonciation publique,
-   l’attente de l’échéance s’arrête ici`).
-4. **Detail layer** (`.layer`, after the evidence layers, before "Where it was said"):
-   - title: EN "Public renunciation" / FR « Renonciation publique »
-   - one-line description: EN `Ends the wait · {publisher} · {date}` / FR `Met fin à l’attente · {publisher} · {date}`
-   - first paragraph (`.muted`), then the excerpt and the usual `dl.meta` (document, place, address, retrieved,
-     fingerprint), exactly as an evidence layer:
-     - EN: `{name} publicly gave up this promise on {date}. From that date, the promise is judged on what had been done; this document is not evidence of that result.`
-     - FR: `{name} a renoncé publiquement à cette promesse le {date}. À partir de cette date, la promesse est jugée sur ce qui avait été fait ; ce document n’est pas la preuve de ce résultat.`
-     (`{name}` = `subject.name`; French: narrow no-break space before « ; » as everywhere.)
-5. No new type size, weight, colour, icon or class. Several renunciations: one entry and one layer each.
+### On the item page
 
-Cut: a badge or separate "Wait ended" heading (the chain line already says it); moving the deadline entry (the chain
-stays a plain chronicle: the deadline is still shown at its date).
+Placed at the **end of the summary layer, after the dated chain** (not between the summary and the chain as in the
+placeholder): the order stays chip → summary → what is missing → "Based on" (rule 1 of DESIGN.md), and the rules close
+the basis. On ≥ 1024 px it stays in the summary column.
+
+```html
+<p class="muted">Rules applied, version 0.6</p>
+<ul class="rules-applied">
+  <li>After the deadline, the state on the deadline counts; what happened later is only mentioned. <a href="../../method/rules-0.6/#DL-2">DL-2</a></li>
+  <li>An outcome needs one official document, or two independent sources from different publishers. <a href="…#EV-1">EV-1</a></li>
+</ul>
+```
+
+- Label: EN `Rules applied, version {v}` / FR `Règles appliquées, version {v}` (`{v}` = `rules_version`). `.muted`,
+  no heading (it is not a section of its own).
+- One `li` per id: the rule's sentence in the page language (from `src/standard.js`, that version), then a space and
+  the **id as the link** to `/{lang}/method/rules-{v}/#{id}`. The sentence is not the link: a link several lines long
+  is hard to read and to tap. Sentence 17/400 `--ink-2`; id 17/400 `--accent`, underlined like every link.
+- No bullets, no indent; 0.25rem between items; the same top gap as between other summary-layer blocks.
+- Order: the order of the standard (ST-1…3, then the "Rules" table), not the order the judge typed; duplicates once.
+- Empty `rules_applied`: nothing shown (the desk already refuses to confirm without rules). Unknown id or version:
+  the build stops (as now).
+- Not on rows, cards, the timeline or the desk's public view: the item page is one tap away and the rows stay short.
+- History layer: past verdicts do not show their rules (cut; their version pages still exist).
+
+### The rules page `/{lang}/method/rules-{version}/`
+
+One page per version used by any ledger entry (current or past), header item "Method" current.
+
+1. `h1` (display: serif 24/600): EN `Verdict rules, version {v}` / FR `Règles de verdict, version {v}`.
+2. Intro `p`:
+   - EN: `Each verdict on this site names the rules it was judged by. These are the rules of version {v}, in plain words. A rule is never changed in place: a changed rule gets a new id, in a new version.`
+   - FR: `Chaque verdict de ce site indique les règles selon lesquelles il a été rendu. Voici les règles de la version {v}, en mots simples. Une règle n’est jamais modifiée sur place : une règle changée reçoit un nouvel identifiant, dans une nouvelle version.`
+   This replaces the placeholder's "the full text, in English, is the verdict standard of the method": that text is
+   not published on the site, so the sentence would point nowhere. Put it back with a link if the Method page ever
+   carries the full standard.
+3. Only when `{v}` is not the current version, `.muted` `p`:
+   EN `A newer version exists: {link: version 0.7}. Each verdict keeps the version it was judged under.` /
+   FR `Une version plus récente existe : {lien : version 0.7}. Chaque verdict garde la version selon laquelle il a été rendu.`
+4. `h2` EN `Standards` / FR `Principes de jugement`, then a `dl.rules` with ST-1…3.
+5. `h2` EN `Rules` / FR `Règles`, then a `dl.rules` with the other rules, in table order.
+
+`dl.rules`: one `div.rule id="{id}"` per rule, 1 px `--rule` line between them, 0.75rem vertical padding.
+`dt` = id, **sans 600 `--ink`** (not mono: mono is kept for fingerprints and model ids); `dd` = the sentence, 17/400
+`--ink`, `lang` of the page. Phone: id above the sentence; ≥ 640 px: two columns, id column 4.5rem. `:target`: 3 px
+`--accent` left rule, 0.75rem left padding, `scroll-margin-top` clear of the header. No fill, no motion. Running text
+≤ 44rem (`.prose`). No new size, weight, colour or icon.
+
+Cut: a short title per rule (would need a new column in the standard's table, not mine), per-rule "comes from ST-n"
+lines, a version switcher, a diff between versions, the rules line on rows and cards.
 
 ## Principles relied on
 
 3 (one chip, equal-ink patterns, neutral order, no good/bad icons), 1 (what is missing never collapsed,
-shown on rows too), 2 (summary line on every row and card; dated chain on the item page), 5 (one
+shown on rows too), 2 (summary line on every row and card; dated chain on the item page; the rules a verdict was
+judged by, in plain words, on its page), 3 again (one rule set, shown the same way for every verdict and person), 5 (one
 component per job, native `<details>` for the accordion: no script needed to open a row).
 
 ## Objections and risks
@@ -84,8 +119,15 @@ component per job, native `<details>` for the accordion: no script needed to ope
   outcome and figures first. Worth a line in `team/run/judge-prompt.md` (not my file).
 - Rows are longer on phones (summary line + card padding): about 4–5 rows per screen instead of 6.
 - An open row shows evidence titles but not excerpts or fingerprints: those stay on the item page.
-- Renunciation (2026-11-23): the role is read from the verdict plus `kind`, so a statement wrongly labelled
-  `renunciation` would be shown as ending the wait; the desk reading is the only guard (same as Fable review 7).
-  After a renunciation the chain still shows the original deadline at its later date; the renunciation line says the
-  wait ended earlier, but a quick reader may miss it. A claim-to-renunciation link would make the role explicit; not
-  asked for (record format is not mine to change).
+- Public reversal (format 12): a statement wrongly labelled `renunciation` would be shown as evidence under
+  `not_came_true`; the desk reading is the only guard. The chain still shows the original deadline after the
+  reversal's date, which is correct (RN-1) but a quick reader may wonder why; the RN-1 line explains it.
+- Rules applied (format 12): the block makes the summary layer longer by 3–6 muted lines on a phone. If judges name
+  ST-3 ("common sense") on almost every verdict it becomes noise; ask that judges name a standard only when it decided
+  the verdict (team/run/judge-prompt.md, not my file).
+- **Wording in the standard (not my file; raised for whoever owns docs/methodology/verdict-standard.md):** the French
+  rule texts say « prédiction » (ST-2, VG-3) while the site says « Prévision »; they should match. VG-1 and RN-1 say
+  « reniée », which carries blame (principle 3); « sur laquelle son auteur est revenu explicitement et publiquement »
+  matches the label « Revirement public de l’auteur ». These sentences are now shown on every item page.
+- Decision 0013's amendment says decision 0014 is "removed in record format 12", while the code and 0014 itself show
+  it is in force; I designed for "in force". The coordinator should reword the amendment.

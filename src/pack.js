@@ -27,9 +27,10 @@ import { openDatabase } from './db.js';
 import { candidateProblems, checkVerbatim, htmlToParagraphs, loadPrompt, normalizeForMatch } from './extract.js';
 import { isLegifranceSource, legifranceToUnits } from './legifrance.js';
 import {
-  deadlineProblem, filled, futureEvidence, renunciationAdmitted, renunciationAlone, renunciationCounts, renunciationEndsWait, renunciationFits,
-  twoIndependent, waitHint,
+  REVERSAL_TYPES, deadlineProblem, filled, futureEvidence, renunciationAdmitted, renunciationProblems, renunciationRefusal,
+  twoIndependent,
 } from './rules.js';
+import { loadStandard, rulesAppliedProblems } from './standard.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 export const DEFAULT_TEXT_DIR = resolve(here, '../data/candidates');
@@ -206,6 +207,9 @@ const SINGLE_QUOTES = /[\u2018\u2019\u201A\u201B\u2032`\u00B4]/;
 const DOUBLE_QUOTES = /[\u201C\u201D\u201E\u201F\u00AB\u00BB\u2033]/;
 const DASH = /[-\u2010-\u2015\u2212]/;
 const SPACE = /\s/u;
+// A hyphen joining two letters ("non-raccordables") is inside a word (Fable review 6 re-check, R3).
+const HYPHEN = /[-‐‑]/;
+const LETTER = /\p{L}/u;
 
 /**
  * normalizeForMatch(text), and for every character of the result the index in text.normalize('NFKC')
@@ -281,7 +285,8 @@ const SENTENCE_END = /[.!?\u2026]["'\u201D\u2019\u00BB)\]]*$/u;
 
 /**
  * Fable review 6 A5. refuse: the excerpt starts or ends inside a word or a number ("2,4 millions" cut from
- * "42,4 millions", "200 000" from "1 200 000"), or starts right after a sign ("0,3 %" cut from "-0,3 %"). flag: it does not start or end
+ * "42,4 millions", "200 000" from "1 200 000", "raccordables" from "non-raccordables": a hyphen between
+ * letters is inside the word, re-check R3), or starts right after a sign ("0,3 %" cut from "-0,3 %"). flag: it does not start or end
  * at a sentence or unit boundary (a negation or an attribution may be cut off); the desk shows these.
  */
 export function boundaryProblems(span) {
@@ -298,6 +303,7 @@ export function boundaryProblems(span) {
   const next2 = after[1] ?? '';
   const startsNumber = DIGIT_CHAR.test(first) || (/[.,]/.test(first) && DIGIT_CHAR.test(second));
   if ((WORD_CHAR.test(prev) && WORD_CHAR.test(first))
+    || (LETTER.test(prev2) && HYPHEN.test(prev) && LETTER.test(first))
     || (DIGIT_CHAR.test(first) && /[.,]/.test(prev) && DIGIT_CHAR.test(prev2))
     || (/[.,]/.test(first) && DIGIT_CHAR.test(prev) && DIGIT_CHAR.test(second))
     || (GROUP_HEAD.test(head) && GROUP_BEFORE.test(before))) {
@@ -306,6 +312,7 @@ export function boundaryProblems(span) {
     refuse.push('starts right after a sign (- + −): the sign belongs to the figure');
   }
   if ((WORD_CHAR.test(last) && WORD_CHAR.test(next))
+    || (LETTER.test(last) && HYPHEN.test(next) && LETTER.test(next2))
     || (DIGIT_CHAR.test(last) && /[.,]/.test(next) && DIGIT_CHAR.test(next2))
     || (/[.,]/.test(last) && DIGIT_CHAR.test(penult) && DIGIT_CHAR.test(next))
     || (/\d$/.test(upToEnd) && GROUP_AFTER.test(after))) {
@@ -529,7 +536,7 @@ export function checkPack(db, pack, opts = {}) {
     listed.set(row.id, row);
     for (const f of SOURCE_FIELDS) if ((s[f] ?? null) !== (row[f] ?? null)) problems.push(`source ${row.id}: ${f} differs from the database`);
     if (['platform', 'statement'].includes(row.kind)) problems.push(`source ${row.id} is a ${row.kind}, never evidence (list it under considered_not_used)`);
-    if (row.kind === 'renunciation' && claim.type !== 'promise') problems.push(`source ${row.id} is a renunciation, evidence only for a promise (list it under considered_not_used)`);
+    if (row.kind === 'renunciation' && !REVERSAL_TYPES.includes(claim.type)) problems.push(`source ${row.id} is a reversal by the speaker, which counts only on a ${REVERSAL_TYPES.join(' or ')} (RN-1 row 1; list it under considered_not_used)`);
     docs.push({ meta: { source_id: row.id, kind: row.kind, title: row.title, publisher: row.publisher, published_on: row.published_on, url: row.url, media_type: row.media_type, sha256: row.sha256 } });
   }
   const sourceOrder = [...listed.keys()];
@@ -616,6 +623,18 @@ export function checkPack(db, pack, opts = {}) {
     if (!reads.has(id) && Array.isArray(pack.read)) problems.push(`source ${id} was given but is not in read`);
     if (!listed.has(id) && !notUsed.has(id)) problems.push(`source ${id} was given but is neither in sources nor in considered_not_used`);
   }
+  // RN-1 row 3 and pack rule 4 (Fable review 6 re-check, R1): on a claim of a type RN-1 applies to, every given
+  // reversal by the speaker (kind renunciation) is dated, not dated before the claim was made, and excerpted
+  // (in sources), so a judge never meets one it cannot place.
+  if (REVERSAL_TYPES.includes(claim.type)) {
+    const said = claim.said_on ?? claim.origin?.published_on ?? null;
+    for (const [id, row] of givenRows) {
+      if (row.kind !== 'renunciation') continue;
+      if (typeof row.published_on !== 'string') problems.push(`given source ${id} is a reversal by the speaker (kind renunciation) with no date: record its date before the pack is cut (RN-1 row 3)`);
+      else if (typeof said === 'string' && row.published_on < said) problems.push(`given source ${id} is a reversal by the speaker (kind renunciation) dated ${row.published_on}, before the claim was made (${said}): its date or kind needs correcting (RN-1 row 3)`);
+      if (!listed.has(id)) problems.push(`given source ${id} is a reversal by the speaker (kind renunciation): it is always excerpted, never left out (pack rule 4)`);
+    }
+  }
   for (const s of spans) {
     const read = reads.get(s.source_id);
     const unread = read ? s.units.filter((u) => !read.has(u)) : [];
@@ -658,65 +677,52 @@ export function checkPack(db, pack, opts = {}) {
 /**
  * The program's checks on one vote (team/run/judge.md): fixed verdicts, the evidence rule of
  * publication_checks, an open question for to_evaluate, summaries in both languages, deadlines,
- * and every excerpt found verbatim in its document. `texts` maps source_id to units, or to null
- * when no text is available to compare with (then the excerpt is reported as unchecked).
+ * rules_applied, and every excerpt found verbatim in its document. `texts` maps source_id to units,
+ * or to null when no text is available to compare with (then the excerpt is reported as unchecked).
  * withinUnit: each quote must lie inside one unit (one excerpt of a pack), never run across two.
  *
- * Deadlines (team/run/judge-prompt.md, step 2): the deadline day is still inside the deadline.
- * On or before it, only came_true, pending, and unverifiable on a vague or hedged claim; after it,
- * never pending. A public renunciation ends the wait whatever the verdict (founder, 2026-11-23): the
- * claim is then judged as if its deadline had passed. It ends the wait only when the vote cites it,
- * because the ledger sees it only among the verdict's evidence (record format 11); it may be cited
- * alone under not_came_true, and beside other evidence under partly_came_true, came_true, to_evaluate
- * and unverifiable on a measurable promise, where it is no evidence of a result. Stricter than the
- * ledger in one direction only: pending is refused once any given document is a renunciation that
- * ends the wait, cited or not, or a renunciation with no date (whether it ends the wait is unknown).
+ * The rules are docs/methodology/verdict-standard.md (0.7) and are named by id in the messages. Deadlines
+ * (DL-1, DL-3, DL-4, EA-1): deadlineProblem, shared with confirm(). Renunciation (RN-1, the truth table):
+ * a renunciation is cited only in row 5 (renunciationRefusal names the row otherwise); and because a vote
+ * sees every document of the pack, once a given renunciation is in its window and dated on or before
+ * `today` only came_true (row 4) or not_came_true citing it (row 5) is possible (renunciationProblems).
+ * That check is stricter than the ledger, which sees only the cited evidence.
+ * rules_applied: a list of distinct ids of the current standard (src/standard.js); VG-1 on a vague or
+ * hedged claim, RN-1 when a renunciation decided the verdict.
+ * @param {{ withinUnit?: boolean, standard?: { version: string, rules: Map<string, object> } }} [options]
  */
-export function voteProblems(vote, claim, docs, texts, today, { withinUnit = false } = {}) {
+export function voteProblems(vote, claim, docs, texts, today, { withinUnit = false, standard = loadStandard() } = {}) {
   const problems = [];
   const byId = new Map(docs.map((d) => [d.meta.source_id, d]));
   if (!VERDICTS.includes(vote?.verdict)) return ['verdict is not one of the six'];
   const { verdict } = vote;
   const evidence = Array.isArray(vote.evidence) ? vote.evidence : [];
   if (!filled(vote.reasoning)) problems.push('reasoning is empty');
-  if (['vague', 'hedged'].includes(claim.verifiability) && verdict !== 'unverifiable') problems.push('vague or hedged claim, verdict must be unverifiable');
+  const vague = ['vague', 'hedged'].includes(claim.verifiability);
+  if (vague && verdict !== 'unverifiable') problems.push('vague or hedged claim, verdict must be unverifiable (VG-1)');
   if (verdict !== 'pending' && !(filled(vote.summary_fr) && filled(vote.summary_en))) problems.push('summary missing in French or English');
-  if (verdict === 'to_evaluate' && !(filled(vote.open_question_fr) && filled(vote.open_question_en))) problems.push('to_evaluate without an open question in both languages');
-  // The renunciation and deadline rules are shared with confirm() (src/rules.js). A pack's
-  // claim carries the day it was said as its origin's publication date.
-  const said = { type: claim.type, verifiability: claim.verifiability, said_on: claim.said_on ?? claim.origin?.published_on ?? null };
+  if (verdict === 'to_evaluate' && !(filled(vote.open_question_fr) && filled(vote.open_question_en))) problems.push('to_evaluate without an open question in both languages (DL-4)');
+  problems.push(...rulesAppliedProblems(vote.rules_applied, standard));
+  if (vague && Array.isArray(vote.rules_applied) && !vote.rules_applied.includes('VG-1')) problems.push('rules_applied must name VG-1 on a vague or hedged claim');
+  // The deadline and renunciation rules are shared with confirm() (src/rules.js). A pack's claim carries
+  // the day it was said as its origin's publication date.
+  const said = {
+    type: claim.type, verifiability: claim.verifiability, deadline: claim.deadline ?? null,
+    said_on: claim.said_on ?? claim.origin?.published_on ?? null,
+  };
   const cited = evidence.map((e) => byId.get(e?.source_id)?.meta).filter(Boolean);
-  const renounced = cited.some((m) => renunciationCounts(m, said, verdict));
-  const waitEnded = cited.some((m) => renunciationEndsWait(m, said, today));
-  const given = docs.map((d) => d.meta);
-  const inPack = given.filter((m) => renunciationEndsWait(m, said, today));
-  let hint = waitHint(said, verdict, cited, today);
-  // A renunciation in the pack that would end the wait but is not cited: say so, only where citing it is allowed.
-  const uncited = inPack.filter((m) => !cited.includes(m));
-  if (uncited.length > 0 && !waitEnded && renunciationFits(said, verdict)) {
-    hint = `${uncited.map((m) => `source ${m.source_id}`).join(', ')} ${uncited.length === 1 ? 'is a renunciation' : 'are renunciations'} that would end the wait, but this verdict does not cite ${uncited.length === 1 ? 'it' : 'them'}; cite ${uncited.length === 1 ? 'it' : 'one'} among the evidence${verdict === 'not_came_true' ? '' : ', beside the evidence of what was done'}`;
-  }
-  const late = deadlineProblem(claim, verdict, today, waitEnded || (verdict === 'pending' && inPack.length > 0), hint);
+  const admitted = cited.filter((m) => renunciationAdmitted(m, said, verdict));
+  const late = deadlineProblem(claim, verdict, today, admitted.some((m) => m.published_on <= today));
   if (late) problems.push(late);
-  if (verdict === 'pending' && said.type === 'promise') {
-    for (const m of given.filter((x) => x.kind === 'renunciation' && typeof x.published_on !== 'string')) {
-      problems.push(`source ${m.source_id} is a renunciation with no date, so whether it ends the wait cannot be told; record its publication date before judging`);
-    }
-  }
+  problems.push(...renunciationProblems(said, docs.map((d) => d.meta), cited, verdict, vote.rules_applied, today));
   const future = futureEvidence(cited, today);
   if (future) problems.push(future);
-  if (renunciationAlone(cited, verdict) && cited.some((m) => renunciationAdmitted(m, said, verdict))) {
-    problems.push(`a renunciation is never the only evidence for ${verdict}; cite the evidence of what was done beside it`);
-  }
   for (const e of evidence) {
     const doc = byId.get(e?.source_id);
     if (!doc) { problems.push(`evidence cites source_id ${e?.source_id}, which was not given`); continue; }
-    if (['platform', 'statement'].includes(doc.meta.kind)) problems.push(`source ${doc.meta.source_id} is a ${doc.meta.kind}, never evidence`);
-    if (doc.meta.kind === 'renunciation' && !renunciationFits(said, verdict)) {
-      problems.push(`source ${doc.meta.source_id} is a renunciation, which may be cited only on a promise: alone under not_came_true, or beside other evidence under partly_came_true, came_true, to_evaluate, or unverifiable on a measurable promise`);
-    } else if (doc.meta.kind === 'renunciation' && !renunciationAdmitted(doc.meta, said, verdict)) {
-      problems.push(`source ${doc.meta.source_id} is a renunciation published before the promise was made (or with no date), so it is no evidence`);
-    }
+    if (['platform', 'statement'].includes(doc.meta.kind)) problems.push(`source ${doc.meta.source_id} is a ${doc.meta.kind}, never evidence (EV-2)`);
+    const refused = renunciationRefusal(doc.meta, said, verdict);
+    if (refused) problems.push(refused);
     if (!filled(e.excerpt)) { problems.push(`empty excerpt for source ${doc.meta.source_id}`); continue; }
     const units = texts.get(doc.meta.source_id);
     const found = !units ? null
@@ -730,11 +736,12 @@ export function voteProblems(vote, claim, docs, texts, today, { withinUnit = fal
       problems.push(`locator ${JSON.stringify(e.locator ?? null)} does not match where the excerpt is in source ${doc.meta.source_id} (${label})`);
     }
   }
+  // EV-1, or RN-1 row 5 for not_came_true.
   const needsEvidence = ['came_true', 'partly_came_true', 'not_came_true'].includes(verdict) || (verdict === 'unverifiable' && claim.verifiability === 'measurable');
-  if (needsEvidence && !renounced) {
+  if (needsEvidence && admitted.length === 0) {
     const kinds = evidence.map((e) => byId.get(e?.source_id)).filter(Boolean);
     const official = kinds.some((d) => OFFICIAL_KINDS.includes(d.meta.kind));
-    if (!official && !twoIndependent(kinds.map((d) => d.meta))) problems.push('outcome verdict without one official document or two independent publishers (different publishers and different files)');
+    if (!official && !twoIndependent(kinds.map((d) => d.meta))) problems.push('outcome verdict without one official document or two independent publishers (different publishers and different files) (EV-1)');
   }
   return problems;
 }
@@ -745,6 +752,7 @@ export function answerOf(json) {
   return {
     verdict: j.verdict ?? null,
     evidence: Array.isArray(j.evidence) ? j.evidence.map((e) => ({ source_id: e?.source_id ?? null, excerpt: e?.excerpt ?? null, locator: e?.locator ?? null, pdf_page: e?.pdf_page ?? null })) : [],
+    rules_applied: Array.isArray(j.rules_applied) ? [...j.rules_applied] : null,
     reasoning: j.reasoning ?? null,
     open_question_fr: j.open_question_fr ?? null,
     open_question_en: j.open_question_en ?? null,

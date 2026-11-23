@@ -1,6 +1,6 @@
 # Evidence pack prompt
 
-Version: pack-0.2
+Version: pack-0.3
 
 <!-- Notes for people. Not part of the rules.
 
@@ -15,22 +15,25 @@ Why it exists: Fable review 5 (docs/log/2026-11-23-fable-review-5.md, risk 1): t
 and no judge of any vendor can see an omission. Decision 0012 item 1: written, versioned rules; the program computes
 coverage per cited source and the desk shows it.
 
-Sources of the rules: docs/methodology/source-rule.md 0.5 (kinds, self-assessment, renunciation),
-docs/methodology/verdict-standard.md 0.5 (the state at the deadline; a renunciation ends the wait), decision 0013,
-team/run/judge-prompt.md judge-0.7 (what judges do with a pack: they see only judgeView in src/pack.js, i.e. the claim
+Sources of the rules: docs/methodology/source-rule.md 0.6 (kinds, self-assessment, renunciation),
+docs/methodology/verdict-standard.md 0.7 (DL-2 the state at the deadline; RN-1 a public reversal of a promise, its
+truth table), decisions 0013 and 0015, team/run/judge-prompt.md judge-0.8 (what judges do with a pack: they see only judgeView in src/pack.js, i.e. the claim
 without the speaker's name, the sources' metadata and the excerpts; they do not see header, before_reading, read,
 considered_not_used, transcription_doubts, gaps or made_by), src/pack.js startPack and checkPack (what the program writes
 and checks), decision 0012 item 2 (the session that cut a pack never votes on it), item 5 (vague and hedged claims get
 no pack), the coordinator's decision at the end of docs/log/2026-11-23-fable-review-6.md (A8: a searched item with
 nothing relevant gets no pack).
 
-What the program enforces (src/pack.js checkPack), so the rules below need not be taken on trust: the header's prompt
+What the program checks (src/pack.js checkPack): the header's prompt
 version is the current one, its session is present, the claim is unchanged, every given source is in `read` and in
 `sources` or `considered_not_used`, no source outside the given ones; no given source with untranscribed units; an empty
 `transcription_doubts`; both lists of rule 2; excerpts verbatim, in the fixed order, without repeats or overlaps, not cut
 inside a word or a number or after a sign, inside units declared read; locators; the speaker's name in no free-text
-field; the limits. What it cannot enforce: that every relevant passage is excerpted, that `read` is true (the desk shows
-it as "declared read"), that a renunciation is an explicit abandonment, that qualifiers are kept. Excerpts that do not
+field; the limits; on a promise, every given renunciation is dated, not dated before the promise, and excerpted (RN-1
+row 3, rule 4). These checks catch a careless cutter, not a deliberate one: the header is written by the program but
+the file can be edited, so it is not tamper-proof, and a relevant source can be parked in `considered_not_used` with a
+plausible `why` (the desk lists every such evidence source in the open). What it cannot enforce: that every relevant passage is excerpted, that `read` is true (the desk shows
+it as "declared read"), that a renunciation is an explicit, precise reversal of the same promise, that qualifiers are kept. Excerpts that do not
 start or end at a sentence or unit boundary are flagged at the desk, not refused.
 
 A change to this file is reviewed by Fable 5.2 like the judge prompt (team/README.md, "When to use Fable 5.2", item 4).
@@ -41,6 +44,15 @@ pack-0.2 (2026-11-23): after Fable review 6 (A1-A10). The program writes the hea
 version); renunciation sources (rule 4); a relevant passage is never dropped for the limits (rule 5c); qualifiers,
 tables and over-long sentences (rule 6); a doubtful or incomplete transcription stops the pack (rule 1d); nothing
 relevant stops the pack (rule 1c); rule 2's lists go in the pack; locators as the program prints them.
+pack-0.3 (2026-11-23): rule 4 derived from verdict-standard.md 0.6, RN-1 (record format 12): a renunciation is an
+explicit, precise public reversal of the same promise, and the promise did not come true; the cutter no longer
+excerpts "the state at the renunciation's date" (gone with "ends the wait"). The notes no longer say the rules "need
+not be taken on trust" (Fable review 6 re-check: the header is not tamper-proof). The program refuses a given
+renunciation on a promise that is undated, dated before the promise, or not excerpted (re-check R1), and an excerpt cut
+at a hyphen between letters (R3).
+Revised before release after Fable review 8 (rules 0.7): rule 4a's stop on a separate claim now names where the
+statement goes (gap G): the dispatcher appends one line to the link inbox `data/inbox.jsonl`, which feeds extraction
+and queue A like any link. No helper program: the dispatcher already writes that file, and the event is rare.
 -->
 
 You cut one evidence pack for KANVERIFY, a public record of promises and predictions made by public figures and
@@ -105,29 +117,33 @@ irrelevant.
 3c. Each source keeps the kind it has in the database. A `platform` or `statement` source is never evidence: it goes in
 `considered_not_used` with `text: null` and `why`; if it points to a document that is not among the given sources,
 name that document in `gaps`. A `renunciation` on a **prediction** is only a lead: it too goes in
-`considered_not_used` with `text: null`. On a promise, apply rule 4.
+`considered_not_used` with `text: null` (a revised prediction is a separate prediction, RN-1). On a promise, apply rule 4.
 
 ### 4. Renunciation sources (promises only)
 
-A source of kind `renunciation` ends the wait on the promise: the program then judges the claim as if its deadline
-had passed on the renunciation's date, on what was actually done. So:
+A source of kind `renunciation` is the speaker's own public statement that **explicitly and precisely reverses the
+same promise** (verdict-standard.md 0.7, RN-1). Dated between the day the promise was made and its deadline, it makes
+the promise "did not come true", unless the criteria were fully met before it. So:
 
-4a. Read the document first. If it is not the speaker's own, public, **explicit** abandonment of this promise (it says
-"postponed", "reconsidering", "later", "if conditions allow", or gives up only part of it, or someone else reports it),
-or if it has no date, or its date is before the day the promise was made, stop and report: its kind or date needs
-correcting before any pack is cut.
+4a. Read the document first. If it is not the speaker's own, public, explicit and precise reversal of this same
+promise (it postpones, changes a figure, softens the wording, says "reconsidering" or "if conditions allow", gives up
+only part of it, is about a topic not exactly the same, or someone else reports it), or if it has no date, or its date
+is before the day the promise was made, stop and report: its kind or date needs correcting before any pack is cut.
+If the statement is a separate claim (verdict-standard.md RN-1 row 8: a postponement, a changed figure, a softer
+wording, a partial step back, a topic not exactly the same), say so in the report with its source and locator: the
+dispatcher appends it to the link inbox `data/inbox.jsonl` as a new candidate claim (one JSON line:
+`{"received": "<now, UTC>", "url": "<the source's url>", "source_id": <id>, "locator": "<where the statement is>", "note": "separate claim (RN-1 row 8), seen while cutting the pack of claim <id>", "status": "new", "from": "pack-dispatcher"}`), and it goes through extraction and queue A like any new claim.
 
-4b. Otherwise excerpt the abandonment **whole**: every sentence in which the speaker gives the promise up, with its
-date and scope where they are stated. A renunciation always bears on the criteria; it is never left out.
+4b. Otherwise excerpt the reversal **whole**: every sentence in which the speaker reverses the promise, with its date
+and scope where they are stated. It is never left out (the program refuses a pack that leaves it out).
 
-4c. Excerpt, from the other given sources, what shows **what was done by the renunciation's date**: the state of the
-measure on or before that date, whichever way it points. If no given source shows that state, say so in `gaps`
-("no figure at the renunciation date, <date>") and name the document that would show it.
+4c. Excerpt, from the other given sources, what shows whether the criteria were **fully met before the reversal's
+date**, and the state at the deadline if it has passed, whichever way it points (rule 5a).
 
 ### 5. Choosing excerpts
 
 5a. Excerpt **every passage that bears on the criteria, whichever way it points**: results on the measure, the state at
-the deadline (or at the renunciation's date, rule 4) and the latest state after it, conditions, exceptions, scope, and
+the deadline and the latest state after it, conditions, exceptions, scope, and
 anything that shows the criteria not met. A passage that shows only steps toward a result (a bill tabled, money
 announced) is excerpted if it is all a source says on the measure.
 

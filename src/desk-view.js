@@ -22,7 +22,7 @@ export const LABELS = {
     culture: 'Culture, media and sport', other: 'Other topics',
   },
   kind: {
-    platform: 'Platform', statement: 'Statement', renunciation: 'Public renunciation', law: 'Law', gazette: 'Official gazette',
+    platform: 'Platform', statement: 'Statement', renunciation: 'Public reversal by the speaker', law: 'Law', gazette: 'Official gazette',
     statistic: 'Official statistics', budget: 'Budget document', parliament: 'Parliamentary record', court: 'Court decision',
     audit: 'Public audit report', official: 'Official document', media: 'News report', dataset_study: 'Study with published data',
   },
@@ -313,8 +313,9 @@ const BLOCKER_TEXT = [
   [/has no verdict yet/, 'No verdict yet'],
   [/vague or hedged claim can only be/, 'A vague or hedged item can only be “Unverifiable”'],
   [/needs a summary explaining it/, 'Every verdict except “Pending” needs a summary'],
-  [/needs one official document, or two independent/, 'This verdict needs one official document, or independent reports from two different publishers (a public renunciation counts only for “Did not come true” on a promise)'],
-  [/is used as evidence; evidence must be/, 'The evidence includes a speech, a platform, a missing source, or a renunciation where none is allowed (on a promise only, dated on or after the promise, and alone only for “Did not come true”); evidence must be official documents or independent reports'],
+  [/needs one official document, or two independent/, 'This verdict needs one official document, or independent reports from two different publishers (EV-1); a public reversal by the speaker counts only for “Did not come true”, dated between the day the claim was made and its deadline (RN-1)'],
+  [/is used as evidence; evidence must be/, 'The evidence includes a speech, a platform, a missing source, or a public reversal by the speaker outside RN-1 row 5 (cited only for “Did not come true”, dated between the day the claim was made and its deadline); evidence must be official documents or independent reports'],
+  [/rules the verdict was judged by are not recorded/, 'The rules applied are missing or not rule ids (decision 0014): name them with E'],
   [/missing its French or English version/, 'A French or English version is missing'],
 ];
 export function blockerText(message) {
@@ -345,12 +346,31 @@ function voteColumn(x, v, excerptIndex) {
 ${x.valid ? '' : `<p class="ok-line">This vote failed the program's check: ${esc(x.problems.join('; '))}. It does not count towards agreement.</p>`}
 ${x.sessionUnrecorded ? '<p class="muted">This Claude vote does not name its session (made_by.session), so the program cannot check that the judge was not the session that cut the pack.</p>' : ''}
 <p>${verdictChip(vote.verdict)}</p>
-<p class="muted">Cites ${cites || 'nothing'}${isAdopted ? ' · adopted' : isPre ? ' · pre-selected' : ''}</p>
+<p class="muted">Cites ${cites || 'nothing'}${isAdopted ? ' · adopted' : isPre ? ' · pre-selected' : ''} · rules ${esc(Array.isArray(vote.rules_applied) && vote.rules_applied.length ? vote.rules_applied.join(', ') : 'none named')}</p>
 ${vote.summary_fr ? `<p lang="fr">${esc(vote.summary_fr)}</p>` : ''}
 ${vote.summary_en ? `<p class="muted" lang="en">${esc(vote.summary_en)}</p>` : ''}
 ${vote.open_question_fr || vote.open_question_en ? `<p>What is missing: <span lang="fr">${esc(vote.open_question_fr ?? '')}</span></p><p class="muted" lang="en">${esc(vote.open_question_en ?? '')}</p>` : ''}
 <details><summary>Reasoning (working notes, not published)</summary><p>${esc(vote.reasoning ?? '')}</p></details>
 </article>`;
+}
+
+/** The rule ids of a verdict row (JSON text) or a vote (list). */
+function rulesOf(x) {
+  if (Array.isArray(x?.rules_applied)) return x.rules_applied;
+  try {
+    const list = JSON.parse(x?.rules_applied ?? 'null');
+    return Array.isArray(list) ? list : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Decision 0014: the rules applied, each with its plain words from the standard of that version. */
+function rulesLine(verdict, standard) {
+  const ids = rulesOf(verdict);
+  if (!ids.length) return '<p class="muted">Rules applied: none named.</p>';
+  const words = ids.map((id) => `<span class="mono">${esc(id)}</span> ${esc((standard?.rules.get(id)?.en ?? '(not a rule of the current standard)').replace(/\.$/, ''))}`);
+  return `<p class="muted">Rules applied (verdict standard ${esc(verdict.rules_version ?? standard?.version ?? '?')}): ${words.join('; ')}. Correct them with ${kbd('E')}.</p>`;
 }
 
 function verdictEditForm(v) {
@@ -365,6 +385,8 @@ ${area('summary_fr', 'Summary FR', 'fr')}
 ${area('summary_en', 'Summary EN', 'en')}
 ${area('open_question_fr', 'What is missing FR (for “To be assessed”)', 'fr')}
 ${area('open_question_en', 'What is missing EN (for “To be assessed”)', 'en')}
+<div><label class="label" for="v-rules_applied">Rules applied (ids, verdict standard ${esc(v.standard?.version ?? '?')}; blank keeps the current ones)</label><input id="v-rules_applied" name="rules_applied" class="mono" value="${esc(rulesOf(cur).join(', '))}"></div>
+<p class="muted">${v.standard ? [...v.standard.rules.values()].map((r) => `<span class="mono">${esc(r.id)}</span> ${esc(r.en)}`).join(' · ') : ''}</p>
 <p class="form-error" role="alert" hidden></p>
 <p class="muted">${kbd('Ctrl+Enter')} save to the workspace · ${kbd('Esc')} discard. The publication check runs again after saving.</p>
 </form>`;
@@ -423,6 +445,17 @@ export function renderVerdictPage(d) {
     return `<li>source ${esc(c.source_id)} · <span class="doc-title" lang="${esc(s?.lang)}">${esc(s?.title ?? '')}</span>: ${esc(c.excerpted.length)} of ${esc(c.units)} units excerpted · ${esc(c.read_not_excerpted)} declared read, not excerpted · ${esc(c.not_read.length)} not read${c.not_read.length ? ` (${esc(c.not_read.slice(0, 12).join(', '))}${c.not_read.length > 12 ? '…' : ''})` : ''} · ${esc(c.not_transcribed.length)} not transcribed</li>`;
   }).join('');
   const packSources = (pack.sources ?? []).map((x) => src(x.source_id)).filter(Boolean);
+  // Fable review 6 re-check R2: a given source that could be evidence but has no excerpt is listed in the open, with
+  // the cutter's reason, so a relevant document left out cannot hide in the collapsed list.
+  const listedIds = new Set((pack.sources ?? []).map((x) => x.source_id));
+  const evidenceKinds = new Set(['law', 'gazette', 'statistic', 'budget', 'parliament', 'court', 'audit', 'official', 'media', 'dataset_study', 'renunciation']);
+  const uncitedRows = (pack.considered_not_used ?? []).filter((u) => !listedIds.has(u.source_id) && evidenceKinds.has(src(u.source_id)?.kind));
+  const uncitedEvidence = uncitedRows.length
+    ? `<div class="ok-line"><p><b>Given as possible evidence, not excerpted (${uncitedRows.length}):</b> check the reason.</p><ul>${uncitedRows.map((u) => {
+      const s = src(u.source_id);
+      return `<li>source ${esc(u.source_id)} · ${esc(label('kind', s?.kind))} · <span class="doc-title" lang="${esc(s?.lang)}">${esc(s?.title ?? '')}</span>, ${esc(s?.publisher ?? '')}${u.locator ? `, ${esc(u.locator)}` : ''} — why: “${esc(u.why)}”</li>`;
+    }).join('')}</ul></div>`
+    : '';
   const body = `${v.recheck ? `<p class="warn"><b>${esc(v.recheck)}.</b> Only the newest votes (round ${esc(v.round)}) are shown; your earlier decision was on round ${esc(v.verdictRound ?? 'unknown')}.</p>` : ''}<div class="screen-title"><h1>Verdict ${d.position.n} / ${d.position.of}</h1>
 <span class="muted">Item #${v.claimId} · ${entered} · votes round ${esc(v.round ?? (v.p.closed ? `none (closed round ${v.p.closed.round} not recorded)` : "none closed"))} · evidence pack <span class="mono">pack ${esc(v.p.packSha256.slice(0, 4))}…${esc(v.p.packSha256.slice(-4))}</span> · ${status}</span></div>
 ${d.onlySkipped ? `<p class="muted">The ${d.counts.verdicts} items left were all skipped.</p>` : ''}
@@ -446,7 +479,7 @@ ${v.entered === 'auto' ? `<details id="passage"><summary>Source passage (${kbd('
 ${v.p.checked.problems.length ? `<p class="ok-line"><b>The evidence pack fails its check:</b> ${esc(v.p.checked.problems.join('; '))}</p>` : ''}
 <ol class="excerpts">${excerptItems}</ol>
 ${coverage ? `<p class="muted">Coverage per cited source (units as the program numbers them; "declared read" is the cutter's word, not checked):</p><ul class="muted">${coverage}</ul>` : ''}
-<details id="unused"><summary>Considered, not used: ${(pack.considered_not_used ?? []).length} (${kbd('U')})</summary>
+${uncitedEvidence}<details id="unused"><summary>Considered, not used: ${(pack.considered_not_used ?? []).length} (${kbd('U')})</summary>
 <ul>${(pack.considered_not_used ?? []).map((u) => {
     const s = src(u.source_id);
     return `<li>${esc(label('kind', s?.kind))} · <span lang="${esc(s?.lang)}">${esc(s?.title ?? `source ${u.source_id}`)}</span>, ${esc(u.locator ?? '')}${u.text ? ` — <span lang="${esc(s?.lang)}">“${esc(u.text)}”</span>` : ''} — “${esc(u.why)}”</li>`;
@@ -465,6 +498,7 @@ ${agreementLine(v)}
 ${after.verdict?.summary_fr ? `<p lang="fr">${esc(after.verdict.summary_fr)}</p>` : ''}
 ${after.verdict?.summary_en ? `<p class="muted" lang="en">${esc(after.verdict.summary_en)}</p>` : ''}
 ${after.verdict?.open_question_fr || after.verdict?.open_question_en ? `<p>What is missing: <span lang="fr">${esc(after.verdict.open_question_fr ?? '')}</span></p><p class="muted" lang="en">${esc(after.verdict.open_question_en ?? '')}</p>` : ''}
+${after.verdict ? rulesLine(after.verdict, d.standard) : ''}
 ${check}
 </div>
 ${unlinked}
@@ -499,7 +533,7 @@ ${reasonsPanel({
     noteLabel: 'One more sentence (the id for reason 3; required for reason 4)',
     extra: `<p class="muted">The item's quote, verdict, evidence and votes are saved in the desk log; ${kbd('Z')} puts it back.</p>`,
   })}
-${verdictEditForm(v)}`;
+${verdictEditForm({ ...v, standard: d.standard })}`;
   return page({ ...d, title: `Item #${v.claimId}`, queue: 'verdict', item: v.id, round: v.round, body });
 }
 
@@ -534,6 +568,7 @@ ${meta([
 <p>${verdictChip('unverifiable')} <span class="muted">a ${esc(label('verifiability', c.verifiability).toLowerCase())} item can only be “Unverifiable”; the summary is yours (decided by human)</span></p>
 ${after.verdict?.summary_fr ? `<p lang="fr">${esc(after.verdict.summary_fr)}</p>` : ''}
 ${after.verdict?.summary_en ? `<p class="muted" lang="en">${esc(after.verdict.summary_en)}</p>` : ''}
+${after.verdict ? rulesLine(after.verdict, d.standard).replace(/ Correct them with .*?\.<\/p>$/, '</p>') : ''}
 ${check}
 </div>
 ${unlinked}

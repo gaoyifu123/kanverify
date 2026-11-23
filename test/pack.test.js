@@ -173,7 +173,7 @@ function voteFor(s, packSha256, over = {}) {
   return {
     kind: 'kanverify-vote', format: 1, claim: 'C1', pack_file: 'c1.pack.json', pack_sha256: packSha256,
     provider: 'anthropic', channel: 'subscription', via: 'claude-code', model: 'claude-opus-5-5', promptVersion: JUDGE_VERSION,
-    system_sha256: SYSTEM_SHA256, verdict: 'partly_came_true',
+    system_sha256: SYSTEM_SHA256, verdict: 'partly_came_true', rules_applied: ['DL-2', 'EV-1', 'OC-2'],
     evidence: [{ source_id: s.ids.law, excerpt: 'Trente minutes d’activité physique quotidienne sont généralisées', locator: '§2', pdf_page: null }],
     reasoning: 'r', open_question_fr: null, open_question_en: null, summary_fr: 'f', summary_en: 'e', ...over,
   };
@@ -246,7 +246,7 @@ test('judge input: header carries the system hash and the date; the speaker name
 // ---------------------------------------------------------------- Codex through ask()
 
 const ANSWER = JSON.stringify({
-  verdict: 'partly_came_true',
+  verdict: 'partly_came_true', rules_applied: ['DL-2', 'EV-1', 'OC-2'],
   evidence: [{ source_id: 2, excerpt: 'x', locator: '§2', pdf_page: null }],
   reasoning: 'r', open_question_fr: null, open_question_en: null, summary_fr: 'f', summary_en: 'e',
 });
@@ -521,4 +521,51 @@ test('A7, A9: untranscribed units or a transcription doubt stop the pack; read i
   const path = join(s.textDir, `source-${s.ids.report}-text.json`);
   writeFileSync(path, JSON.stringify({ ...JSON.parse(readFileSync(path, 'utf8')), missing_units: [3] }));
   assert.match(checkPack(s.db, s.pack, s.opts).problems.join(), new RegExp(`source ${s.ids.report} has units not transcribed \\(3\\)`));
+});
+
+test('R3: a hyphen between letters is inside the word: "raccordables" cut from "non-raccordables" is refused', () => {
+  for (const hyphen of ['-', '‐', '‑']) {
+    const units = [{ unit: 1, text: `Il reste 3 millions de locaux non${hyphen}raccordables fin 2025. Le rythme ralentit.` }];
+    const judged = (text) => boundaryProblems(locateSpan(text, units));
+    assert.deepEqual(judged('raccordables fin 2025.').refuse, ['starts inside a word or a number'], JSON.stringify(hyphen));
+    assert.deepEqual(judged('Il reste 3 millions de locaux non').refuse, ['ends inside a word or a number'], JSON.stringify(hyphen));
+    assert.deepEqual(judged(`Il reste 3 millions de locaux non${hyphen}raccordables fin 2025.`), { refuse: [], flag: [] }, JSON.stringify(hyphen));
+  }
+  // A dash between spaces is not inside a word.
+  const spaced = [{ unit: 1, text: 'Deux mesures - la première est faite. La seconde non.' }];
+  assert.deepEqual(boundaryProblems(locateSpan('la première est faite.', spaced)).refuse, []);
+});
+
+test('R1 (RN-1 row 3, pack rule 4): on a promise a given reversal is dated, not before the promise, and excerpted', (t) => {
+  const s = setup(t);
+  const REN_HTML = '<p>Nous renonçons aux trente minutes quotidiennes en primaire.</p>';
+  const ren = (published_on, n) => addSource(s.db, 'renunciation', {
+    sha256: storeEvidenceBytes(s.evidenceDir, Buffer.from(`${REN_HTML}<!-- ${n} -->`)).sha256, media_type: 'text/html',
+    url: `https://example.org/ren/${n}`, title: 'Entretien', publisher: 'Radio', published_on,
+  });
+  const withRen = (id, { listed = true, type = 'promise' } = {}) => {
+    const p = clone(s.pack);
+    p.claim.type = type;
+    if (listed) {
+      p.sources.push(s.meta(id));
+      p.excerpts.push({ source_id: id, locator: '§1', pdf_page: null, text: 'Nous renonçons aux trente minutes quotidiennes en primaire.' });
+    } else {
+      p.considered_not_used.push({ source_id: id, locator: null, pdf_page: null, text: null, why: 'about something else' });
+    }
+    return started(p, [s.ids.law, s.ids.report, s.ids.statement, id]);
+  };
+  const good = ren('2022-06-01', 1);
+  assert.deepEqual(checkPack(s.db, withRen(good), s.opts).problems, []);
+  // Parked in considered_not_used (with text: null): refused, so a unanimous pending cannot pass over it.
+  assert.match(checkPack(s.db, withRen(good, { listed: false }), s.opts).problems.join(), new RegExp(`given source ${good} is a reversal by the speaker \\(kind renunciation\\): it is always excerpted`));
+  // Undated, or dated before the promise was made (2022-03-17): refused.
+  const undated = ren(null, 2);
+  assert.match(checkPack(s.db, withRen(undated), s.opts).problems.join(), /with no date: record its date before the pack is cut \(RN-1 row 3\)/);
+  const early = ren('2022-03-16', 3);
+  assert.match(checkPack(s.db, withRen(early), s.opts).problems.join(), /dated 2022-03-16, before the claim was made \(2022-03-17\): its date or kind needs correcting \(RN-1 row 3\)/);
+  // After the deadline it is still excerpted (judges see it and mention it), and the pack passes.
+  assert.deepEqual(checkPack(s.db, withRen(ren('2023-02-01', 4)), s.opts).problems, []);
+  // On a prediction it is a lead (RN-1 row 1): listed in sources it is refused; left out it passes, undated or not.
+  assert.match(checkPack(s.db, withRen(good, { type: 'prediction' }), s.opts).problems.join(), /counts only on a promise \(RN-1 row 1; list it under considered_not_used\)/);
+  assert.deepEqual(checkPack(s.db, withRen(undated, { listed: false, type: 'prediction' }), s.opts).problems, []);
 });

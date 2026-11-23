@@ -190,6 +190,8 @@ export function candidateProblems(c, { unitCount } = {}) {
   if (c.deadline !== null && !isDate(c.deadline)) problems.push('deadline is not a YYYY-MM-DD date');
   if ((c.deadline === null) !== (c.deadline_basis === null)) problems.push('deadline and deadline_basis must be given together');
   if (c.deadline_basis !== null && !['stated', 'inferred'].includes(c.deadline_basis)) problems.push('deadline_basis is not stated or inferred');
+  // VG-3 (verdict-standard.md 0.6, ST-2): the record format refuses it too (db/schema.sql, claims).
+  if (c.type === 'prediction' && c.deadline_basis === 'inferred') problems.push('a prediction never has an inferred deadline (VG-3): give the time range it states, or mark it vague');
   if (c.verifiability === 'measurable' && !filled(c.criteria_fr) && !filled(c.criteria_en)) problems.push('measurable but no criteria');
   if (c.verifiability === 'measurable' && c.deadline === null) problems.push('measurable but no deadline');
   if (['vague', 'hedged'].includes(c.verifiability) && (c.criteria_fr !== null || c.criteria_en !== null)) problems.push('vague or hedged but criteria given');

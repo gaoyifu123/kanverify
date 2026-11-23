@@ -1,90 +1,303 @@
-# 判定标准
+# Verdict standard
 
-版本 0.5（2026-11-23）。0.5 (2026-11-23): the “partly” and “did not come true” rows of the table in section 5 brought in line with decision 0013 (Fable review 6, B7); wording only, no new rule. The early “came true” bullet in section 5 is with the founder (board item early-act-state): as worded it contradicts itself, since every law can be repealed. 0.4：期限时的状态、放弃只结束等待、提前成真只限一次性结果、含糊承诺放弃后仍无法验证（决策 0013）。0.3：结论为六种，可提前判成真（决策 0008 修订）。仍是草稿：还没有用真实条目检验过。
-计划在第 8 至 10 天用第一个国家的全部条目检验，并和现有追踪器对照后升为 1.0。
+Version 0.8 (2026-11-23)
 
-## 1. 什么会被收录
+0.8 (Fable review 8 re-check, R1; coordinator's choice, closer to "giving up = did not come true"): in row 4, when the
+result was met before the reversal but undone by the deadline, the verdict "did not come true" cites the earliest
+reversal, as in row 5; whenever a reversal decides "did not come true" it is cited. Same rule ids. (The programs
+already required it; the table and the judge prompt said "never".)
 
-收录的是**承诺**：对一项可验证的行动或结果的前瞻性陈述。
+0.7 (after Fable review 8, same rule ids: wording made to say what section 5 and judge-0.8 already said, before any
+verdict was recorded under 0.6): "precise" in the public ST-1 and RN-1 lines (gap B); ST-3 says what a judge does when a
+rule and common sense seem to disagree (gap C); a promise made again after a reversal is a new claim (gap D, row 10);
+"same speaker" for a party, government or institution is not yet defined (gap E); summaries state only what cited
+evidence shows, so an uncited reversal is not mentioned (gap F); a statement stopped on as row 8 goes to the link inbox
+as a new candidate claim (gap G); French public lines without blame (« revenu sur », « prévision », « formulée avec
+réserve »; finding 4). Every version is kept byte for byte in `docs/methodology/versions/` (finding 3).
+Finding 1, the founder (2026-11-23): "按'看期限那一刻、看最终结果'，判未成真。" (judge at the moment of the deadline, on the
+final result: did not come true). A measure abolished in 2024 and reinstated in 2026, deadline 2027, did not come true.
+So DL-2 is final; an early "came true" (EA-1) is provisional and is judged again at the deadline; row 4 follows. This
+changes EA-1's meaning; it keeps its id because no verdict was ever recorded under 0.6.
 
-- 收录：“在任期内把法定退休年龄提高到 65 岁。”
-- 不收录：口号和价值表态（“让国家更公平”）、对现状的描述、对别人的批评。
+0.6: the founder's three standards (decision 0015) head the file, and every rule cites the standard it comes from;
+every verdict rule has a stable id (decision 0014) and is listed once, in the tables "Standards" and "Rules" below;
+the renunciation rule is one truth table (RN-1): an explicit, precise public reversal of the same promise by the same
+speaker, between the day it was made and its deadline, means it did not come true (decision 0013 amendment;
+decision 0015 S1 as narrowed by the founder: anything less precise is a separate claim; predictions excluded).
+ST-2 gives VG-3: a prediction states its own time range or is vague.
+Rewritten in English (working language). Everything that applies these rules
+(db/schema.sql, src/rules.js, src/pack.js, src/ledger.js, the desk, team/run/judge-prompt.md, team/run/pack-prompt.md,
+source-rule.md) is derived from this file and cites the rule ids. 0.5: wording aligned with decision 0013 (Fable
+review 6, B7). 0.4: decision 0013. 0.3: six verdicts, early "came true" (decision 0008 revision).
 
-第一层的收录规则是机械的：一份纲领里所有符合上述定义的陈述都收录，不挑选。
-是否重要、是否好核对，都不是略过的理由。
+Still a draft: not yet tested on real items. Planned: tested on all items of the first country and compared with
+existing trackers, then raised to 1.0.
 
-## 2. 可验证性分三类
+**Versions.** Rule ids are never reused for another meaning; a changed rule gets a new id. Every change to this file,
+even a typo, raises the version number, and every version is kept byte for byte as
+`docs/methodology/versions/verdict-standard-<version>.md` (the current one included; a test checks that this file is
+identical to the copy of its own version, so a version's text can never change after a verdict cites it). Each verdict
+records the version and the ids it was judged by (`verdicts.rules_version`, `verdicts.rules_applied`, in the ledger
+snapshot); `confirm()` accepts only the current version and its ids (a verdict judged under an earlier version is
+looked at again at the desk first). The site shows each verdict's rules from the copy of
+its version (src/standard.js). A new version also means a new judge prompt (its "Rules:" line) and new votes on every
+unconfirmed item.
 
-| 类别 | 含义 | 怎么处理 |
+## Standards
+
+Decision 0015 (founder, 2026-11-23). Every judgment keeps to these three; every rule below comes from one of them.
+The founder calls them S1, S2, S3; their ids have the same form as the rules' (ST-1, ST-2, ST-3), so judges can name
+them in `rules_applied` and the site can show them like any rule.
+
+| id | rule | règle |
 | --- | --- | --- |
-| `measurable` | 有可测量的结果，并且有期限 | 写定判定标准，到期判定 |
-| `vague` | 方向明确，但没有可测量的结果 | 收录，结论为“无法验证” |
-| `hedged` | 带“争取”“力求”这类保留措辞 | 收录，结论为“无法验证” |
+| ST-1 | S1, words are gold: we check what was publicly said, then and now; only an explicit, precise public reversal of the same promise by the same speaker negates it. | S1, la parole est d’or : nous vérifions ce qui a été dit publiquement, hier comme aujourd’hui ; seul un revirement public, explicite et précis, du même auteur sur la même promesse l’annule. |
+| ST-2 | S2, history moves in cycles: a promise is judged over the time its maker has the power to keep it, a prediction over its time range. | S2, l’histoire a ses cycles : une promesse est jugée sur la période où son auteur a le pouvoir de la tenir, une prévision sur sa période. |
+| ST-3 | S3, common sense: claims and evidence are read with common sense, not legalistically, and the final result at the deadline counts; where a rule and common sense seem to disagree, the rule is followed and the judge says so. | S3, le bon sens : affirmations et preuves sont lues avec bon sens, sans juridisme, et c’est le résultat final à l’échéance qui compte ; si une règle et le bon sens semblent diverger, la règle s’applique et le juge le signale. |
 
-`vague` 和 `hedged` 不计入对错，只计入一个人的言论里有多少是可验证的。
+- **ST-1** gives RN-1 (section 5). It also means the claim is what was said, quoted verbatim (section 1), and that a
+  later statement which does not exactly reverse it is a claim of its own, recorded and judged in turn.
+- **ST-2** gives the deadlines (section 3): a stated deadline; for a campaign promise without one, the end of the term
+  campaigned for (`inferred`); for a prediction, the end of its time range.
+- **ST-3** governs how judges read everything below: the plain meaning of the claim and of the evidence, not a
+  technicality in either; and the result at the deadline (DL-2), not the effort (OC-3). The rules below never require
+  a legalistic reading. Where a rule and common sense seem to disagree, the judge follows the rule and says so in
+  `reasoning`; the founder sees it at the desk, and a rule that keeps disagreeing with common sense is changed in a new
+  version, never bent case by case (principle 3).
 
-## 3. 期限
+## Rules
 
-- 原文写了期限的，用原文的（`stated`）。
-- 竞选纲领里没写期限的，推定为所竞选的那一届任期结束之日（`inferred`），并在页面上标明是推定的。
-- 推定的期限不能用来提前判“未成真”。任期未满时，除非当事人已明确放弃，结论是“待定”。
-- **Which moment counts (decision 0013):** the verdict judges the state at the deadline. What happened after it goes in the summary and does not change the verdict.
-- **A renunciation ends the wait (decision 0013):** after a public, explicit renunciation of a promise, the claim is judged as if the deadline had passed on the renunciation's date, on what was actually done: a partial result shown by evidence is “partly came true”; no result is “did not come true” (the renunciation is enough evidence for that); criteria fully met is “came true”.
+The table is what programs read (src/standard.js, together with the "Standards" table): one row per rule, the id, then
+the rule in plain words in English and in French. The sections after it give the detail. Judges name the ids that decided their verdict in
+`rules_applied` (team/run/judge-prompt.md); the site shows them under each verdict.
 
-- 写法的统一读法（创始人 2026-11-22 定）：“d’ici 2027 / 2027 年前”按 2027-12-31 算，照字面；“fin de la décennie / 本十年末”按 2030-12-31 算。
+| id | rule | règle |
+| --- | --- | --- |
+| VG-1 | A vague or hedged claim is “unverifiable”, at any date, even if its speaker later reversed it. | Une affirmation vague ou formulée avec réserve est « invérifiable », à toute date, même si son auteur est ensuite revenu dessus. |
+| VG-2 | A measurable claim is “unverifiable” only if a condition attached to it did not arise by the deadline. | Une affirmation mesurable n’est « invérifiable » que si une condition posée ne s’est pas réalisée à l’échéance. |
+| VG-3 | A prediction must state its own time range: without one it is vague, and a prediction never gets an inferred deadline (ST-2). | Une prévision doit fixer elle-même sa période : sinon elle est vague, et une prévision ne reçoit jamais d’échéance déduite (ST-2). |
+| DL-1 | The deadline day itself is still within the deadline. | Le jour de l’échéance fait encore partie du délai. |
+| DL-2 | The state on the deadline decides the final verdict; what happened before or after it is only mentioned. | C’est l’état à l’échéance qui décide du verdict final ; ce qui s’est passé avant ou après est seulement mentionné. |
+| DL-3 | Before the deadline the verdict is “pending”, unless EA-1 or RN-1 applies. | Avant l’échéance, le verdict est « en attente », sauf si EA-1 ou RN-1 s’applique. |
+| DL-4 | After the deadline a verdict is never “pending”: without enough evidence it is “to be assessed”, saying what is missing. | Après l’échéance, jamais « en attente » : faute de preuves suffisantes, « à évaluer », en disant ce qui manque. |
+| EA-1 | “Came true” may be given before the deadline once the evidence shows the criteria fully met; it is provisional and is judged again at the deadline. | « Réalisée » peut être donné avant l’échéance dès que les preuves montrent les critères entièrement remplis ; ce verdict est provisoire et réexaminé à l’échéance. |
+| RN-1 | A promise its speaker explicitly, precisely and publicly reversed between the day it was made and its deadline did not come true, unless it was already fully met before; a postponement or a changed figure is a separate claim. | Une promesse sur laquelle son auteur est explicitement et publiquement revenu, de façon précise, entre le jour où il l’a faite et son échéance n’est pas réalisée, sauf si elle l’était déjà entièrement ; un report ou un chiffre modifié est une affirmation distincte. |
+| EV-1 | An outcome needs one official document, or two independent sources from different publishers. | Un résultat demande un document officiel, ou deux sources indépendantes d’éditeurs différents. |
+| EV-2 | Statements are leads, never evidence, whoever made them; an official body assessing its own work is a statement. | Les déclarations sont des pistes, jamais des preuves, quel qu’en soit l’auteur ; un organisme public qui évalue son propre travail fait une déclaration. |
+| EV-3 | Silence is not evidence: “did not come true” needs a passage that shows the criteria not met (RN-1 aside). | Le silence n’est pas une preuve : « non réalisée » demande un passage qui montre les critères non remplis (sauf RN-1). |
+| OC-1 | “Came true” means every criterion fully met; a bundle of measures needs every measure. | « Réalisée » veut dire tous les critères entièrement remplis ; un ensemble de mesures les demande toutes. |
+| OC-2 | “Partly came true”, after the deadline: a result on the measure that falls short of the whole, with the figures. | « Partiellement réalisée », après l’échéance : un résultat sur la mesure, inférieur au tout, chiffres à l’appui. |
+| OC-3 | Steps toward a result (a bill tabled, money announced) are not a result. | Des étapes vers un résultat (un projet de loi déposé, des crédits annoncés) ne sont pas un résultat. |
 
-## 4. 判定标准在录入时写定
+Which rules a program checks, and where: see "Where each rule is applied" at the end.
 
-每条 `measurable` 的承诺在录入时就写明：什么结果算成真，用哪一类凭据核对。
-结果出来之后不改标准。确实写错了需要改的，改动留痕并公开。
+## 1. What is recorded
 
-## 5. 六种结论（决策 0008 及其修订）
+A **promise** (or prediction) is a forward-looking statement of a verifiable action or result.
 
-承诺和预测共用同一套结论。
+- Recorded: "Raise the legal retirement age to 65 during the term."
+- Not recorded: slogans and statements of values ("make the country fairer"), descriptions of the present, criticism
+  of others.
 
-| 值 | 中文 | Français | English | 什么时候用 |
-| --- | --- | --- | --- | --- |
-| `unverifiable` | 无法验证 | Invérifiable | Unverifiable | 话说得含糊或留了太多退路，怎样都算对；或所附的条件没有出现 |
-| `pending` | 待定 | En attente | Pending | 还没到期 |
-| `to_evaluate` | 待评估 | À évaluer | To be assessed | 已到期，凭据还不够判断 |
-| `came_true` | 成真 | Réalisée | Came true | 完全达到录入时写定的判定标准（可以在期限前） |
-| `partly_came_true` | 部分成真 | Partiellement réalisée | Partly came true | 做到了一部分；可量化的要在说明里写明数据（到期后才判，或本人公开明确放弃后，见第 3 节） |
-| `not_came_true` | 未成真 | Non réalisée | Did not come true | 到期（或本人公开明确放弃后，见第 3 节），没做到 |
+The first layer is mechanical: every statement in a platform that fits this definition is recorded, none is picked.
+Importance and ease of checking are not reasons to skip one.
 
-- 可验证性为 `vague` 或 `hedged` 的，结论自动是“无法验证”。
-- 评判结果，不评判努力。提交了法案但没有通过，不算成真。
-- 部分做到的判“部分成真”；可量化的条目，说明里必须写明数据。
-- 一句话打包了几项措施的，全部做到才算成真，做到一部分算部分成真（创始人 2026-11-22 定）。
-- **Early “came true” only for one-off results (decision 0013):** a law passed, a facility built. If the criteria name a level at a date, or the measure can be repealed or undone, wait for the deadline.
-- A vague or hedged promise stays “unverifiable” even after an explicit renunciation; the summary mentions the renunciation (decision 0013).
-- 期限前只能提前判“成真”（已完全达到判定标准）；“部分成真”要等到期再判，因为部分做到的状态还会变，期限前判“待定”，说明里写明目前做到了多少；“未成真”要等到期，或本人公开明确放弃（创始人 2026-11-22 定；放弃后按实际做到的判，见第 3 节）。
-- “待评估”不是失败。它必须写明卡在哪里，还缺什么资料（原则 1）。
-- 除“待定”外，每种结论都必须附一句说明，法语和英语各一句，否则不能发布。说明讲的是凭据显示了什么，不是评价。
-- “无法验证”和“待评估”不是负面评价。
+## 2. Verifiability (VG-1, VG-2)
 
-## 6. 措辞
+| class | meaning | handling |
+| --- | --- | --- |
+| `measurable` | a measurable result and a deadline | criteria written at recording time; judged at the deadline |
+| `vague` | a clear direction, no measurable result | recorded; verdict "unverifiable" (VG-1) |
+| `hedged` | reserved wording ("seek to", "strive to") | recorded; verdict "unverifiable" (VG-1) |
 
-发布的文字只描述结果，不评价动机，不用带情绪的词。
-不写“撒谎”“欺骗”“背弃”，写“期限已过，官方公报中没有相应的法律”。
-对成真和未成真用同样平实的语气。
+`vague` and `hedged` items do not count as right or wrong; they count towards how much of a person's words can be
+checked. **VG-1** holds at any date and also when the speaker later reversed the claim (RN-1, row 2); no evidence is
+cited, so the summary, which says why the wording cannot be checked, does not mention the reversal. **VG-2:** on a measurable claim, "unverifiable" has one use only: a condition attached to
+the claim ("if growth exceeds 2%") did not arise by the deadline, and evidence shows it did not. It waits for the
+deadline like any other verdict (DL-3) and needs evidence (EV-1). "Unverifiable" is about the wording, never about
+missing evidence.
 
-## 7. 谁来判
+**VG-3** (ST-2; founder, 2026-11-23, decision 0015 question 2). A prediction is a judgement about how the world works,
+not tied to an office, so nothing gives it a deadline but its own words. A prediction that does not itself state a
+clear time range is recorded as `vague`, so its verdict is "unverifiable" (VG-1). A prediction never has an
+`inferred` deadline; the record format refuses one (db/schema.sql, claims).
 
-1. 评审团：至少两个不同的模型各自独立初判，互相看不到对方的结论。
-2. 中立性审查：检查选材、措辞和证据。
-3. 创始人逐条确认后发布。
+## 3. Deadlines (DL-1 to DL-4)
 
-目标是自动审核：四家模型组成评审团，全体一致的自动通过，不一致的交给人审。
-放开的条件是创始人定的：先 10 条，再 30 条，最后 100 条，评审团一致的结论和人的确认对得上的比例达到 99%。
-详见 `docs/decisions/0003-ai-jury.md`。
+From ST-2: a claim is judged over the period it belongs to.
 
-## 8. 更正
+- The deadline stated in the text is used (`stated`). A campaign promise without one gets the end of the term
+  campaigned for, the period in which the speaker has the power to keep it (`inferred`), shown as inferred on the
+  site. An inferred deadline is a deadline like a stated one. Promises only: a prediction is judged against the time
+  range it states itself, whose end is its (`stated`) deadline; without one it is `vague` (VG-3).
+- Reading of wordings (founder, 2026-11-22): "d'ici 2027" counts as 2027-12-31, literally; "fin de la décennie" as
+  2030-12-31.
+- **DL-1.** The deadline day is inside the deadline. "Before the deadline": the date of judging (the judge input's
+  date; the date of confirmation) is on or before the deadline. "After the deadline": it is later.
+- **DL-2** (decision 0013; ST-3, the final result; founder, 2026-11-23, review 8 finding 1). The verdict after the
+  deadline is final and judges the state at the deadline: a result met earlier and undone by the deadline did not come
+  true; one undone and restored by the deadline counts as it stands on the deadline. What happened after it
+  (met late; met and undone) goes in the summary and does not change the verdict. When the criteria name a level, the
+  state at the deadline is shown by a passage dated on the deadline, about a period ending on it, or saying the level
+  held on that date; a figure dated before the deadline counts only if the passage says it still applied then. With
+  figures only before and after the deadline, the verdict is "to be assessed" and the open question names the date
+  whose figure is missing.
+- **DL-3.** Before the deadline the only verdicts are: "came true" under EA-1; "did not come true" under RN-1;
+  "unverifiable" under VG-1; otherwise "pending", whatever has or has not been done, and also when the evidence is
+  not enough to tell. "Partly came true" and "to be assessed" wait for the deadline.
+- **DL-4.** After the deadline the verdict is never "pending". Evidence not enough to decide gives "to be assessed",
+  which says where it is stuck and what is missing (principle 1).
 
-任何人可以提出更正。被记录的人的答辩怎么刊登，等有了实际使用场景再定（决策 0007），在那之前不对外承诺时限。
-已发布的结论有改动的，改动前后的结论和时间公开留痕。
+## 4. Early "came true" (EA-1)
 
-## 还没定的
+Decision 0013, amendment ("achieved once = achieved"), as settled by the founder after Fable review 8: before the
+deadline, "came true" may be given and published as soon as the evidence shows the criteria fully met (OC-1), with no
+test of "act or state". It is **provisional**: the state at the deadline decides (DL-2). After the deadline the item
+is judged again, on evidence of the state at the deadline, and that verdict is published as a new ledger entry; the
+history keeps the early one. If the result was undone by the deadline, the final verdict is "did not come true" (or
+"partly came true" if part of it stands, OC-2).
 
-- 预测类条目（区别于承诺）怎么判：基准线和最小样本数都没有定。第一层不涉及。
-- “部分做到”算到什么程度才写成“成真”，说明怎么写，需要用真实条目来校准。
-- 一个人的条目满多少条才显示比例。在定下来之前，人物页只显示各结论的条数。
+How the item comes back (src/desk.js): an item whose current ledger entry is "came true" confirmed on or before its
+deadline returns to the review desk's verdict queue once today is after the deadline, marked as a deadline re-check;
+C stays off until a new jury round on the deadline's evidence is adopted.
+
+## 5. Public reversal by the speaker (RN-1)
+
+From ST-1, "words are gold" (decision 0015, as narrowed by the founder on 2026-11-23: "what is said now is gold, what
+was said then is gold"), on top of decision 0013's amendment ("giving up = did not come true"). A later **public**
+statement by the **same speaker** negates a claim **only if it explicitly and precisely reverses that same claim**:
+the same measure, the same scope, said not to be done, or the opposite said. Then, if it is dated on or after the day
+the claim was made and on or before its deadline, the verdict is "did not come true", whatever was done in part. It
+may be the only evidence (EV-3 does not apply). It stays "did not come true" if the result is delivered later; the
+summary mentions the delivery only if a cited document shows it. A reversal after the deadline changes nothing (DL-2). From "achieved once =
+achieved" (EA-1): criteria fully met before the reversal → "came true", provisionally; at the deadline it stays
+"came true" if the criteria are still met then (DL-2), and becomes "did not come true" if they are not, citing the
+earliest reversal as in row 5.
+
+Anything less precise is **not a negation** but **a separate claim**, recorded and judged on its own: a postponement
+(a new date), a changed figure, a softer or hedged wording, a partial step back, a statement on a topic that is not
+exactly the same. The earlier claim is judged by the other rules, at its own deadline. A promise made again after a
+reversal is likewise a new claim (row 10).
+
+**How a separate claim gets recorded** (gap G): when the evidence-pack cutter stops on row 8, or the dispatcher sees a
+separate claim in a given source, the dispatcher appends one line to the link inbox `data/inbox.jsonl`
+(team/run/pack-prompt.md rule 4a), and it goes through extraction and queue A like any new claim.
+
+**Same speaker** (gap E): for a person, the person. For a party, a government or an institution as subject, who may
+speak for it is not yet defined; until it is, a statement counts as a reversal only when the same subject published it
+(its own platform, communiqué or official channel), and anything less clear is a statement.
+
+The source kind stays `renunciation` (db/schema.sql, source-rule.md): it is the speaker's explicit public reversal of
+the claim. Renaming it would touch the record format, every prompt and the site for no change in what is stored.
+
+**Which claims it applies to: promises only** (founder, 2026-11-23, decision 0015 question 1: a person may revise a
+prediction every month; each prediction is a separate claim judged on its own against the outcome, and a later
+revision never negates or replaces an earlier one: "words are gold, we weigh them all"). Grouping a person's revised
+predictions into a series is a later item, not part of 0.6. This one line is the switch: the programs hold the same list once each (`REVERSAL_TYPES` in src/rules.js; the `c.type IN (...)`
+lists of `outcome_has_evidence` and `evidence_is_primary` in db/schema.sql; a test checks that they agree). A type
+taken off the list falls under row 1.
+
+**Truth table.** This table is the single statement of RN-1. R is the date of the reversal (`sources.published_on`),
+"said" the day the claim was made (`claims.said_on`), "today" the date of judging: the judge input's date for a vote,
+the date of confirmation for the ledger. With more than one reversal, the earliest one that falls in row 4 or 5
+counts.
+
+| row | claim | the later statement | criteria fully met before R | verdict | cite it? | the only evidence? |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | of a type not on the list above | any | — | by the other rules; it is a lead like a statement (EV-2) | never | — |
+| 2 | `vague` or `hedged` | any | — | "unverifiable" (VG-1); not cited, so the summary does not mention it | never | — |
+| 3 | `measurable` | a reversal, undated or R before said | — | it reverses nothing yet said: the evidence pack is refused until its date or kind is corrected | never | — |
+| 4 | `measurable` | a reversal, said ≤ R ≤ deadline, R ≤ today | yes | before the deadline, "came true", provisional (EA-1); at the deadline, "came true" if the criteria are still met then, otherwise "did not come true" (DL-2) | under "came true", never (so the summary does not mention it); under "did not come true", the earliest reversal, as in row 5 | under "did not come true", yes |
+| 5 | `measurable` | a reversal, said ≤ R ≤ deadline, R ≤ today | no: nothing, a part, or done only after R | "did not come true", from R on, before or after the deadline; the earliest such reversal is cited, and `rules_applied` names RN-1; what was done in part, or later, is in the summary only if a cited document shows it | always | yes |
+| 6 | `measurable` | a reversal, said ≤ R ≤ deadline, R after today | — | not yet: the other rules (before the deadline, "pending", DL-3) | not yet | — |
+| 7 | `measurable` | a reversal, R after the deadline | — | changes nothing: the state at the deadline (DL-2) by the other rules; not cited, so the summary does not mention it | never | — |
+| 8 | any | **a separate claim, not a reversal:** a postponement, a changed figure, a softer or hedged wording, a partial step back, a topic not exactly the same | — | the earlier claim is judged by the other rules; the later statement goes to the link inbox as a new candidate claim (above) and is a `statement` here; a document labelled `renunciation` that is one of these has its kind corrected and the pack is cut again | never | — |
+| 9 | any | someone else's words (a minister, a spokesperson, a journalist), or no statement about the claim ("reconsidering", "studying") | — | not a reversal: a statement (EV-2); kind corrected if labelled `renunciation` | never | — |
+| 10 | promise | the same promise **made again** after a reversal | — | a new claim, recorded and judged on its own; the reversed promise stays "did not come true" | — | — |
+
+What follows from the table, for the programs:
+
+- In rows 4 and 5 only "came true" and "did not come true" are possible: not "pending", "partly came true", "to be
+  assessed" or "unverifiable".
+- A reversal is cited whenever it decides "did not come true" (row 5, and row 4 when the result was undone by the
+  deadline), and never otherwise, so it may stand among a verdict's evidence only under "did not come true", on a
+  measurable claim of a listed type, dated said ≤ R ≤ deadline and R ≤ today; the earliest such reversal is the one
+  cited. There it is enough evidence on its own (EV-1 is met by it).
+- Whether the criteria were fully met *before* R (row 4 against row 5), and whether a statement is an explicit and
+  precise reversal of the same claim (rows 5 against 8 and 9), are judgement: the judges, the neutrality review and
+  the founder, not the program. In doubt, it is not a reversal (row 8).
+
+## 6. The six verdicts (decision 0008 and its revision)
+
+Promises and predictions share one set of verdicts.
+
+| value | English | Français | when |
+| --- | --- | --- | --- |
+| `unverifiable` | Unverifiable | Invérifiable | VG-1; or VG-2 |
+| `pending` | Pending | En attente | before the deadline (DL-3) |
+| `to_evaluate` | To be assessed | À évaluer | after the deadline, evidence not enough (DL-4) |
+| `came_true` | Came true | Réalisée | criteria fully met at the deadline (OC-1, DL-2); before the deadline, provisionally (EA-1) |
+| `partly_came_true` | Partly came true | Partiellement réalisée | after the deadline, a result short of the whole (OC-2) |
+| `not_came_true` | Did not come true | Non réalisée | after the deadline, criteria shown not met (EV-3); or reversed by the speaker (RN-1 row 5) |
+
+- **OC-1.** A sentence that bundles several measures is "came true" only when every measure is done; some of them is
+  "partly came true" (founder, 2026-11-22).
+- **OC-2.** "Partly came true" needs a result on the measure the criteria use, short of the whole (64 of 65; 94% of
+  100%; two of three bundled measures), after the deadline. The summary gives the figures. Never rounded up.
+- **OC-3.** The result is judged, not the effort: a bill tabled and not passed is not "came true".
+- **EV-1, EV-2, EV-3:** what counts as evidence is source-rule.md. A verdict about an outcome ("came true", "partly
+  came true", "did not come true", and "unverifiable" on a measurable claim) needs one official document or two
+  independent sources from different publishers (EV-1), or, for "did not come true", RN-1 row 5.
+- Every verdict except "pending" has a one-sentence summary, in French and in English, saying what the evidence shows,
+  not an opinion. It states only what the cited evidence shows (principle 2): what is not cited is not mentioned. A
+  vague or hedged item's summary says why the wording cannot be checked. "Unverifiable" and "to be assessed" are not negative judgements.
+
+## 7. Criteria are written when the item is recorded
+
+Every `measurable` item states at recording time what result counts as "came true" and which kind of evidence checks
+it. The criteria are not changed after the result is known; a correction that is needed is recorded and public.
+
+## 8. Wording
+
+Published text describes results, never motives, with no emotive words. Not "lied", "betrayed", but "the deadline
+has passed; the official gazette contains no such law". Came true and did not come true are said in the same plain
+tone.
+
+## 9. Who judges
+
+1. The jury: at least two different models, each independently, without seeing each other's verdict.
+2. The neutrality review: choice of items, wording, evidence.
+3. The founder confirms each item before it is published.
+
+Target: automatic approval when four models agree, after 10, then 30, then 100 items where unanimous jury verdicts
+match the founder's confirmation at 99% (decision 0003).
+
+## 10. Corrections
+
+Anyone can ask for a correction. How the recorded person's reply is published is decided when there is a real case
+(decision 0007). Every change to a published verdict is public, before and after, with its date.
+
+## Not decided yet
+
+- How predictions (as distinct from promises) are judged: baseline and minimum sample; how revised predictions of the
+  same event are shown together (a later item; each stays a claim of its own).
+- Whether a reversal by someone else than the speaker (a minister, a spokesperson) counts: not now (RN-1 row 9).
+- How much of a result is "partly" rather than "came true", and how the summary says it: to be calibrated on real items.
+- How many items a person needs before a ratio is shown; until then the person page shows counts per verdict.
+
+## Where each rule is applied
+
+| rule | program (refuses) | people (judge) |
+| --- | --- | --- |
+| VG-1 | schema `verdict_fits_verifiability`; vote check; the desk records VG-1 for vague and hedged items | — |
+| VG-2 | schema `outcome_has_evidence`; deadline rule (`deadlineProblem`, src/rules.js) | whether the condition did not arise |
+| VG-3 | schema: a prediction's deadline is never `inferred` (claims row check); extraction marks a prediction without a time range `vague` | whether the range is clear |
+| DL-1, DL-3, DL-4 | `deadlineProblem`, used by `confirm()` and the vote checks | whether evidence is enough |
+| DL-2 | — | which passage shows the state at the deadline |
+| EA-1 | `deadlineProblem` lets "came true" through before the deadline; `confirm()` requires EA-1 among the rules of a "came true" confirmed on or before the deadline; the desk brings an early "came true" back after the deadline and keeps C off until a round judged after the deadline is adopted (src/desk.js) | whether the criteria are fully met |
+| RN-1 | schema `evidence_is_primary` and `outcome_has_evidence` (row 5 only; type on the list; date said ≤ R ≤ deadline); `futureEvidence` (R ≤ today); `deadlineProblem` (row 5 before the deadline); `confirm()` (a cited reversal needs RN-1 in `rules_applied`); `checkPack` (row 3, and a reversal on a claim of a listed type is always excerpted); vote check `renunciationProblems` (rows 4 and 5: only "came true" or "did not come true", row 5 cites it, RN-1 named) | rows 4 against 5 (met before R?), rows 5 against 8 and 9 (an explicit, precise reversal of the same claim?) |
+| ST-1, ST-2, ST-3 | through the rules that come from them | ST-3: how every passage and claim is read |
+| EV-1 | schema `outcome_has_evidence`; vote check | whether each source establishes the fact itself |
+| EV-2 | schema `evidence_is_primary`; vote check | whether an `official` document only assesses its own work |
+| EV-3, OC-1, OC-2, OC-3 | — | yes |
+| every rule | `rules_applied` ids must exist in the standard's current version (src/standard.js; vote checks and desk); `confirm()` accepts only the current version and its ids; schema `rules_recorded` | whether the right ids are named: the founder, at the desk |

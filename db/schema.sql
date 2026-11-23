@@ -1,19 +1,28 @@
--- KANVERIFY record format, version 11. (9: the snapshot carries the origin's source id and
+-- KANVERIFY record format, version 12. (9: the snapshot carries the origin's source id and
 -- each evidence item's source id. 10: Fable review 3 — source ids and files fixed, one
 -- publisher normalisation, renunciation dated, measurable claims have a deadline, and the
 -- review desk's round bookkeeping: jury_votes.pack_sha256, verdicts.based_on_round.
--- 11: a renunciation may be cited beside other evidence under partly_came_true, came_true,
--- to_evaluate and unverifiable on a measurable promise, so the ledger sees that the wait ended
--- (decision 0013); the snapshot's verdict says which jury round it rests on.)
+-- 11: the snapshot's verdict says which jury round it rests on. 12: every verdict records the
+-- rules it was judged by, verdicts.rules_version and verdicts.rules_applied, in the snapshot
+-- (decision 0014); a 'renunciation' source — the speaker's explicit public reversal of the same
+-- claim (decision 0015, S1), on a promise — is cited only under not_came_true on a
+-- measurable claim, dated on or after the day it was made and on or before its deadline (verdict-standard.md
+-- 0.6, RN-1 row 5), which removes format 11's widening; a prediction never has an inferred
+-- deadline (VG-3).)
+--
+-- Verdict rules have ids (docs/methodology/verdict-standard.md, table "Rules"); the comments
+-- below name the ones each check applies.
 --
 -- Verdicts (docs/decisions/0008-five-verdicts.md and its revision, verdict-standard.md
--- v0.3 section 5): six values shared by promises and predictions —
+-- 0.6 section 6): six values shared by promises and predictions —
 --   unverifiable      too vague or hedged to be checked, or its condition never arose
 --   pending           not due yet
 --   to_evaluate       due, but the evidence is not enough to decide; says what is missing
 --   came_true         the criteria were fully met (may be given before the deadline)
 --   partly_came_true  due, and the criteria were met in part; the summary gives the figures
 --   not_came_true     due, and it did not happen; or the speaker explicitly gave up a promise
+--                     or explicitly reversed a claim between the day it was made and its
+--                     deadline (RN-1 row 5)
 -- The deadline is not checked in this file: a view that depends on today's date would give
 -- a different answer depending on when and where it is read. It is checked, with the same
 -- function as the jury's vote checks (src/rules.js deadlineProblem, local date), in
@@ -120,16 +129,15 @@ END;
 --     (a press release or progress report saying a promise is kept) is a 'statement',
 --     not 'official': it assesses rather than records (source-rule.md v0.3, founder,
 --     2026-11-22). Cite the law, budget or data it points to instead;
---   one exception — 'renunciation': the speaker's own public, explicit abandonment of
---     a promise, verbatim (decision 0008, source-rule.md last section). Against the
---     speaker's interest, so for "not_came_true" on a promise alone it is evidence, and
---     one is enough. It also ends the wait for a promise's deadline (decision 0013), so
---     under "partly_came_true", "came_true", "to_evaluate", and "unverifiable" on a
---     measurable promise, it may be cited beside other evidence, never alone, as the record
---     that the wait ended; there it is never evidence of a result (format 11). On a
---     prediction (taking back a forecast says nothing about whether the event happened),
---     on a vague or hedged promise, and under "pending" it is a lead like 'statement'. It
---     must be published on or after the day the promise was made. Never an origin;
+--   one exception — 'renunciation': the speaker's own later public statement that explicitly
+--     and precisely reverses the same claim, verbatim (decision 0008; decision 0015 S1). A
+--     postponement, a changed figure or a softer wording is not one: it is a separate claim
+--     (RN-1 row 8). RN-1 (verdict-standard.md 0.6): on a measurable
+--     claim of a type on RN-1's list (promises only), dated on or after the day the
+--     claim was made and on or before its deadline, it makes the verdict "not_came_true" and
+--     is enough evidence on its own (row 5). It is cited nowhere else: on a type not on the
+--     list, on a vague or hedged claim, after the deadline, and under every other verdict it
+--     is a lead like 'statement' (rows 1, 2, 4, 7). Never an origin;
 --   official — issued by a public institution and recording something: 'law',
 --     'gazette', 'statistic', 'budget', 'parliament', 'court', 'audit', and 'official'
 --     for any other official document that records rather than assesses. One is enough;
@@ -229,7 +237,10 @@ CREATE TABLE claims (
   CHECK ((deadline IS NULL) = (deadline_basis IS NULL)),
   -- A measurable claim always has a deadline, stated or inferred (verdict-standard.md
   -- section 3); without one no verdict could ever be due.
-  CHECK (verifiability <> 'measurable' OR deadline IS NOT NULL)
+  CHECK (verifiability <> 'measurable' OR deadline IS NOT NULL),
+  -- VG-3 (verdict-standard.md 0.6, ST-2; format 12): a prediction is judged against the time range
+  -- it states itself; it never gets an inferred deadline. Without a range it is recorded as vague.
+  CHECK (type <> 'prediction' OR deadline_basis IS NOT 'inferred')
 ) STRICT;
 
 -- The working verdict on a claim. One row per claim.
@@ -247,6 +258,18 @@ CREATE TABLE verdicts (
   -- The jury round this working verdict was based on (review desk bookkeeping). It is in the
   -- snapshot, so the site counts the votes of that round only (format 11).
   based_on_round   INTEGER,
+  -- The rules it was judged by (decision 0014, format 12): the version of
+  -- docs/methodology/verdict-standard.md, and the ids of the rules that decided it, as a JSON list
+  -- (["DL-2", "EV-1"]). Required for every verdict, so a rule change never silently rewrites the past.
+  -- The form of each id is checked at publication (rules_recorded): a row CHECK cannot read a list.
+  -- That the version is kept and the ids exist in it is checked by confirm(), the desk and the vote
+  -- checks (src/standard.js; Fable review 8, finding 2).
+  -- Digits, one dot, digits; nothing hidden after a NUL character (GLOB stops there), as for the ids.
+  rules_version    TEXT NOT NULL CHECK (rules_version GLOB '[0-9]*.[0-9]*' AND rules_version NOT GLOB '*[^0-9.]*'
+                                        AND rules_version NOT GLOB '*.*.*'
+                                        AND length(CAST(rules_version AS BLOB)) = length(rules_version)),
+  rules_applied    TEXT NOT NULL CHECK (json_valid(rules_applied) AND json_type(rules_applied) = 'array'
+                                        AND json_array_length(rules_applied) > 0),
   -- Principle 1: "to_evaluate" says where it is stuck and what is missing — in at least
   -- one language. Both languages are required only to publish (rule "bilingual").
   CHECK (verdict <> 'to_evaluate'
@@ -328,22 +351,25 @@ SELECT
    AND (v.verdict = 'pending'
         OR length(trim(coalesce(v.summary_fr, ''), char(32, 9, 10, 11, 12, 13, 133, 160, 173, 5760, 8192, 8193, 8194, 8195, 8196, 8197, 8198, 8199, 8200, 8201, 8202, 8203, 8204, 8205, 8232, 8233, 8239, 8287, 8288, 12288, 65279))) > 0
         OR length(trim(coalesce(v.summary_en, ''), char(32, 9, 10, 11, 12, 13, 133, 160, 173, 5760, 8192, 8193, 8194, 8195, 8196, 8197, 8198, 8199, 8200, 8201, 8202, 8203, 8204, 8205, 8232, 8233, 8239, 8287, 8288, 12288, 65279))) > 0)) AS summary_stated,
-  -- A verdict that asserts something about the world rests on evidence: one existing
+  -- EV-1: a verdict that asserts something about the world rests on evidence: one existing
   -- official document, or two independent sources from different publishers. That is
   -- "came_true", "partly_came_true", "not_came_true", and "unverifiable" on a measurable
-  -- claim (the evidence
-  -- shows its condition never arose; principle 2). "unverifiable" on a vague or hedged
-  -- claim follows from the wording alone and needs none. For "not_came_true" on a
-  -- promise, one renunciation by the speaker is also enough, if it was published on or
-  -- after the day the promise was made. Two independent sources means two documents
-  -- with different publishers (kv_publisher_key) and different archived files (sha256).
+  -- claim (VG-2: the evidence shows its condition never arose; principle 2). "unverifiable"
+  -- on a vague or hedged claim (VG-1) follows from the wording alone and needs none.
+  -- RN-1 row 5: for "not_came_true" on a measurable claim, one public reversal by the
+  -- speaker is also enough, if it was published on or after the day the claim was made and on
+  -- or before its deadline (one after the deadline changes nothing, row 7). The type list is
+  -- RN-1's switch, the same as REVERSAL_TYPES in src/rules.js (and in evidence_is_primary
+  -- below); a test checks they agree. Two independent
+  -- sources means two documents with different publishers (kv_publisher_key) and different
+  -- archived files (sha256).
   (v.id IS NOT NULL
    AND (v.verdict IN ('pending', 'to_evaluate')
         OR (v.verdict = 'unverifiable' AND c.verifiability IS NOT 'measurable')
-        OR (v.verdict = 'not_came_true' AND c.type = 'promise'
+        OR (v.verdict = 'not_came_true' AND c.type IN ('promise') AND c.verifiability = 'measurable'
             AND EXISTS (SELECT 1 FROM verdict_evidence e JOIN sources s ON s.id = e.source_id
                         WHERE e.verdict_id = v.id AND s.kind = 'renunciation'
-                          AND s.published_on >= c.said_on))
+                          AND s.published_on >= c.said_on AND s.published_on <= c.deadline))
         OR EXISTS (SELECT 1 FROM verdict_evidence e JOIN sources s ON s.id = e.source_id
                    WHERE e.verdict_id = v.id
                      AND s.kind IN ('law', 'gazette', 'statistic', 'budget', 'parliament',
@@ -355,25 +381,36 @@ SELECT
                      AND s1.kind IN ('media', 'dataset_study') AND s2.kind IN ('media', 'dataset_study')
                      AND kv_publisher_key(s1.publisher) IS NOT kv_publisher_key(s2.publisher)
                      AND s1.sha256 <> s2.sha256))) AS outcome_has_evidence,
-  -- A statement is a lead, never evidence — whoever made it. A renunciation may stand among
-  -- the evidence only on a promise, published on or after the day it was made, and only
-  -- under "not_came_true" (alone or not) or, beside at least one other evidence row, under
-  -- "partly_came_true", "came_true", "to_evaluate", or "unverifiable" on a measurable
-  -- promise (format 11). It counts as evidence of an outcome only under "not_came_true"
-  -- (outcome_has_evidence above).
+  -- EV-2: a statement is a lead, never evidence — whoever made it. RN-1: a 'renunciation' (a
+  -- public reversal by the speaker) may stand among the evidence only in row 5 — under
+  -- "not_came_true", on a measurable claim of a type on RN-1's list, published on or after the
+  -- day the claim was made and on or before its deadline (the same
+  -- condition as outcome_has_evidence above, and src/rules.js renunciationAdmitted). Under
+  -- every other verdict, on a type not on the list, on a vague or hedged claim, undated, or dated
+  -- outside that window it is refused (rows 1-4, 7). That it is not dated after the day of
+  -- confirmation is checked in confirm() (futureEvidence), as for every source.
   -- Evidence whose source is missing does not count.
   (NOT EXISTS (SELECT 1 FROM verdict_evidence e LEFT JOIN sources s ON s.id = e.source_id
                WHERE e.verdict_id = v.id
                  AND (s.id IS NULL
                       OR s.kind IN ('platform', 'statement')
                       OR (s.kind = 'renunciation'
-                          AND (c.type IS NOT 'promise'
-                               OR s.published_on IS NULL OR s.published_on < c.said_on
-                               OR v.verdict NOT IN ('not_came_true', 'partly_came_true', 'came_true', 'to_evaluate', 'unverifiable')
-                               OR (v.verdict = 'unverifiable' AND c.verifiability IS NOT 'measurable')
-                               OR (v.verdict IS NOT 'not_came_true'
-                                   AND NOT EXISTS (SELECT 1 FROM verdict_evidence e2 JOIN sources s2 ON s2.id = e2.source_id
-                                                   WHERE e2.verdict_id = v.id AND s2.kind <> 'renunciation'))))))) AS evidence_is_primary,
+                          AND NOT (c.type IN ('promise') AND c.verifiability = 'measurable'
+                                   AND v.verdict = 'not_came_true'
+                                   AND s.published_on IS NOT NULL AND c.deadline IS NOT NULL
+                                   AND s.published_on >= c.said_on AND s.published_on <= c.deadline))))) AS evidence_is_primary,
+  -- Decision 0014: the rules a verdict was judged by are recorded. The row checks require a
+  -- version and a non-empty JSON list; here every item must be a distinct rule id of the form
+  -- used in verdict-standard.md ('DL-2': two capital letters, a hyphen, a number without a
+  -- leading zero, nothing hidden after a NUL). Whether the ids exist in that version is for
+  -- the desk and the vote checks (src/standard.js).
+  (v.id IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM json_each(v.rules_applied) r
+                   WHERE r.type IS NOT 'text'
+                      OR r.value NOT GLOB '[A-Z][A-Z]-[1-9]*'
+                      OR substr(r.value, 4) GLOB '*[^0-9]*'
+                      OR length(CAST(r.value AS BLOB)) <> length(r.value))
+   AND (SELECT count(DISTINCT r.value) FROM json_each(v.rules_applied) r) = json_array_length(v.rules_applied)) AS rules_recorded,
   -- Both sites show the same record (decision 0007). Blank counts as missing.
   --   Quoted text: the claim's quote, and every evidence excerpt, has a translation into
   --     French unless its own language is French, and into English unless it is English.
@@ -428,7 +465,8 @@ SELECT
     'verdict', json_object(
       'verdict', v.verdict, 'summary_fr', v.summary_fr, 'summary_en', v.summary_en,
       'open_question_fr', v.open_question_fr, 'open_question_en', v.open_question_en,
-      'decided_by', v.decided_by, 'based_on_round', v.based_on_round),
+      'decided_by', v.decided_by, 'based_on_round', v.based_on_round,
+      'rules_version', v.rules_version, 'rules_applied', json(v.rules_applied)),
     'evidence', json((
       SELECT json_group_array(json_object(
                'source_id', e.source_id,
@@ -455,7 +493,7 @@ JOIN verdicts v ON v.claim_id = c.id
 JOIN publication_checks k ON k.claim_id = c.id
 WHERE k.has_subject AND k.origin_is_own_words AND k.has_verdict
   AND k.verdict_fits_verifiability AND k.summary_stated AND k.outcome_has_evidence AND k.evidence_is_primary
-  AND k.bilingual;
+  AND k.rules_recorded AND k.bilingual;
 
 -- ============================== LEDGER ==============================
 

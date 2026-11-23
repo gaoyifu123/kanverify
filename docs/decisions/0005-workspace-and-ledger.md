@@ -152,3 +152,40 @@ the `sources` counter and every archived file verified before the swap, script t
 and refuses otherwise). Once `publications` holds entries, plain INSERTs cannot carry them (`ledger_now`,
 `ledger_exact`). A migration route for a non-empty ledger must be designed and reviewed before the founder confirms
 the first verdict (principle 4).
+
+## Addendum 2026-11-23: Format 12 (rules recorded with each verdict; RN-1 from one truth table)
+
+- Status: built by the developer from the founder's decisions (0013 amendment, 0014, 0015) in one brief
+  (retrospective of 2026-11-23: data model, code, prompts and docs in one pass). Reviewed by Fable in the
+  record-format area before it counts.
+- **The rules a verdict was judged by are part of the record (decision 0014).** `verdicts.rules_version` (the version of
+  `docs/methodology/verdict-standard.md`) and `verdicts.rules_applied` (a JSON list of rule ids) are required on every
+  verdict row and go into the snapshot. `publication_checks.rules_recorded` checks that every item is a distinct id of
+  the standard's form (`DL-2`). Whether the version is kept and the ids exist in it is checked outside the database,
+  because the view cannot read the standard: by the vote checks, the desk, and (after Fable review 8, finding 2)
+  `confirm()` itself (`src/standard.js`), so a made-up version or id can never enter the append-only ledger and stop
+  the site build for good; after the re-check, `confirm()` accepts only the current version (R4). `confirm()` also
+  requires RN-1 among the rules when a reversal is cited (finding 5), and EA-1 for a "came_true" confirmed on or
+  before the deadline (R3). The
+  version has the same NUL guard as the ids. Every version of the standard is kept byte for byte in
+  `docs/methodology/versions/`, and a test checks that the live file equals the copy of its own version (finding 3),
+  so the text a version number stands for never changes. Why columns and not a table (principle 5): a verdict has one
+  list, read and written whole.
+- **A renunciation is read from one truth table (verdict-standard.md 0.6, RN-1).** It may stand among a verdict's
+  evidence only under `not_came_true`, on a measurable promise, dated on or after the day the promise was made and on
+  or before its deadline (row 5); there it is enough on its own. Format 11's widening (a renunciation beside other
+  evidence under `partly_came_true`, `came_true`, `to_evaluate`, `unverifiable`) is removed, and with it the
+  "ends the wait" machinery in `src/rules.js`, `src/ledger.js`, `src/pack.js` and the site. A renunciation dated after
+  the deadline is refused (Fable review 6 re-check, N2, closed). The claim types RN-1 applies to are one switch, written
+  once in `src/rules.js` (`REVERSAL_TYPES`, promises only, founder 2026-11-23) and once in the schema (`c.type IN
+  ('promise')`); a test checks they agree.
+- **A prediction never has an inferred deadline (VG-3, decision 0015 S2):** a claims row check.
+- The known limit of format 11 ("a `pending` verdict written by hand on a renounced promise, confirmed by calling
+  `confirm()` directly, is not caught") stays: the ledger sees only cited evidence. The vote checks and the desk refuse
+  every verdict but `came_true` or `not_came_true` once the pack holds a renunciation in its window.
+- Data: `data/kanverify.db` migrated under the exemption above (ledger still empty); backup
+  `data/kanverify-format11-backup-20261123.db`; rebuilt once more with the final schema after Fable review 8 (the first
+  format-12 file kept as `data/kanverify-format12-draft-backup-20261123.db`). Scripts and checks:
+  `docs/log/2026-11-23-format12-migration.md`.
+- Principles: 3 (one ruler, and visibly which one: every verdict names its rules), 2 (a renunciation is evidence only
+  where the table says), 4 (the rule written once, the code derived from it), 5 (two columns, no new table).
