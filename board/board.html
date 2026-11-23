@@ -12,9 +12,9 @@
   "meta": {
     "day": 2,
     "totalDays": 14,
-    "updated": "2026-11-23 17:33:40",
+    "updated": "2026-11-23 23:25:44",
     "launch": "Dec 5",
-    "headline": "End of day 2: your judging rules are written once (version 0.8) and every verdict records the rules it used; record format 12 passed Fable and is committed. Next: re-cut and re-vote the 10 trial claims under the new rules, then Macron and Trump. Only the Claude sign-in waits for you."
+    "headline": "Each judge can now run on its subscription or the API by one setting, and the item page shows the AI jury's votes in one plain line under each verdict. Both passed code review and are committed; the isolated Claude judge and this change wait for Fable."
   },
   "counts": [
     {
@@ -24,18 +24,18 @@
     },
     {
       "label": "Fable reviews passed",
-      "value": "7 of 7",
-      "target": "Judge prompt, formats 10/11/12, fetching, desk, pack rules; rules 0.8"
+      "value": "7 of 8",
+      "target": "Queued: isolated Claude judge + judge channel setting"
     },
     {
       "label": "Tests",
-      "value": "346",
+      "value": "366",
       "target": "All passing"
     },
     {
       "label": "Jury",
-      "value": "2 of 3",
-      "target": "Codex working; Claude installed, waits for your sign-in; Gemini waits for a key"
+      "value": "2 of 4",
+      "target": "OpenAI and Anthropic on subscriptions, isolated; Google and Mistral: terms to check, API possible"
     }
   ],
   "done": [
@@ -68,26 +68,20 @@
     "Renunciation step-back closed by your choice (simplify)",
     "Record format 12 built: rules written once (verdict standard 0.6), verdicts record their rules, simpler renunciation; database upgraded with backup",
     "Record format 12 and rules 0.8 passed Fable; committed (tags fable-record-format-12-2026-11-23, rules-0.8)",
-    "Daily log written (docs/log/2026-11-23.md)"
+    "Daily log written (docs/log/2026-11-23.md)",
+    "Claude command line installed and signed in by you; checked working",
+    "Claude judge isolated through the command line; test run on your computer passed (6 of 6); committed",
+    "Item page: one line with each AI juror's vote, person first (code review passed)",
+    "Judges switchable between subscription and API by setting (code review passed)"
   ],
   "next": [
+    "Check the subscription terms of Google (Gemini) and Mistral; otherwise API",
+    "Fable review: isolated Claude judge and the judge channel setting",
     "Transcribe the missing pages; re-cut and re-vote the 10 trial claims under rules 0.8",
-    "Desk and site in a real browser",
-    "Create Macron and Trump, import candidates; you confirm at the desk",
-    "Before your first real confirmation: a way to upgrade the database once it holds publications",
-    "Small follow-ups from Fable; designer: mark an overdue re-check on the site"
+    "Desk and site in a real browser; create Macron and Trump, import candidates",
+    "Before your first real confirmation: a way to upgrade the database once it holds publications"
   ],
   "needs": [
-    {
-      "id": "claude-login",
-      "t": "When you are at the computer: sign in to the Claude command line once",
-      "d": "Installed (version 2.1.330); terms checked: running it in our own scripts on your own plan is documented use. Open a terminal, type claude, and follow the sign-in with your Claude account. I never handle the login. After that the Claude judge runs isolated, like Codex.",
-      "options": [
-        "Done",
-        "Not yet"
-      ],
-      "placeholder": "Anything that went wrong"
-    },
     {
       "id": "note",
       "t": "Anything else to tell me",
@@ -767,6 +761,12 @@
       "t": "Three judging standards: S1 words are gold (a later public contradiction by the speaker negates the claim); S2 history moves in cycles (promise: term of office; prediction: its time range); S3 common sense, final result",
       "by": "You decided in chat",
       "s": "in_progress"
+    },
+    {
+      "id": "0016",
+      "t": "How sure the speaker was: read by judgment with a stated reason, his own number first; no word table",
+      "by": "You decided in chat",
+      "s": "done"
     }
   ],
   "open": [
