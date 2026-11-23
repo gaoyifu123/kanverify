@@ -1,5 +1,6 @@
 // The one error type the AI layer throws. `code` is one of:
-// bad_request, unsupported, unknown_provider, missing_key, network, timeout, http, bad_response, bad_json.
+// bad_request, unsupported, unknown_provider, missing_key, network, timeout, http, bad_response, bad_json,
+// secret_in_reply (the answer carried a value from .env or a token-like string; see secrets.js).
 export class AiError extends Error {
   constructor(code, message, { provider, status } = {}) {
     super(message);

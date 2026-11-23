@@ -223,7 +223,7 @@ test('a redirect to a private address is refused in production mode', async (t) 
   const fetchImpl = fakeFetch(null, { location: `${base}/admin` }, 302);
   const resolver = async (host, opts) => (host === 'public.example' ? PUBLIC_DNS() : (await import('node:dns/promises')).lookup(host, opts));
   await assert.rejects(
-    archive(db, { url: 'https://public.example/doc', ...META }, { fetchImpl, resolver, evidenceDir: dir }),
+    archive(db, { url: 'https://public.example/doc', ...META }, { fetchImpl, resolver, evidenceDir: dir, allowCrossHost: true }),
     /Refusing 127\.0\.0\.1/
   );
   assert.equal(fetchImpl.calls.length, 1);
@@ -448,14 +448,101 @@ test('registerSource checks the file, URL and media type itself', async (t) => {
   assert.ok(readdirSync(dir).includes(sha256));
 });
 
-test('registerSource removes its file after a failed insert when no row uses the hash', async (t) => {
+test('F1: registerSource never deletes; only the call that created a file may remove it', async (t) => {
   const { db, dir } = setup(t);
-  const { registerSource, storeEvidenceBytes } = await import('../src/archive.js');
-  const { sha256 } = storeEvidenceBytes(dir, Buffer.from('only copy'));
-  assert.throws(() => registerSource(db, { ...META, kind: 'nonsense', url: 'https://example.org/b', sha256, media_type: 'text/plain' }, dir));
-  assert.deepEqual(readdirSync(dir), []);
+  const { registerSource, removeIfCreated, storeEvidenceBytes } = await import('../src/archive.js');
+  const first = storeEvidenceBytes(dir, Buffer.from('only copy'));
+  assert.equal(first.created, true);
+  const again = storeEvidenceBytes(dir, Buffer.from('only copy'));
+  assert.equal(again.created, false, 'the same bytes already there: not created by this call');
+  const bad = { ...META, kind: 'nonsense', url: 'https://example.org/b', sha256: first.sha256, media_type: 'text/plain' };
+  assert.throws(() => registerSource(db, bad, dir));
+  assert.deepEqual(readdirSync(dir), [first.sha256], 'registerSource left the file alone');
+  removeIfCreated(db, again);
+  assert.deepEqual(readdirSync(dir), [first.sha256], 'a call that found the file there never removes it');
+  removeIfCreated(db, first);
+  assert.deepEqual(readdirSync(dir), [], 'the creating call may remove it when no row uses it');
 });
 
+test('F1: a file someone else put there survives a failed archive()', async (t) => {
+  const { db, dir } = setup(t);
+  const body = 'already archived bytes';
+  writeFileSync(join(dir, sha(body)), body); // e.g. another database's evidence in the same folder
+  db.exec("CREATE TRIGGER no_sources BEFORE INSERT ON sources BEGIN SELECT RAISE(ABORT, 'refused for the test'); END");
+  await assert.rejects(archive(db, { url: 'https://example.org/x', ...META }, { fetchImpl: fakeFetch(body), resolver: PUBLIC_DNS, evidenceDir: dir }), /refused for the test/);
+  assert.deepEqual(readdirSync(dir), [sha(body)]);
+  // The same failure on bytes this call brought in removes them again.
+  await assert.rejects(archive(db, { url: 'https://example.org/y', ...META }, { fetchImpl: fakeFetch('new bytes'), resolver: PUBLIC_DNS, evidenceDir: dir }), /refused for the test/);
+  assert.deepEqual(readdirSync(dir), [sha(body)]);
+});
+
+test('F1: a file with the right name but wrong bytes is repaired, not counted as created', async (t) => {
+  const { dir } = setup(t);
+  const { storeEvidenceBytes } = await import('../src/archive.js');
+  const bytes = Buffer.from('the real bytes');
+  writeFileSync(join(dir, sha(bytes)), 'damaged');
+  const r = storeEvidenceBytes(dir, bytes);
+  assert.equal(r.created, false);
+  assert.deepEqual(readFileSync(r.path), bytes);
+});
+
+test('F6: a redirect to another host is refused unless allowCrossHost; provenance records every hop', async (t) => {
+  const { db, dir } = setup(t);
+  const hops = (url) => (url.includes('a.example') ? new Response(null, { status: 302, headers: { location: 'https://b.example/doc' } })
+    : url.includes('/start') ? new Response(null, { status: 301, headers: { location: '/moved' } })
+      : new Response('document', { status: 200, headers: { 'content-type': 'text/plain' } }));
+  const fetchImpl = async (url) => hops(url);
+  await assert.rejects(archive(db, { url: 'https://a.example/doc', ...META }, { fetchImpl, resolver: PUBLIC_DNS, evidenceDir: dir }), /another host/);
+  assert.equal(count(db), 0);
+  assert.deepEqual(readdirSync(dir), []);
+
+  const provenanceFile = join(dir, '..', 'candidates', 'archive-provenance.jsonl');
+  const cross = await archive(db, { url: 'https://a.example/doc', ...META }, { fetchImpl, resolver: PUBLIC_DNS, evidenceDir: dir, allowCrossHost: true, provenanceFile });
+  const same = await archive(db, { url: 'https://c.example/start', ...META }, { fetchImpl, resolver: PUBLIC_DNS, evidenceDir: dir, provenanceFile });
+  assert.equal(same.created, false, 'same bytes as before');
+  const lines = readFileSync(provenanceFile, 'utf8').trimEnd().split('\n').map((l) => JSON.parse(l));
+  assert.deepEqual(lines.map((l) => [l.source_id, l.requested_url, l.hops, l.final_url, l.sha256]), [
+    [cross.id, 'https://a.example/doc', ['https://a.example/doc', 'https://b.example/doc'], 'https://b.example/doc', sha('document')],
+    [same.id, 'https://c.example/start', ['https://c.example/start', 'https://c.example/moved'], 'https://c.example/moved', sha('document')],
+  ]);
+  assert.equal(new Date(lines[0].retrieved_at).toISOString(), lines[0].retrieved_at);
+});
+
+test('F6: test folders write no provenance unless asked; 64:ff9b:1::/48 is forbidden', async (t) => {
+  const { db, dir } = setup(t);
+  await archive(db, { url: 'https://example.org/z', ...META }, { fetchImpl: fakeFetch('z'), resolver: PUBLIC_DNS, evidenceDir: dir });
+  assert.deepEqual(readdirSync(join(dir, '..')).sort(), ['evidence']);
+  assert.equal(isForbiddenAddress('64:ff9b:1::a00:1'), true);
+  assert.equal(isForbiddenAddress('64:ff9b:1:ffff::1'), true);
+});
+
+test('F6: orphans are hash-named files with no row; listing deletes nothing', async (t) => {
+  const { db, dir } = setup(t);
+  const { listOrphans, storeEvidenceBytes } = await import('../src/archive.js');
+  const kept = await archive(db, { url: 'https://example.org/k', ...META }, { fetchImpl: fakeFetch('kept'), resolver: PUBLIC_DNS, evidenceDir: dir });
+  const orphan = storeEvidenceBytes(dir, Buffer.from('orphan'));
+  writeFileSync(join(dir, 'notes.txt'), 'not hash-named');
+  assert.deepEqual(listOrphans(db, dir), [orphan.path]);
+  assert.ok(readdirSync(dir).includes(kept.sha256) && readdirSync(dir).includes(orphan.sha256));
+});
+
+test('F5: an expected PDF without %%EOF in its last 1 KB is refused', async (t) => {
+  const { db, dir } = setup(t);
+  const opts = (body) => ({ fetchImpl: fakeFetch(body), resolver: PUBLIC_DNS, evidenceDir: dir, expectMediaType: 'application/pdf' });
+  await assert.rejects(archive(db, { url: 'https://example.org/cut.pdf', ...META }, opts('%PDF-1.7 cut in the middle')), /%%EOF/);
+  await assert.rejects(archive(db, { url: 'https://example.org/far.pdf', ...META }, opts(`%PDF-1.7\n%%EOF\n${'x'.repeat(1100)}`)), /%%EOF/);
+  assert.equal(count(db), 0);
+  assert.deepEqual(readdirSync(dir), []);
+  const ok = await archive(db, { url: 'https://example.org/ok.pdf', ...META }, opts(`%PDF-1.7\n${'y'.repeat(5000)}\n%%EOF\r\n`));
+  assert.equal(ok.created, true);
+});
+
+test('F6: short writes are looped until every byte is on disk', async (t) => {
+  const { db, dir } = setup(t);
+  const big = 'b'.repeat(3 * 1024 * 1024);
+  const r = await archive(db, { url: 'https://example.org/big', ...META }, { fetchImpl: fakeFetch(big), resolver: PUBLIC_DNS, evidenceDir: dir });
+  assert.equal(readFileSync(r.path).length, big.length);
+});
 // --- expectMediaType: a bot-check or error page served with 200 is refused before registering ---
 
 test('expectMediaType refuses another Content-Type and registers nothing', async (t) => {
@@ -485,13 +572,13 @@ test('expectMediaType application/pdf accepts a PDF header split across chunks',
   const enc = new TextEncoder();
   const body = new ReadableStream({
     start(c) {
-      for (const part of ['%P', 'DF', '-1.7 rest']) c.enqueue(enc.encode(part));
+      for (const part of ['%P', 'DF', '-1.7 rest\n%%E', 'OF\n']) c.enqueue(enc.encode(part));
       c.close();
     },
   });
   const r = await archive(db, { url: 'https://example.org/doc.pdf', ...META }, {
     fetchImpl: fakeFetch(body), resolver: PUBLIC_DNS, evidenceDir: dir, expectMediaType: 'application/pdf',
   });
-  assert.equal(r.sha256, sha('%PDF-1.7 rest'));
+  assert.equal(r.sha256, sha('%PDF-1.7 rest\n%%EOF\n'));
   assert.equal(count(db), 1);
 });

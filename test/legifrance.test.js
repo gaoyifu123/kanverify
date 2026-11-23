@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDatabase } from '../src/db.js';
@@ -272,4 +272,24 @@ test('search returns cids and titles without highlight tags', async () => {
 
 test('a client without credentials is refused', () => {
   assert.throws(() => createLegifranceClient({ clientId: '', clientSecret: SECRET }), /PISTE_CLIENT_ID/);
+});
+
+test('F6: the same text with the same bytes is not added twice', async (t) => {
+  const { db, dir } = setup(t);
+  const c = client(consult());
+  const a = await archiveLegifranceText(db, CID, { kind: 'law' }, { client: c, evidenceDir: dir });
+  const b = await archiveLegifranceText(db, CID, { kind: 'law' }, { client: c, evidenceDir: dir });
+  assert.equal(a.duplicate, false);
+  assert.equal(b.duplicate, true);
+  assert.equal(b.id, a.id);
+  assert.equal(db.prepare('SELECT count(*) AS n FROM sources').get().n, 1);
+});
+
+test('F1: a refused insert never removes an evidence file that was already there', async (t) => {
+  const { db, dir } = setup(t);
+  const sha = createHash('sha256').update(TEXT_BYTES).digest('hex');
+  writeFileSync(join(dir, sha), TEXT_BYTES); // e.g. kept by another database sharing the folder
+  db.exec("CREATE TRIGGER no_sources BEFORE INSERT ON sources BEGIN SELECT RAISE(ABORT, 'refused for the test'); END");
+  await assert.rejects(archiveLegifranceText(db, CID, { kind: 'law' }, { client: client(consult()), evidenceDir: dir }), (e) => e.code === 'store');
+  assert.deepEqual(readdirSync(dir), [sha]);
 });

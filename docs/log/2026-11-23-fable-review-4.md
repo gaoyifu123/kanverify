@@ -13,3 +13,5 @@ no credential in errors, hash-named paths, exclusive fsynced temp files, Codex w
 - **F4 (low-medium)** The Codex child environment is filtered by a name denylist; `PISTE_CLIENT_ID` and other secrets pass. Use an allowlist.
 - **F5 (low)** A close-delimited response cut by the server is stored as a whole file; for PDFs, require `%%EOF` near the end.
 - **F6 (low)** Short `writeSync` not looped in `archive()`; redirect chain not kept in a provenance file; source row keeps the model-chosen kind after a cross-host redirect; `64:ff9b:1::/48` not forbidden; literal bidi characters in a federalregister.js regex; crash orphans not swept; `archiveLegifranceText` duplicates rows; Codex stderr tail can echo the prompt into a vote error.
+
+## Re-check 1: SEND BACK (R1 Codex timeout not bounded; R2 JSON-escaped secrets). Re-check 2: PASS. Residual F3 risk awaits the founder (board item `judge-file-access`).

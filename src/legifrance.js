@@ -16,11 +16,12 @@
 // Consolidated versions (LEGITEXT…, /consult/legiPart) are not: they change over time and
 // need a date, which is a separate decision.
 
-import { appendFileSync, mkdirSync, rmSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { appendFileSync, mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
-import { DEFAULT_EVIDENCE_DIR, MAX_BYTES, registerSource, storeEvidenceBytes } from './archive.js';
+import { DEFAULT_EVIDENCE_DIR, MAX_BYTES, evidencePath, registerSource, removeIfCreated, storeEvidenceBytes } from './archive.js';
 import { loadEnv } from './ai/env.js';
 import { openDatabase } from './db.js';
 import { htmlToParagraphs } from './extract.js';
@@ -358,6 +359,17 @@ export async function archiveLegifranceText(
     media_type: r.mediaType, lang,
   };
 
+  // The same text with the same bytes already registered: return that row, add nothing.
+  const sha256 = createHash('sha256').update(r.bytes).digest('hex');
+  const existing = db.prepare('SELECT id FROM sources WHERE url = ? AND sha256 = ? ORDER BY id LIMIT 1').get(url, sha256);
+  const fetched = { method: 'POST', endpoint: r.endpoint, body: r.requestBody, at: fetchedAt };
+  if (existing) {
+    return {
+      id: Number(existing.id), url, sha256, path: evidencePath(evidenceDir, sha256), size: r.bytes.byteLength,
+      media_type: r.mediaType, created: false, duplicate: true, fetched,
+    };
+  }
+
   let stored;
   try {
     stored = storeEvidenceBytes(evidenceDir, r.bytes);
@@ -368,14 +380,13 @@ export async function archiveLegifranceText(
   try {
     id = registerSource(db, { ...row, sha256: stored.sha256 }, evidenceDir);
   } catch (error) {
-    // We wrote this file a moment ago; remove it unless some row (older or concurrent) uses it.
-    const used = db.prepare('SELECT 1 FROM sources WHERE sha256 = ? LIMIT 1').get(stored.sha256);
-    if (!used) rmSync(stored.path, { force: true });
+    // Only a file this call created is removed, and only if no row uses it (F1).
+    removeIfCreated(db, stored);
     throw new LegifranceError('store', `Could not register the source: ${error?.message ?? 'unknown error'}`);
   }
   return {
     id, url, sha256: stored.sha256, path: stored.path, size: r.bytes.byteLength, media_type: r.mediaType,
-    fetched: { method: 'POST', endpoint: r.endpoint, body: r.requestBody, at: fetchedAt },
+    created: stored.created, duplicate: false, fetched,
   };
 }
 
@@ -414,6 +425,10 @@ async function main(argv) {
     const db = openDatabase();
     try {
       const r = await archiveLegifranceText(db, arg, { kind: values.kind, lang: values.lang ?? 'fr' });
+      if (r.duplicate) {
+        console.log(`already archived as source ${r.id} (same text, same bytes); nothing added`);
+        return;
+      }
       console.log(`source ${r.id}`);
       console.log(`stored url: ${r.url}`);
       console.log(`bytes from: ${r.fetched.method} ${r.fetched.endpoint} ${r.fetched.body}`);

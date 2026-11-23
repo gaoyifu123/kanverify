@@ -12,6 +12,7 @@ import { AiError } from './errors.js';
 import gemini from './gemini.js';
 import mistral from './mistral.js';
 import openai from './openai.js';
+import { findSecret, secretValues } from './secrets.js';
 
 export { AiError } from './errors.js';
 
@@ -153,6 +154,19 @@ function redact(error, key) {
   return error;
 }
 
+/** Every string in a parsed JSON value, object keys included. */
+function jsonStrings(value, out = []) {
+  if (typeof value === 'string') out.push(value);
+  else if (Array.isArray(value)) for (const v of value) jsonStrings(v, out);
+  else if (value && typeof value === 'object') {
+    for (const [k, v] of Object.entries(value)) {
+      out.push(k);
+      jsonStrings(v, out);
+    }
+  }
+  return out;
+}
+
 // Accepts plain JSON, or JSON wrapped in one Markdown code fence (a common model habit).
 function parseJsonText(text) {
   const trimmed = text.trim();
@@ -211,11 +225,24 @@ export async function ask(request, options = {}) {
   const adapter = adapters[req.provider];
   const key = readKey(adapter, env);
 
+  // F3: a reply that carries a secret is refused before anything is returned or stored.
+  const secrets = secretValues({ env, readEnvFile: env === process.env });
+  const input = [req.system ?? '', req.prompt].join('\n');
+
   const attempts = req.json ? 2 : 1;
   for (let attempt = 1; ; attempt++) {
     const reply = await callOnce(adapter, req, key, fetchImpl);
     if (typeof reply?.text !== 'string' || reply.text.trim() === '') {
       throw new AiError('bad_response', `${adapter.name}: empty answer`, { provider: adapter.name });
+    }
+    // The answer and its search results get every check. The vendor's raw response (ids,
+    // signatures) is full of long runs by nature, so there only values from .env are looked for:
+    // passing the raw text as its own input marks every token-like run in it as quoted.
+    const rawText = JSON.stringify(reply.raw ?? null);
+    const found = findSecret([reply.text, reply.webSearch ? JSON.stringify(reply.webSearch) : ''].join('\n'), { secrets, input })
+      ?? findSecret(rawText, { secrets, input: rawText });
+    if (found) {
+      throw new AiError('secret_in_reply', `${adapter.name}: the answer contains ${found}; refused, nothing kept`, { provider: adapter.name });
     }
     const result = {
       text: reply.text,
@@ -229,7 +256,15 @@ export async function ask(request, options = {}) {
     if (reply.webSearch) result.webSearch = reply.webSearch;
     if (!req.json) return result;
     const parsed = parseJsonText(reply.text);
-    if (parsed.ok) return { ...result, json: parsed.value };
+    if (parsed.ok) {
+      // R2: JSON escapes (sk-…, \/) hide a secret from the check on the raw text; the parsed
+      // value is what callers keep, so every string in it (keys too) is checked as well.
+      const decoded = findSecret(jsonStrings(parsed.value).join('\n'), { secrets, input });
+      if (decoded) {
+        throw new AiError('secret_in_reply', `${adapter.name}: the answer contains ${decoded}; refused, nothing kept`, { provider: adapter.name });
+      }
+      return { ...result, json: parsed.value };
+    }
     if (attempt >= attempts) {
       throw new AiError('bad_json', `${adapter.name}: answer is not valid JSON after ${attempts} attempts`, { provider: adapter.name });
     }

@@ -38,7 +38,7 @@ const SEARCH_FIELDS = ['document_number', 'title', 'type', 'subtype', 'publicati
 const DOC_FIELDS = [...SEARCH_FIELDS, 'html_url', 'signing_date'];
 const MAX_TERM = 500;
 const MAX_TITLE = 2000;
-const UNPRINTABLE_RE = /[\u0000-\u001f\u007f-\u009f‎‏‪-‮⁦-⁩]/g;
+const UNPRINTABLE_RE = /[\u0000-\u001f\u007f-\u009f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g;
 
 /**
  * `code` is one of: bad_input, network, timeout, http, redirect, bot_check, too_large,

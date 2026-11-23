@@ -25,7 +25,7 @@ const DOC = {
   html_url: 'https://www.federalregister.gov/documents/2025/02/03/2025-02182/the-iron-dome-for-america',
   signing_date: '2025-01-27',
 };
-const PDF = '%PDF-1.7 executive order';
+const PDF = '%PDF-1.7 executive order\n%%EOF\n';
 const PUBLIC_DNS = async () => [{ address: '93.184.216.34', family: 4 }];
 const sha = (s) => createHash('sha256').update(s).digest('hex');
 

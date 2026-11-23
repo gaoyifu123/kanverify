@@ -13,7 +13,8 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { lookup as dnsLookup } from 'node:dns/promises';
 import {
-  closeSync, fsyncSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmSync, writeSync,
+  appendFileSync, closeSync, fsyncSync, linkSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync,
+  rmSync, writeSync,
 } from 'node:fs';
 import http from 'node:http';
 import https from 'node:https';
@@ -33,6 +34,12 @@ const STALE_TEMP_MS = 60 * 60 * 1000;
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 const USER_AGENT = 'evidence-archiver/1';
 const PDF_MAGIC = Buffer.from('%PDF-', 'latin1');
+const PDF_EOF = Buffer.from('%%EOF', 'latin1');
+// A complete PDF ends with %%EOF; some writers add a little after it (a line break, padding).
+const PDF_TAIL = 1024;
+// Where archive() records the path every stored file came by (sources.url keeps only the last).
+// Local working file, only ever appended to: one JSON object per line.
+export const DEFAULT_ARCHIVE_PROVENANCE = resolve(here, '../data/candidates/archive-provenance.jsonl');
 
 const SHA_RE = /^[0-9a-f]{64}$/;
 const MEDIA_TYPE_RE = /^[a-z0-9][a-z0-9!#$&^_.+-]*\/[a-z0-9][a-z0-9!#$&^_.+-]*$/;
@@ -62,6 +69,7 @@ for (const [net, prefix] of [
   // Prefixes that embed an IPv4 address; refused outright rather than unpacked.
   ['::ffff:0:0:0', 96], // SIIT
   ['64:ff9b::', 96], // NAT64
+  ['64:ff9b:1::', 48], // local-use NAT64 (RFC 8215)
   ['2001::', 32], // Teredo
   ['2002::', 16], // 6to4
 ]) FORBIDDEN.addSubnet(net, prefix, 'ipv6');
@@ -182,8 +190,8 @@ function localDate(d = new Date()) {
  * Insert one sources row (retrieved today) for a file already in `evidenceDir`. The caller's
  * word is not taken for anything: the URL must be http(s) without user info, the media type
  * must be well formed, and the file at the path built from `sha256` must exist, be a regular
- * file and hash to `sha256`. If the insert fails and no row uses that hash, the file this
- * function located is removed, so a refused row leaves no orphan behind. Returns the new id.
+ * file and hash to `sha256`. It never deletes anything: only the call that created a file may
+ * remove it (removeIfCreated). Returns the new id.
  */
 export function registerSource(db, { kind, url, title, publisher, published_on = null, sha256, media_type, lang }, evidenceDir) {
   const href = parseHttpUrl(url).href;
@@ -196,28 +204,71 @@ export function registerSource(db, { kind, url, title, publisher, published_on =
     throw new Error('No evidence file for this hash.');
   }
   if (!stat.isFile()) throw new Error('The evidence path is not a regular file.');
-  if (createHash('sha256').update(readFileSync(path)).digest('hex') !== sha256) {
-    throw new Error('The evidence file does not match its hash.');
-  }
+  if (hashFile(path) !== sha256) throw new Error('The evidence file does not match its hash.');
+  const result = db
+    .prepare(
+      `INSERT INTO sources (kind, url, title, publisher, published_on, retrieved_on, sha256, media_type, lang)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(kind, href, title, publisher, published_on, localDate(), sha256, media_type, lang);
+  return Number(result.lastInsertRowid);
+}
+
+function hashFile(path) {
+  return createHash('sha256').update(readFileSync(path)).digest('hex');
+}
+
+/**
+ * Move a finished temp file to its hash-named place. Returns true only if this call created the
+ * file there. Creation is exclusive (a hard link fails if the name exists), so two runs cannot
+ * both believe they created it. A file already there with the right bytes is kept as it is; one
+ * with other bytes is replaced (repaired) but still not counted as created by us.
+ */
+function placeEvidence(tempPath, finalPath, sha256) {
   try {
-    const result = db
-      .prepare(
-        `INSERT INTO sources (kind, url, title, publisher, published_on, retrieved_on, sha256, media_type, lang)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-      )
-      .run(kind, href, title, publisher, published_on, localDate(), sha256, media_type, lang);
-    return Number(result.lastInsertRowid);
+    linkSync(tempPath, finalPath);
+    return true;
   } catch (error) {
-    const used = db.prepare('SELECT 1 FROM sources WHERE sha256 = ? LIMIT 1').get(sha256);
-    if (!used) rmSync(path, { force: true });
-    throw error;
+    if (error.code !== 'EEXIST') {
+      // A file system without hard links: fall back to look-then-rename.
+      if (!['EPERM', 'ENOTSUP', 'ENOSYS', 'EXDEV', 'EINVAL'].includes(error.code)) throw error;
+      let existed = true;
+      try { lstatSync(finalPath); } catch { existed = false; }
+      renameSync(tempPath, finalPath);
+      return !existed;
+    }
   }
+  const stat = lstatSync(finalPath);
+  if (stat.isFile() && hashFile(finalPath) === sha256) return false;
+  // Wrong bytes under this name: replace them. A directory there makes the rename fail.
+  renameSync(tempPath, finalPath);
+  return false;
+}
+
+/**
+ * Undo a store after a failed registration: remove the file only if this call created it and no
+ * row in this database uses its hash. A file that was already there is never touched.
+ */
+export function removeIfCreated(db, stored) {
+  if (!stored?.created) return;
+  const used = db.prepare('SELECT 1 FROM sources WHERE sha256 = ? LIMIT 1').get(stored.sha256);
+  if (!used) rmSync(stored.path, { force: true });
+}
+
+/** Append one record as a JSON line to a local working file; never rewrites it. */
+export function appendJsonLine(path, record) {
+  mkdirSync(dirname(path), { recursive: true });
+  appendFileSync(path, `${JSON.stringify(record)}\n`, { encoding: 'utf8', flag: 'a' });
+}
+
+function writeAll(fd, bytes) {
+  for (let off = 0; off < bytes.byteLength; ) off += writeSync(fd, bytes, off);
 }
 
 /**
  * Store bytes already held in memory under the evidence directory, named by their SHA-256,
- * with the same rules as archive(): exclusive temp file, fsync, rename over whatever is there.
- * @returns {{sha256: string, path: string}}
+ * with the same rules as archive(): exclusive temp file, fsync, exclusive placement.
+ * @returns {{sha256: string, path: string, created: boolean}} created: this call made the file.
  */
 export function storeEvidenceBytes(evidenceDir, bytes) {
   if (!(bytes instanceof Uint8Array) || bytes.byteLength === 0) throw new Error('Refusing to store an empty file.');
@@ -230,12 +281,12 @@ export function storeEvidenceBytes(evidenceDir, bytes) {
   let fd = null;
   try {
     fd = openSync(tempPath, 'wx');
-    for (let off = 0; off < bytes.byteLength; ) off += writeSync(fd, bytes, off);
+    writeAll(fd, bytes);
     fsyncSync(fd);
     closeSync(fd);
     fd = null;
-    renameSync(tempPath, finalPath);
-    return { sha256, path: finalPath };
+    const created = placeEvidence(tempPath, finalPath, sha256);
+    return { sha256, path: finalPath, created };
   } finally {
     if (fd !== null) closeSync(fd);
     rmSync(tempPath, { force: true });
@@ -243,14 +294,39 @@ export function storeEvidenceBytes(evidenceDir, bytes) {
 }
 
 /**
+ * Hash-named files in the evidence folder that no row of this database uses. Only listed; the
+ * CLI removes them when asked with --delete (another database may share the folder).
+ */
+export function listOrphans(db, evidenceDir = DEFAULT_EVIDENCE_DIR) {
+  const used = db.prepare('SELECT 1 FROM sources WHERE sha256 = ? LIMIT 1');
+  let names;
+  try {
+    names = readdirSync(resolve(evidenceDir));
+  } catch (error) {
+    if (error.code === 'ENOENT') return [];
+    throw error;
+  }
+  return names
+    .filter((name) => SHA_RE.test(name) && !used.get(name))
+    .map((name) => join(resolve(evidenceDir), name))
+    .filter((path) => lstatSync(path).isFile());
+}
+
+/**
  * Download `url` (following at most `maxRedirects` redirects by hand), store it by hash,
- * register it as a source with the URL the bytes came from.
+ * register it as a source with the URL the bytes came from, and record the path it came by
+ * (requested URL, every hop, final URL, time, source id, hash) in `provenanceFile`.
+ *
+ * A redirect to another host is refused unless `allowCrossHost` is set: the row's kind and title
+ * were chosen for the requested address, not for whatever another host serves.
  *
  * Tests may inject `resolver` (dns.lookup shape) and `fetchImpl`; `allowPrivate: true` lets
  * them reach a local server. Production callers leave all three alone.
  *
- * @returns {Promise<{id: number, url: string, redirects: string[], sha256: string, path: string}>}
- *   `redirects` is every URL requested, in order; the last one is `url`.
+ * @returns {Promise<{id: number, url: string, redirects: string[], sha256: string, path: string,
+ *   created: boolean, provenanceError?: string}>}
+ *   `redirects` is every URL requested, in order; the last one is `url`. `created` is true when
+ *   this call put the file in the evidence folder (false: identical bytes were already there).
  */
 export async function archive(
   db,
@@ -265,11 +341,15 @@ export async function archive(
     maxRedirects = MAX_REDIRECTS,
     // When set, anything else is refused before it is registered: a bot-check or error page
     // served with status 200 is not evidence. For application/pdf the bytes must also start
-    // with "%PDF-", whatever the Content-Type says.
+    // with "%PDF-" and end with "%%EOF" (within the last 1 KB), whatever the Content-Type says.
     expectMediaType = null,
+    allowCrossHost = false,
+    // The real evidence folder records to data/candidates/; any other folder (tests) only when asked.
+    provenanceFile = resolve(evidenceDir) === DEFAULT_EVIDENCE_DIR ? DEFAULT_ARCHIVE_PROVENANCE : null,
   } = {}
 ) {
-  let current = parseHttpUrl(url);
+  const requested = parseHttpUrl(url);
+  let current = requested;
   const dir = resolve(evidenceDir);
   mkdirSync(dir, { recursive: true });
   sweepStaleTemps(dir);
@@ -281,6 +361,8 @@ export async function archive(
   const tempPath = join(dir, `.tmp-${randomUUID()}`);
   let response = null;
   let fd = null;
+  let stored = null;
+  let id;
   try {
     for (;;) {
       redirects.push(current.href);
@@ -293,6 +375,9 @@ export async function archive(
       if (!location) throw new Error(`Redirect without a Location header from ${current.href}`);
       if (redirects.length > maxRedirects) throw new Error(`More than ${maxRedirects} redirects; stopped at ${current.href}`);
       current = parseHttpUrl(location, current);
+      if (current.host !== requested.host && !allowCrossHost) {
+        throw new Error(`Redirected from ${requested.host} to ${current.host}; another host is not archived without allowCrossHost.`);
+      }
     }
 
     if (response.status !== 200) throw new Error(`Download failed: HTTP ${response.status} for ${current.href}`);
@@ -312,14 +397,17 @@ export async function archive(
     const hash = createHash('sha256');
     let size = 0;
     let head = Buffer.alloc(0);
+    let tail = Buffer.alloc(0);
     fd = openSync(tempPath, 'wx');
     if (response.body) {
       for await (const chunk of response.body) {
         size += chunk.byteLength;
         if (size > maxBytes) throw new Error(`File is over the ${maxBytes}-byte limit.`);
         if (head.length < PDF_MAGIC.length) head = Buffer.concat([head, chunk]).subarray(0, PDF_MAGIC.length);
+        tail = Buffer.concat([tail, chunk]);
+        if (tail.length > PDF_TAIL) tail = tail.subarray(tail.length - PDF_TAIL);
         hash.update(chunk);
-        writeSync(fd, chunk);
+        writeAll(fd, chunk);
       }
     }
     // A cut connection can end the body without an error (a close-delimited response
@@ -329,26 +417,41 @@ export async function archive(
     closeSync(fd);
     fd = null;
     if (size === 0) throw new Error('The server sent an empty file.');
-    if (expectMediaType === 'application/pdf' && !head.equals(PDF_MAGIC)) {
-      throw new Error('The server said application/pdf but the bytes are not a PDF; refusing to store them.');
+    if (expectMediaType === 'application/pdf') {
+      if (!head.equals(PDF_MAGIC)) throw new Error('The server said application/pdf but the bytes are not a PDF; refusing to store them.');
+      // A PDF cut short (e.g. a close-delimited response the server ended early) has no %%EOF.
+      if (!tail.includes(PDF_EOF)) throw new Error('The PDF has no %%EOF near its end: it is probably incomplete; refusing to store it.');
     }
 
-    // Never trust whatever is already at the final path: the bytes just hashed replace it.
-    // A directory there makes the rename fail, which is the right outcome.
     const sha256 = hash.digest('hex');
     const finalPath = evidencePath(dir, sha256);
-    renameSync(tempPath, finalPath);
+    stored = { sha256, path: finalPath, created: placeEvidence(tempPath, finalPath, sha256) };
 
-    const id = registerSource(db, {
+    id = registerSource(db, {
       kind, url: current.href, title, publisher, published_on, sha256, media_type: mediaType, lang,
     }, dir);
-    return { id, url: current.href, redirects, sha256, path: finalPath };
+  } catch (error) {
+    if (stored) removeIfCreated(db, stored);
+    throw error;
   } finally {
     cancelBody(response);
     controller.abort();
     if (fd !== null) closeSync(fd);
     rmSync(tempPath, { force: true });
   }
+  const result = { id, url: current.href, redirects, sha256: stored.sha256, path: stored.path, created: stored.created };
+  if (provenanceFile) {
+    try {
+      appendJsonLine(provenanceFile, {
+        source_id: id, sha256: stored.sha256, requested_url: requested.href, hops: redirects,
+        final_url: current.href, retrieved_at: new Date().toISOString(),
+      });
+    } catch (error) {
+      // The row and the file stand; say so instead of failing a registration that succeeded.
+      result.provenanceError = `provenance not recorded (${error.code ?? error.name})`;
+    }
+  }
+  return result;
 }
 
 async function main(argv) {
@@ -361,11 +464,30 @@ async function main(argv) {
       publisher: { type: 'string' },
       lang: { type: 'string' },
       'published-on': { type: 'string' },
+      'allow-cross-host': { type: 'boolean' },
+      delete: { type: 'boolean' },
     },
   });
+  if (positionals[0] === 'orphans' && positionals.length === 1) {
+    // Hash-named files with no row in this database. Listed only; removed only with --delete.
+    const db = openDatabase();
+    try {
+      const orphans = listOrphans(db);
+      console.log(`${orphans.length} file(s) in the evidence folder with no row in this database`);
+      for (const path of orphans) {
+        if (values.delete) rmSync(path, { force: true });
+        console.log(`${values.delete ? 'deleted ' : ''}${path}`);
+      }
+      if (orphans.length > 0 && !values.delete) console.log('Nothing deleted. Check that no other database uses this folder, then add --delete.');
+    } finally {
+      db.close();
+    }
+    return;
+  }
   if (positionals.length !== 1 || !values.kind || !values.title || !values.publisher || !values.lang) {
     console.error(
-      'Usage: node src/archive.js <url> --kind <kind> --title "..." --publisher "..." --lang <xx> [--published-on YYYY-MM-DD]'
+      'Usage: node src/archive.js <url> --kind <kind> --title "..." --publisher "..." --lang <xx> [--published-on YYYY-MM-DD] [--allow-cross-host]\n'
+        + '       node src/archive.js orphans [--delete]'
     );
     process.exitCode = 2;
     return;
@@ -379,7 +501,7 @@ async function main(argv) {
       publisher: values.publisher,
       published_on: values['published-on'] ?? null,
       lang: values.lang,
-    });
+    }, { allowCrossHost: values['allow-cross-host'] === true });
     console.log(`source ${result.id}`);
     if (result.redirects.length > 1) {
       console.log('redirects:');
@@ -387,6 +509,7 @@ async function main(argv) {
     }
     console.log(`stored url: ${result.url}`);
     console.log(result.path);
+    if (result.provenanceError) console.error(result.provenanceError);
   } finally {
     db.close();
   }
