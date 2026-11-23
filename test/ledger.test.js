@@ -928,3 +928,14 @@ test('the website view shows only the newest entry of each claim', () => {
   const rows = db.prepare('SELECT claim_id, id FROM current_publications ORDER BY claim_id').all();
   assert.deepEqual(rows.map((r) => [r.claim_id, r.id]), [[claim, 3], [other, 2]]);
 });
+
+test('review 7 re-check: confirm() refuses a cited source of any kind dated after today', () => {
+  const db = freshDb();
+  const { claim, law } = readyClaim(db); // came_true resting on a law dated 2025-01-01
+  assert.throws(() => confirmOn(db, claim, 'founder', { today: '2024-06-01' }), new RegExp(`the law document \\(source ${law}\\) is dated 2025-01-01, after 2024-06-01; it cannot be cited before it is published`));
+  assert.equal(ledger(db, claim).length, 0);
+  assert.match(blockersOn(db, claim, { today: '2024-06-01' }).join(), /cannot be cited before it is published/);
+  confirmOn(db, claim, 'founder', { today: '2025-01-01' }); // the day it is published is fine
+  assert.equal(ledger(db, claim).length, 1);
+  db.close();
+});

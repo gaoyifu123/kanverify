@@ -5,7 +5,7 @@
 // the jury's vote checks). confirm() is the one way into the ledger and applies both.
 // These functions explain a refusal in terms a reviewer can act on.
 
-import { deadlineProblem, futureRenunciation, localToday, renunciationEndsWait, waitHint } from './rules.js';
+import { deadlineProblem, futureEvidence, localToday, renunciationEndsWait, waitHint } from './rules.js';
 
 // In the order a reviewer would fix them. Those in NEEDS_VERDICT only make sense once a
 // verdict exists; translations come last because they are done after the content.
@@ -37,7 +37,7 @@ function deadlineBlocker(db, claimId, today) {
   // came_true and to_evaluate, and alone under not_came_true (record format 11). Never from the pack file.
   const renounced = sources.some((s) => renunciationEndsWait(s, claim, today));
   const problems = [
-    futureRenunciation(sources, today),
+    futureEvidence(sources, today),
     deadlineProblem(claim, verdict.verdict, today, renounced, waitHint(claim, verdict.verdict, sources, today)),
   ].filter(Boolean);
   return problems.length > 0 ? problems.join('; ') : null;

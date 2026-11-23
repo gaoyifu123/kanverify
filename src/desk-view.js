@@ -343,7 +343,7 @@ function voteColumn(x, v, excerptIndex) {
   return `<article class="judge${isAdopted || isPre ? ' adopted' : ''}" aria-label="Juror ${x.n}${isAdopted ? ', adopted' : isPre ? ', pre-selected' : ''}">
 <p><b>${x.n}</b> · <span class="mono">${esc(vote.model ?? '?')}</span> <span class="muted">${esc(label('channel', vote.channel))}</span></p>
 ${x.valid ? '' : `<p class="ok-line">This vote failed the program's check: ${esc(x.problems.join('; '))}. It does not count towards agreement.</p>`}
-${x.sessionUnrecorded ? '<p class="muted">The pack or this Claude vote does not name its session (made_by.session), so the program cannot check that the judge was a fresh session.</p>' : ''}
+${x.sessionUnrecorded ? '<p class="muted">This Claude vote does not name its session (made_by.session), so the program cannot check that the judge was not the session that cut the pack.</p>' : ''}
 <p>${verdictChip(vote.verdict)}</p>
 <p class="muted">Cites ${cites || 'nothing'}${isAdopted ? ' · adopted' : isPre ? ' · pre-selected' : ''}</p>
 ${vote.summary_fr ? `<p lang="fr">${esc(vote.summary_fr)}</p>` : ''}
@@ -413,7 +413,14 @@ export function renderVerdictPage(d) {
     const s = src(x.source_id);
     // Decision 0012 A4: kind and publisher beside every excerpt, so a wrong label is seen where it matters.
     const head = `<b>${esc(label('kind', s?.kind))}</b> · publisher <b lang="${esc(s?.lang)}">${esc(s?.publisher ?? '?')}</b>${unticked.has(s?.id) ? ' <span class="muted">(first use of this official publisher: tick it with T)</span>' : ''} · <span class="doc-title" lang="${esc(s?.lang)}">${esc(s?.title ?? `source ${x.source_id}`)}</span>, ${esc(s?.published_on ?? 'no date')}, ${esc(x.locator)}${pdfLink(s)}`;
-    return `<li id="x${i + 1}"><span class="n">[${i + 1}]</span> ${head}${quoteBlock(x.text, s?.lang)}${translations(s?.lang, x.text_fr, x.text_en)}</li>`;
+    // Fable review 6 A5: an excerpt that does not start or end at a sentence or unit boundary may cut off a qualifier.
+    const cut = (v.p.checked.flags ?? []).filter((f) => f.excerpt === i + 1).map((f) => f.flag);
+    return `<li id="x${i + 1}"><span class="n">[${i + 1}]</span> ${head}${quoteBlock(x.text, s?.lang)}${translations(s?.lang, x.text_fr, x.text_en)}${cut.length ? `<p class="muted"><b>Check the cut:</b> this excerpt ${esc(cut.join('; '))}.</p>` : ''}</li>`;
+  }).join('');
+  // Decision 0012 item 1, Fable review 6 A9: per cited source, what the pack covers; "read" is the cutter's declaration.
+  const coverage = (v.p.checked.coverage ?? []).filter((c) => c.cited).map((c) => {
+    const s = src(c.source_id);
+    return `<li>source ${esc(c.source_id)} · <span class="doc-title" lang="${esc(s?.lang)}">${esc(s?.title ?? '')}</span>: ${esc(c.excerpted.length)} of ${esc(c.units)} units excerpted · ${esc(c.read_not_excerpted)} declared read, not excerpted · ${esc(c.not_read.length)} not read${c.not_read.length ? ` (${esc(c.not_read.slice(0, 12).join(', '))}${c.not_read.length > 12 ? '…' : ''})` : ''} · ${esc(c.not_transcribed.length)} not transcribed</li>`;
   }).join('');
   const packSources = (pack.sources ?? []).map((x) => src(x.source_id)).filter(Boolean);
   const body = `${v.recheck ? `<p class="warn"><b>${esc(v.recheck)}.</b> Only the newest votes (round ${esc(v.round)}) are shown; your earlier decision was on round ${esc(v.verdictRound ?? 'unknown')}.</p>` : ''}<div class="screen-title"><h1>Verdict ${d.position.n} / ${d.position.of}</h1>
@@ -438,13 +445,14 @@ ${v.entered === 'auto' ? `<details id="passage"><summary>Source passage (${kbd('
 <h2>Evidence pack: ${excerpts.length} excerpt${excerpts.length === 1 ? '' : 's'}</h2>
 ${v.p.checked.problems.length ? `<p class="ok-line"><b>The evidence pack fails its check:</b> ${esc(v.p.checked.problems.join('; '))}</p>` : ''}
 <ol class="excerpts">${excerptItems}</ol>
+${coverage ? `<p class="muted">Coverage per cited source (units as the program numbers them; "declared read" is the cutter's word, not checked):</p><ul class="muted">${coverage}</ul>` : ''}
 <details id="unused"><summary>Considered, not used: ${(pack.considered_not_used ?? []).length} (${kbd('U')})</summary>
 <ul>${(pack.considered_not_used ?? []).map((u) => {
     const s = src(u.source_id);
     return `<li>${esc(label('kind', s?.kind))} · <span lang="${esc(s?.lang)}">${esc(s?.title ?? `source ${u.source_id}`)}</span>, ${esc(u.locator ?? '')}${u.text ? ` — <span lang="${esc(s?.lang)}">“${esc(u.text)}”</span>` : ''} — “${esc(u.why)}”</li>`;
   }).join('')}</ul></details>
 <details><summary>Gaps</summary><p>${esc(pack.gaps ?? 'none')}</p></details>
-<p class="muted">Clipped by <span class="mono">${esc(pack.made_by?.model ?? '?')}</span> (${esc(label('channel', pack.made_by?.channel))})</p>
+<p class="muted">Clipped by <span class="mono">${esc(pack.made_by?.model ?? '?')}</span> (${esc(label('channel', pack.made_by?.channel))}) · pack prompt <span class="mono">${esc(pack.header?.prompt_version ?? 'none')}</span></p>
 </div>
 <div>
 ${agreementLine(v)}

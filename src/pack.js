@@ -17,22 +17,27 @@
 // transcription data/candidates/source-<id>-text.json, made once per file and tied to its hash.
 // There is no PDF text-layer reader (principle 5: no PDF parser; the transcription exists).
 
-import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { createHash, randomUUID } from 'node:crypto';
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseArgs } from 'node:util';
+import { isDeepStrictEqual, parseArgs } from 'node:util';
 import { DEFAULT_EVIDENCE_DIR, evidencePath } from './archive.js';
 import { openDatabase } from './db.js';
-import { candidateProblems, checkVerbatim, htmlToParagraphs, normalizeForMatch } from './extract.js';
+import { candidateProblems, checkVerbatim, htmlToParagraphs, loadPrompt, normalizeForMatch } from './extract.js';
 import { isLegifranceSource, legifranceToUnits } from './legifrance.js';
 import {
-  deadlineProblem, filled, futureRenunciation, renunciationAdmitted, renunciationAlone, renunciationCounts, renunciationEndsWait, renunciationFits,
+  deadlineProblem, filled, futureEvidence, renunciationAdmitted, renunciationAlone, renunciationCounts, renunciationEndsWait, renunciationFits,
   twoIndependent, waitHint,
 } from './rules.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 export const DEFAULT_TEXT_DIR = resolve(here, '../data/candidates');
+/** The rules a pack is cut under (team/run/pack-prompt.md); checkPack accepts only its current version. */
+export const PACK_PROMPT_PATH = resolve(here, '../team/run/pack-prompt.md');
+export function packPromptVersion(path = PACK_PROMPT_PATH) {
+  return loadPrompt(path).version;
+}
 
 export const VERDICTS = Object.freeze(['unverifiable', 'pending', 'to_evaluate', 'came_true', 'partly_came_true', 'not_came_true']);
 // Same three classes as sources.kind and publication_checks in db/schema.sql.
@@ -132,6 +137,8 @@ function placeExcerpt(text, locator, pdfPage, st, sourceId, { strictLocator = tr
   if (!strictLocator) return { problems, unit: found.verbatim_unit, label };
   if (st.kind === 'pdf_page') {
     if (pdfPage !== found.verbatim_unit) problems.push(`pdf_page ${JSON.stringify(pdfPage ?? null)} but the excerpt starts on PDF page ${found.verbatim_unit} of ${where}`);
+    // The printed page cannot be checked; its wording can (Fable review 6 A10).
+    if (!/^p\. \S+$/.test(String(locator ?? '').trim())) problems.push(`locator ${JSON.stringify(locator ?? null)} for a PDF must be "p. N", the page number printed on the page`);
   } else if (pdfPage !== null && pdfPage !== undefined) {
     problems.push(`pdf_page given for ${where}, which is not a PDF`);
   }
@@ -192,6 +199,171 @@ export function checkCandidatesFile(db, record, opts = {}) {
   return { problems, record: checked };
 }
 
+// ---------------------------------------------------------------- where an excerpt starts and ends
+
+const INVISIBLE_CHAR = /[\u00AD\u200B-\u200D\u2060\uFEFF]/;
+const SINGLE_QUOTES = /[\u2018\u2019\u201A\u201B\u2032`\u00B4]/;
+const DOUBLE_QUOTES = /[\u201C\u201D\u201E\u201F\u00AB\u00BB\u2033]/;
+const DASH = /[-\u2010-\u2015\u2212]/;
+const SPACE = /\s/u;
+
+/**
+ * normalizeForMatch(text), and for every character of the result the index in text.normalize('NFKC')
+ * it comes from, so a match can be placed in the text a reader sees. Null when the step-by-step
+ * version does not give exactly normalizeForMatch's result (then the boundaries are not checked).
+ */
+function normalizedWithMap(text) {
+  const src = String(text ?? '').normalize('NFKC');
+  const skip = (c) => INVISIBLE_CHAR.test(c) || SPACE.test(c);
+  let norm = '';
+  const map = [];
+  for (let i = 0; i < src.length; i++) {
+    const c = src[i];
+    if (skip(c)) continue;
+    if (SINGLE_QUOTES.test(c)) { norm += "'"; map.push(i); continue; }
+    if (DOUBLE_QUOTES.test(c)) { norm += '"'; map.push(i); continue; }
+    if (c === '\u2026') { norm += '...'; map.push(i, i, i); continue; }
+    if (DASH.test(c)) {
+      // As in normalizeForMatch: a dash directly before a digit (blanks aside) is a sign and stays.
+      let j = i + 1;
+      while (j < src.length && skip(src[j])) j++;
+      if (/\d/.test(src[j] ?? '')) { norm += '-'; map.push(i); }
+      continue;
+    }
+    norm += c;
+    map.push(i);
+  }
+  return norm === normalizeForMatch(text) ? { src, norm, map } : null;
+}
+
+/**
+ * Where a verbatim excerpt lies in a source's units: its range in the compared text (for order and
+ * overlap), the units it spans, and the characters around it in the unit text (for its boundaries).
+ * Null when it is not found or cannot be placed.
+ */
+export function locateSpan(text, units) {
+  const needle = normalizeForMatch(text ?? '');
+  if (!needle) return null;
+  const parts = [];
+  let hay = '';
+  for (const u of units) {
+    const m = normalizedWithMap(u.text);
+    if (!m) return null;
+    parts.push({ unit: u.unit, start: hay.length, ...m });
+    hay += m.norm;
+  }
+  const at = hay.indexOf(needle);
+  if (at < 0) return null;
+  const end = at + needle.length;
+  const partOf = (pos) => parts.findIndex((p) => p.start <= pos && pos < p.start + p.norm.length);
+  const a = partOf(at);
+  const b = partOf(end - 1);
+  const sp = parts[a];
+  const ep = parts[b];
+  const startOffset = sp.map[at - sp.start];
+  const endOffset = ep.map[end - 1 - ep.start] + 1;
+  return {
+    at, end, startUnit: sp.unit, endUnit: ep.unit, units: parts.slice(a, b + 1).map((p) => p.unit),
+    before: sp.src.slice(0, startOffset), head: sp.src.slice(startOffset, startOffset + 8),
+    upToEnd: ep.src.slice(0, endOffset), after: ep.src.slice(endOffset),
+  };
+}
+
+const WORD_CHAR = /[\p{L}\p{N}]/u;
+const DIGIT_CHAR = /\p{N}/u;
+// A space inside a figure, "1 200 000" (NFKC has made no-break and thin spaces plain ones): a digit, one
+// space, then a group of exactly three digits.
+const GROUP_BEFORE = /\d[^\S\n]$/u;
+const GROUP_AFTER = /^[^\S\n]\d{3}(?!\d)/u;
+const GROUP_HEAD = /^\d{3}(?!\d)/;
+const SIGN_END = /[+\-\u2010-\u2015\u2212]$/;
+const SENTENCE_END = /[.!?\u2026]["'\u201D\u2019\u00BB)\]]*$/u;
+
+/**
+ * Fable review 6 A5. refuse: the excerpt starts or ends inside a word or a number ("2,4 millions" cut from
+ * "42,4 millions", "200 000" from "1 200 000"), or starts right after a sign ("0,3 %" cut from "-0,3 %"). flag: it does not start or end
+ * at a sentence or unit boundary (a negation or an attribution may be cut off); the desk shows these.
+ */
+export function boundaryProblems(span) {
+  const refuse = [];
+  const flag = [];
+  const { before, head, upToEnd, after } = span;
+  const first = head[0] ?? '';
+  const second = head[1] ?? '';
+  const prev = before.at(-1) ?? '';
+  const prev2 = before.at(-2) ?? '';
+  const last = upToEnd.at(-1) ?? '';
+  const penult = upToEnd.at(-2) ?? '';
+  const next = after[0] ?? '';
+  const next2 = after[1] ?? '';
+  const startsNumber = DIGIT_CHAR.test(first) || (/[.,]/.test(first) && DIGIT_CHAR.test(second));
+  if ((WORD_CHAR.test(prev) && WORD_CHAR.test(first))
+    || (DIGIT_CHAR.test(first) && /[.,]/.test(prev) && DIGIT_CHAR.test(prev2))
+    || (/[.,]/.test(first) && DIGIT_CHAR.test(prev) && DIGIT_CHAR.test(second))
+    || (GROUP_HEAD.test(head) && GROUP_BEFORE.test(before))) {
+    refuse.push('starts inside a word or a number');
+  } else if (startsNumber && SIGN_END.test(before.trimEnd())) {
+    refuse.push('starts right after a sign (- + −): the sign belongs to the figure');
+  }
+  if ((WORD_CHAR.test(last) && WORD_CHAR.test(next))
+    || (DIGIT_CHAR.test(last) && /[.,]/.test(next) && DIGIT_CHAR.test(next2))
+    || (/[.,]/.test(last) && DIGIT_CHAR.test(penult) && DIGIT_CHAR.test(next))
+    || (/\d$/.test(upToEnd) && GROUP_AFTER.test(after))) {
+    refuse.push('ends inside a word or a number');
+  }
+  // A line start or a list bullet counts as a boundary.
+  if (before.trim() !== '' && !SENTENCE_END.test(before.trimEnd()) && !/(?:\n|[•▪◦])\s*$/u.test(before)) {
+    flag.push('does not start at a sentence or unit boundary');
+  }
+  if (after.trim() !== '' && !SENTENCE_END.test(upToEnd.trimEnd()) && !/^[^\S\n]*\n/.test(after)) {
+    flag.push('does not end at a sentence or unit boundary');
+  }
+  return { refuse, flag };
+}
+
+// ---------------------------------------------------------------- the speaker's name
+
+const fold = (s) => String(s).normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/** The speaker's full name and surname (last word, 3 letters or more), case and accents aside. */
+function nameTerms(name) {
+  const full = fold(name).trim().replace(/\s+/g, ' ');
+  const last = full.split(' ').at(-1);
+  return [...new Set([full, ...(last && last.length >= 3 ? [last] : [])])].filter(Boolean)
+    .map((t) => new RegExp(`(?<![\\p{L}\\p{N}])${escapeRe(t)}(?![\\p{L}\\p{N}])`, 'u'));
+}
+
+// Verbatim text and the program-written parts may name the speaker; everything else a cutter writes may not.
+const NAME_FREE_SKIP_TOP = new Set(['kind', 'claim', 'header', 'sources']);
+const NAME_FREE_SKIP_ITEM = new Set(['text', 'text_fr', 'text_en', 'locator']);
+
+/** Paths of the free-text fields of a pack that name the speaker (Fable review 6 A10). */
+export function speakerNamed(pack, name) {
+  if (!filled(name)) return [];
+  const terms = nameTerms(name);
+  const hits = [];
+  const walk = (value, path, inItem) => {
+    if (typeof value === 'string') {
+      if (terms.some((re) => re.test(fold(value)))) hits.push(path);
+      return;
+    }
+    if (Array.isArray(value)) {
+      value.forEach((v, i) => walk(v, `${path} ${i + 1}`, true));
+      return;
+    }
+    if (value && typeof value === 'object') {
+      for (const [k, v] of Object.entries(value)) {
+        if (!path && NAME_FREE_SKIP_TOP.has(k)) continue;
+        if (inItem && NAME_FREE_SKIP_ITEM.has(k)) continue;
+        walk(v, path ? `${path}.${k}` : k, inItem);
+      }
+    }
+  };
+  walk(pack, '', false);
+  return hits;
+}
+
 // ---------------------------------------------------------------- evidence pack
 
 const CLAIM_FIELDS = [
@@ -199,6 +371,53 @@ const CLAIM_FIELDS = [
   'deadline_basis', 'criteria_fr', 'criteria_en', 'speaker_role_fr', 'speaker_role_en',
 ];
 const SOURCE_FIELDS = ['kind', 'title', 'publisher', 'published_on', 'url', 'lang'];
+
+/**
+ * The start of a pack, written by the program (Fable review 6 A2, A4): the claim copied from the record,
+ * the given sources in a fixed order (ascending id, so neither the dispatcher nor the cutter orders them),
+ * a session id the program stamps, and the current pack prompt version. The cutter fills in the rest;
+ * checkPack compares the finished pack with this header.
+ */
+export function startPack(db, claimId, sourceIds, { now = () => new Date(), promptVersion = packPromptVersion() } = {}) {
+  const c = db.prepare('SELECT c.*, s.name AS speaker FROM claims c JOIN subjects s ON s.id = c.subject_id WHERE c.id = ?').get(claimId);
+  if (!c) throw new Error(`claim ${claimId} is not in the database`);
+  if (['vague', 'hedged'].includes(c.verifiability)) throw new Error(`claim ${claimId} is ${c.verifiability}: it gets no evidence pack (decision 0012 item 5)`);
+  if (!Array.isArray(sourceIds) || sourceIds.length === 0) throw new Error('give at least one source id');
+  if (new Set(sourceIds).size !== sourceIds.length) throw new Error('a source id is given twice');
+  for (const id of sourceIds) if (!sourceRow(db, id)) throw new Error(`source ${JSON.stringify(id)} is not in the database`);
+  const origin = sourceRow(db, c.source_id);
+  const claim = {
+    claim_id: c.id, key: `c${c.id}`, speaker: c.speaker, said_on: c.said_on,
+    origin: { source_id: origin.id, title: origin.title, published_on: origin.published_on, locator: c.source_locator },
+    ...Object.fromEntries(CLAIM_FIELDS.map((f) => [f, c[f] ?? null])),
+  };
+  return {
+    kind: PACK_KIND, format: 1,
+    header: {
+      written_by: 'node src/pack.js start', started_at: now().toISOString(), prompt_version: promptVersion,
+      session: `pack-${randomUUID()}`, given_sources: [...sourceIds].sort((a, b) => a - b), claim: structuredClone(claim),
+    },
+    made_by: { role: 'evidence', channel: null, provider: null, via: null, model: null },
+    before_reading: { met: null, not_met: null },
+    claim, sources: [], excerpts: [], read: [], considered_not_used: [], transcription_doubts: [], gaps: null,
+  };
+}
+
+/** "all", or unit numbers and ranges ("1-5, 9") -> a set of unit numbers; null when not well formed. */
+export function parseUnitList(spec) {
+  if (spec === 'all') return 'all';
+  if (typeof spec !== 'string') return null;
+  const out = new Set();
+  for (const part of spec.split(',')) {
+    const m = /^\s*(\d+)\s*(?:-\s*(\d+)\s*)?$/.exec(part);
+    if (!m) return null;
+    const a = Number(m[1]);
+    const b = m[2] ? Number(m[2]) : a;
+    if (b < a || b - a > 100_000) return null;
+    for (let u = a; u <= b; u++) out.add(u);
+  }
+  return out.size > 0 ? out : null;
+}
 
 /**
  * What every judge sees of a pack: the claim, the sources' metadata, the excerpts. Nothing else.
@@ -222,21 +441,46 @@ export function judgeView(pack) {
   };
 }
 
+const sortedNums = (set) => [...set].sort((a, b) => a - b);
+
 /**
- * The program's checks on an evidence pack. Returns
- * { problems, tokens, docs, texts } where docs and texts are what voteProblems needs: each cited
- * source's metadata from the database, and per source the pack's excerpts as the only text a
- * vote may quote from.
+ * The program's checks on an evidence pack (team/run/pack-prompt.md). Returns
+ * { problems, flags, coverage, tokens, docs, texts }: docs and texts are what voteProblems needs (each
+ * cited source's metadata from the database, and per source the pack's excerpts as the only text a vote
+ * may quote from); flags are excerpt boundaries the desk shows (not refusals); coverage is per given
+ * source: units excerpted, declared read and not excerpted, not read, not transcribed.
  */
 export function checkPack(db, pack, opts = {}) {
   const problems = [];
+  const flags = [];
+  const coverage = [];
   if (pack?.kind !== PACK_KIND) problems.push(`kind is not ${PACK_KIND}`);
   if (pack?.format !== 1) problems.push('format is not 1');
   if (!filled(pack?.made_by?.role) || !filled(pack?.made_by?.model)) problems.push('made_by must name the role and the model that cut the pack');
   const claim = pack?.claim;
-  if (!claim || typeof claim !== 'object') return { problems: [...problems, 'claim is missing'], tokens: null, docs: [], texts: new Map() };
+  if (!claim || typeof claim !== 'object') return { problems: [...problems, 'claim is missing'], flags, coverage, tokens: null, docs: [], texts: new Map() };
   if (!filled(claim.key)) problems.push('claim.key is empty');
   if (!filled(claim.speaker)) problems.push('claim.speaker is empty');
+
+  // The header the program wrote (startPack): current prompt, its session, the claim unchanged, the given sources.
+  const header = pack.header;
+  let given = [];
+  if (!header || typeof header !== 'object') {
+    problems.push('header is missing: a pack is started by the program (node src/pack.js start <claim_id> <source_id...>)');
+  } else {
+    const current = packPromptVersion();
+    if (header.prompt_version !== current) problems.push(`header.prompt_version ${JSON.stringify(header.prompt_version ?? null)} is not the current pack prompt ${current}; start the pack again`);
+    if (!filled(header.session)) problems.push('header.session is empty: the session is stamped by the program when the pack is started');
+    if (!isDeepStrictEqual(header.claim, claim)) {
+      const keys = [...new Set([...Object.keys(header.claim ?? {}), ...Object.keys(claim)])].filter((k) => !isDeepStrictEqual(header.claim?.[k], claim[k]));
+      problems.push(`claim differs from the claim the program wrote at the start (${keys.join(', ') || 'the whole claim'}); it is copied from the record and stays unchanged`);
+    }
+    const ids = header.given_sources;
+    if (!Array.isArray(ids) || ids.length === 0 || !ids.every(Number.isInteger) || new Set(ids).size !== ids.length) {
+      problems.push('header.given_sources must list the given source ids, each once');
+    } else given = ids;
+  }
+  const isGiven = (id) => given.includes(id);
 
   // The claim: its quote is in its origin, and it would pass the candidate rules.
   const origin = sourceRow(db, claim.origin?.source_id);
@@ -254,28 +498,45 @@ export function checkPack(db, pack, opts = {}) {
     }
   }
 
-  // Sources: listed once, as the database has them, each with at least one excerpt.
-  const listed = new Map();
-  const docs = [];
-  const texts = new Map();
   const sourceTexts = new Map();
-  for (const s of Array.isArray(pack.sources) ? pack.sources : []) {
-    const row = sourceRow(db, s?.source_id);
-    if (!row) { problems.push(`source ${JSON.stringify(s?.source_id ?? null)} is not in the database`); continue; }
-    if (listed.has(row.id)) { problems.push(`source ${row.id} is listed twice`); continue; }
-    listed.set(row.id, row);
-    for (const f of SOURCE_FIELDS) if ((s[f] ?? null) !== (row[f] ?? null)) problems.push(`source ${row.id}: ${f} differs from the database`);
-    if (['platform', 'statement'].includes(row.kind)) problems.push(`source ${row.id} is a ${row.kind}, never evidence (list it under considered_not_used)`);
-    if (row.kind === 'renunciation' && claim.type !== 'promise') problems.push(`source ${row.id} is a renunciation, evidence only for a promise`);
-    docs.push({ meta: { source_id: row.id, kind: row.kind, title: row.title, publisher: row.publisher, published_on: row.published_on, url: row.url, media_type: row.media_type, sha256: row.sha256 } });
-  }
   const textOf = (row) => {
     if (!sourceTexts.has(row.id)) sourceTexts.set(row.id, sourceUnits(row, opts));
     return sourceTexts.get(row.id);
   };
+  // Every given source: in the database, its text readable, nothing left untranscribed (A7: stop first).
+  const givenRows = new Map();
+  for (const id of given) {
+    const row = sourceRow(db, id);
+    if (!row) { problems.push(`given source ${id} is not in the database`); continue; }
+    givenRows.set(id, row);
+    const st = textOf(row);
+    if (st.error) problems.push(`given source ${id}: ${st.error}`);
+    else if (st.missing.length > 0) problems.push(`source ${id} has units not transcribed (${st.missing.join(', ')}): get them transcribed before cutting the pack`);
+  }
+
+  // Sources: given, listed once in the given order, as the database has them, each with at least one excerpt.
+  const listed = new Map();
+  const docs = [];
+  const texts = new Map();
+  let lastGivenAt = -1;
+  for (const s of Array.isArray(pack.sources) ? pack.sources : []) {
+    const row = sourceRow(db, s?.source_id);
+    if (!row) { problems.push(`source ${JSON.stringify(s?.source_id ?? null)} is not in the database`); continue; }
+    if (listed.has(row.id)) { problems.push(`source ${row.id} is listed twice`); continue; }
+    if (!isGiven(row.id)) problems.push(`source ${row.id} was not given (header.given_sources)`);
+    else if (given.indexOf(row.id) < lastGivenAt) problems.push(`sources are not in the given order (ascending source id): source ${row.id} comes too late`);
+    else lastGivenAt = given.indexOf(row.id);
+    listed.set(row.id, row);
+    for (const f of SOURCE_FIELDS) if ((s[f] ?? null) !== (row[f] ?? null)) problems.push(`source ${row.id}: ${f} differs from the database`);
+    if (['platform', 'statement'].includes(row.kind)) problems.push(`source ${row.id} is a ${row.kind}, never evidence (list it under considered_not_used)`);
+    if (row.kind === 'renunciation' && claim.type !== 'promise') problems.push(`source ${row.id} is a renunciation, evidence only for a promise (list it under considered_not_used)`);
+    docs.push({ meta: { source_id: row.id, kind: row.kind, title: row.title, publisher: row.publisher, published_on: row.published_on, url: row.url, media_type: row.media_type, sha256: row.sha256 } });
+  }
+  const sourceOrder = [...listed.keys()];
 
   const excerpts = Array.isArray(pack.excerpts) ? pack.excerpts : [];
   if (excerpts.length < 1 || excerpts.length > MAX_EXCERPTS) problems.push(`a pack has 1 to ${MAX_EXCERPTS} excerpts, this one has ${excerpts.length}`);
+  const spans = [];
   excerpts.forEach((e, i) => {
     const at = `excerpt ${i + 1}`;
     const row = listed.get(e?.source_id);
@@ -290,15 +551,38 @@ export function checkPack(db, pack, opts = {}) {
     const units = texts.get(row.id) ?? [];
     units.push({ unit: units.length + 1, text: e.text, ...(placed.label && { label: placed.label }) });
     texts.set(row.id, units);
+    if (placed.unit === null) return;
+    const span = locateSpan(e.text, st.units);
+    if (!span) { flags.push({ excerpt: i + 1, flag: 'its boundaries could not be checked' }); return; }
+    const b = boundaryProblems(span);
+    for (const r of b.refuse) problems.push(`${at}: ${r} in source ${row.id} (…${span.before.slice(-12)}[${e.text.slice(0, 12)}…${e.text.slice(-12)}]${span.after.slice(0, 12)}…); cut it at whole words, whole numbers and whole sentences`);
+    for (const f of b.flag) flags.push({ excerpt: i + 1, flag: f });
+    spans.push({ n: i + 1, source_id: row.id, order: sourceOrder.indexOf(row.id), ...span });
   });
   for (const id of listed.keys()) if (!texts.has(id)) problems.push(`source ${id} is listed but has no excerpt`);
+  // A6: a fixed order (the order of sources, then the place in the document), no repeats, no overlaps.
+  for (let k = 1; k < spans.length; k++) {
+    const p = spans[k - 1];
+    const q = spans[k];
+    if (q.order < p.order || (q.order === p.order && q.at < p.at)) {
+      problems.push(`excerpt ${q.n} comes before excerpt ${p.n} in the fixed order (the order of sources, then the place in the document)`);
+    }
+  }
+  for (const p of spans) {
+    for (const q of spans) {
+      if (q.n > p.n && q.source_id === p.source_id && p.at < q.end && q.at < p.end) problems.push(`excerpt ${q.n} repeats or overlaps excerpt ${p.n}`);
+    }
+  }
 
   // What was looked at and left out, for spot checks (decision 0010). Text, if given, is verbatim.
+  const notUsed = new Set();
   if (!Array.isArray(pack.considered_not_used)) problems.push('considered_not_used must be a list (empty if nothing was left out)');
   (Array.isArray(pack.considered_not_used) ? pack.considered_not_used : []).forEach((e, i) => {
     const at = `considered_not_used ${i + 1}`;
     const row = sourceRow(db, e?.source_id);
     if (!row) { problems.push(`${at}: source ${JSON.stringify(e?.source_id ?? null)} is not in the database`); return; }
+    if (!isGiven(row.id)) problems.push(`${at}: source ${row.id} was not given (header.given_sources)`);
+    notUsed.add(row.id);
     if (!filled(e.why)) problems.push(`${at}: why is empty`);
     if (e.text === null || e.text === undefined) return;
     if (!filled(e.text)) { problems.push(`${at}: text is empty`); return; }
@@ -308,9 +592,65 @@ export function checkPack(db, pack, opts = {}) {
   });
   if (pack.gaps !== null && pack.gaps !== undefined && typeof pack.gaps !== 'string') problems.push('gaps must be text or null');
 
+  // read (declared by the cutter): each given source once, "all" or the units read, why when not all.
+  const reads = new Map();
+  if (!Array.isArray(pack.read)) problems.push('read must be a list: one entry per given source');
+  (Array.isArray(pack.read) ? pack.read : []).forEach((r, i) => {
+    const at = `read ${i + 1}`;
+    const row = givenRows.get(r?.source_id);
+    if (!row) { problems.push(`${at}: source ${JSON.stringify(r?.source_id ?? null)} was not given`); return; }
+    if (reads.has(row.id)) { problems.push(`${at}: source ${row.id} is in read twice`); return; }
+    const st = textOf(row);
+    if (st.error) return;
+    const all = new Set([...st.units.map((u) => u.unit), ...st.missing]);
+    const units = parseUnitList(r.units);
+    if (!units) { problems.push(`${at}: units must be "all" or unit numbers and ranges such as "1-5, 9"`); return; }
+    if (units === 'all') { reads.set(row.id, new Set(st.units.map((u) => u.unit))); return; }
+    const outside = sortedNums(units).filter((u) => !all.has(u) || st.missing.includes(u));
+    if (outside.length > 0) problems.push(`${at}: source ${row.id} has no transcribed unit ${outside.join(', ')}`);
+    const set = new Set(sortedNums(units).filter((u) => all.has(u) && !st.missing.includes(u)));
+    if (set.size < st.units.length && !filled(r.not_read_why)) problems.push(`${at}: not every unit of source ${row.id} was read, so not_read_why must say why`);
+    reads.set(row.id, set);
+  });
+  for (const id of givenRows.keys()) {
+    if (!reads.has(id) && Array.isArray(pack.read)) problems.push(`source ${id} was given but is not in read`);
+    if (!listed.has(id) && !notUsed.has(id)) problems.push(`source ${id} was given but is neither in sources nor in considered_not_used`);
+  }
+  for (const s of spans) {
+    const read = reads.get(s.source_id);
+    const unread = read ? s.units.filter((u) => !read.has(u)) : [];
+    if (unread.length > 0) problems.push(`excerpt ${s.n}: unit ${unread.join(', ')} of source ${s.source_id} is not declared read`);
+  }
+
+  // Rule 2's two lists (A9), and transcription doubts (A7: a doubt stops the pack). Neither reaches the judges.
+  if (!filled(pack.before_reading?.met) || !filled(pack.before_reading?.not_met)) {
+    problems.push('before_reading must give both lists of rule 2: what would show the criteria met, and not met or only partly met');
+  }
+  if (!Array.isArray(pack.transcription_doubts)) problems.push('transcription_doubts must be a list (empty if none)');
+  else {
+    pack.transcription_doubts.forEach((d, i) => problems.push(`transcription doubt ${i + 1} (source ${JSON.stringify(d?.source_id ?? null)}${d?.pdf_page ? `, PDF page ${d.pdf_page}` : ''}): stop; the transcription is checked and fixed before the pack is cut`));
+  }
+  // A10: the name appears only in claim.speaker (and in verbatim text); judges see the role only.
+  for (const path of speakerNamed(pack, claim.speaker)) problems.push(`the speaker's name appears in ${path}; write "the speaker"`);
+
+  // Coverage per given source, from read (declared) and the excerpts (checked).
+  for (const [id, row] of givenRows) {
+    const st = textOf(row);
+    if (st.error) continue;
+    const excerpted = new Set(spans.filter((s) => s.source_id === id).flatMap((s) => s.units));
+    const read = reads.get(id) ?? new Set();
+    coverage.push({
+      source_id: id, cited: listed.has(id), units: st.units.length + st.missing.length,
+      excerpted: sortedNums(excerpted),
+      read_not_excerpted: sortedNums(read).filter((u) => !excerpted.has(u)).length,
+      not_read: st.units.map((u) => u.unit).filter((u) => !read.has(u) && !excerpted.has(u)),
+      not_transcribed: [...st.missing],
+    });
+  }
+
   const tokens = estimateTokens(JSON.stringify(judgeView(pack)));
   if (tokens > MAX_PACK_TOKENS) problems.push(`the judges' view is about ${tokens} tokens, over ${MAX_PACK_TOKENS}`);
-  return { problems, tokens, docs, texts };
+  return { problems, flags, coverage, tokens, docs, texts };
 }
 
 // ---------------------------------------------------------------- votes
@@ -363,7 +703,7 @@ export function voteProblems(vote, claim, docs, texts, today, { withinUnit = fal
       problems.push(`source ${m.source_id} is a renunciation with no date, so whether it ends the wait cannot be told; record its publication date before judging`);
     }
   }
-  const future = futureRenunciation(cited, today);
+  const future = futureEvidence(cited, today);
   if (future) problems.push(future);
   if (renunciationAlone(cited, verdict) && cited.some((m) => renunciationAdmitted(m, said, verdict))) {
     problems.push(`a renunciation is never the only evidence for ${verdict}; cite the evidence of what was done beside it`);
@@ -463,16 +803,67 @@ function readJson(path) {
   return JSON.parse(readFileSync(path, 'utf8'));
 }
 
+/**
+ * The units of a source as the program numbers them (Fable review 6 A4): what a cutter reads, and the
+ * numbers excerpts, locators, read and coverage use. One line per unit: its number, the locator to
+ * write, its text; then the units not transcribed.
+ */
+export function unitsListing(source, st) {
+  if (st.error) return [st.error];
+  const where = (u) => (st.kind === 'pdf_page' ? `pdf_page ${u.unit}, locator "p. N" as printed on the page`
+    : st.kind === 'law' ? `locator "${u.label ?? '?'}"` : `locator "§${u.unit}"`);
+  return [
+    `source ${source.id} · ${source.kind} · ${source.title} · ${st.units.length + st.missing.length} units · text: ${st.basis}`,
+    ...st.units.map((u) => `[unit ${u.unit}] ${where(u)}\n${u.text}\n`),
+    `not transcribed: ${st.missing.length > 0 ? st.missing.join(', ') : 'none'}`,
+  ];
+}
+
+/** data/candidates/packs-YYYYMMDD/c<id>.pack.json, the folder the desk reads. */
+function defaultPackPath(claimId, now = new Date()) {
+  const pad = (n) => String(n).padStart(2, '0');
+  return join(DEFAULT_TEXT_DIR, `packs-${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`, `c${claimId}.pack.json`);
+}
+
+const USAGE = [
+  'Usage: node src/pack.js start <claim_id> <source_id...> [--out <pack file>]   (writes the start of a pack)',
+  '       node src/pack.js units <source_id>                                     (prints the units of a source)',
+  '       node src/pack.js pack <evidence pack file>                             (checks a pack)',
+  '       node src/pack.js candidates <candidates file>                          (rewrites the program-owned fields)',
+].join('\n');
+
 async function main(argv) {
-  const { positionals } = parseArgs({ args: argv, allowPositionals: true });
-  const [what, file] = positionals;
-  if (!['candidates', 'pack'].includes(what) || !file || !existsSync(file)) {
-    console.error('Usage: node src/pack.js candidates <candidates file>   (rewrites the program-owned fields)\n       node src/pack.js pack <evidence pack file>');
+  const { positionals, values } = parseArgs({ args: argv, allowPositionals: true, options: { out: { type: 'string' } } });
+  const [what, ...rest] = positionals;
+  const ints = rest.map((x) => (/^\d+$/.test(x) ? Number(x) : NaN));
+  const usable = (what === 'start' && rest.length >= 2 && ints.every(Number.isInteger))
+    || (what === 'units' && rest.length === 1 && Number.isInteger(ints[0]))
+    || (['candidates', 'pack'].includes(what) && rest.length === 1 && existsSync(rest[0]));
+  if (!usable) {
+    console.error(USAGE);
     process.exitCode = 2;
     return;
   }
   const db = openDatabase();
   try {
+    if (what === 'start') {
+      const [claimId, ...sourceIds] = ints;
+      const pack = startPack(db, claimId, sourceIds);
+      const out = resolve(values.out ?? defaultPackPath(claimId));
+      mkdirSync(dirname(out), { recursive: true });
+      writeFileSync(out, `${JSON.stringify(pack, null, 2)}\n`, { flag: 'wx' }); // never over an existing pack
+      console.log(`pack started: ${out}\nsession ${pack.header.session} · ${pack.header.prompt_version} · given sources ${pack.header.given_sources.join(', ')}`);
+      return;
+    }
+    if (what === 'units') {
+      const row = sourceRow(db, ints[0]);
+      if (!row) { console.error(`source ${ints[0]} is not in the database`); process.exitCode = 1; return; }
+      const st = sourceUnits(row);
+      for (const line of unitsListing(row, st)) console.log(line);
+      process.exitCode = st.error ? 1 : 0;
+      return;
+    }
+    const file = rest[0];
     if (what === 'candidates') {
       const { problems, record } = checkCandidatesFile(db, readJson(file));
       if (problems.length === 0) writeJsonAtomic(file, record);
@@ -483,6 +874,10 @@ async function main(argv) {
     }
     const checked = checkPack(db, readJson(file));
     for (const p of checked.problems) console.log(p);
+    for (const f of checked.flags) console.log(`flag (shown at the desk): excerpt ${f.excerpt} ${f.flag}`);
+    for (const c of checked.coverage) {
+      console.log(`coverage, source ${c.source_id}${c.cited ? '' : ' (not used)'}: ${c.excerpted.length} of ${c.units} units excerpted, ${c.read_not_excerpted} declared read and not excerpted, ${c.not_read.length} not read, ${c.not_transcribed.length} not transcribed`);
+    }
     console.log(`${checked.problems.length === 0 ? 'pack OK' : 'pack REFUSED'}; judges' view about ${checked.tokens} tokens (cap ${MAX_PACK_TOKENS})`);
     process.exitCode = checked.problems.length === 0 ? 0 : 1;
   } finally {

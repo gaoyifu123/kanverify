@@ -76,7 +76,7 @@ test('voteProblems: the evidence rule of publication_checks', () => {
 
 test('voteProblems: verdict values, deadlines, open question, summaries, vague claims', () => {
   const texts = new Map([[1, UNITS]]);
-  const d = [doc(1, 'law')];
+  const d = [doc(1, 'law', 'Pub', { published_on: '2020-01-01' })]; // dated before every date checked here
   assert.deepEqual(voteProblems({ verdict: 'kept' }, CLAIM, d, texts, '2026-11-22'), ['verdict is not one of the six']);
   // Before the deadline only came_true may be given early; partly_came_true, not_came_true
   // and to_evaluate wait for the deadline (standard section 5, as amended).
@@ -188,7 +188,7 @@ test('Fable review 7: unverifiable on a renounced measurable promise; hints neve
 
 test('voteProblems: the deadline day is inside the deadline (Fable review 1, finding 3)', () => {
   const texts = new Map([[1, UNITS]]);
-  const d = [doc(1, 'law')];
+  const d = [doc(1, 'law', 'Pub', { published_on: '2020-01-01' })]; // dated before every date checked here
   const pending = { verdict: 'pending', reasoning: 'r', summary_fr: 'f', summary_en: 'e', evidence: [] };
   // On the deadline day: still pending; outcome verdicts other than came_true wait.
   assert.deepEqual(voteProblems(pending, CLAIM, d, texts, '2023-12-31'), []);
@@ -202,7 +202,7 @@ test('voteProblems: the deadline day is inside the deadline (Fable review 1, fin
 
 test('voteProblems: unverifiable on a measurable claim only after the deadline, with evidence (finding 5)', () => {
   const texts = new Map([[1, UNITS]]);
-  const d = [doc(1, 'law')];
+  const d = [doc(1, 'law', 'Pub', { published_on: '2020-01-01' })]; // dated before every date checked here
   const unv = okVote({ verdict: 'unverifiable' });
   assert.match(voteProblems(unv, CLAIM, d, texts, '2023-06-01').join(), /not over .*but verdict is unverifiable/);
   assert.match(voteProblems(unv, CLAIM, d, texts, '2023-12-31').join(), /not over/);
@@ -392,4 +392,16 @@ test('archiveEvidence warns when the download ends on another host; triedDocumen
     'the PDF has 331 pages, over the 100-page limit', 'Download failed: HTTP 403', 'url was not among the search results',
   ]);
   db.close();
+});
+
+test('review 7 re-check: a vote citing a source of any kind dated after today is refused', () => {
+  const texts = new Map([[1, UNITS], [2, UNITS], [3, UNITS]]);
+  const LAW = { source_id: 1, excerpt: "La taxe d'habitation sur les résidences principales est supprimée", locator: '§1' };
+  const after = { ...CLAIM, deadline: '2020-01-01' };
+  assert.deepEqual(voteProblems(okVote({ evidence: [LAW] }), after, [doc(1, 'law', 'Pub', { published_on: '2026-11-22' })], texts, '2026-11-22'), []);
+  assert.match(voteProblems(okVote({ evidence: [LAW] }), after, [doc(1, 'law', 'Pub', { published_on: '2030-01-01' })], texts, '2026-11-22').join(),
+    /the law document \(source 1\) is dated 2030-01-01, after 2026-11-22; it cannot be cited before it is published/);
+  const two = [doc(2, 'media', 'A', { published_on: '2026-12-01' }), doc(3, 'media', 'B', { published_on: '2026-01-01' })];
+  const media = [{ source_id: 2, excerpt: "La taxe d'habitation", locator: '§1' }, { source_id: 3, excerpt: "La taxe d'habitation", locator: '§1' }];
+  assert.match(voteProblems(okVote({ evidence: media }), after, two, texts, '2026-11-22').join(), /the media document \(source 2\) is dated 2026-12-01/);
 });

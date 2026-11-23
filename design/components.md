@@ -31,6 +31,41 @@
 | Notice `.notice` | withdrawal | date, reason (`note_{lang}`) | — | nothing from the withdrawn snapshot |
 | Toggle `.toggle` | choose one option | radio buttons styled as bordered labels | checked = accent border | each label ≥ 44 px high |
 | Split `.split` | wide screens | side column + main column | ≥ 1024 px only | running text ≤ 44rem |
+| Renunciation entry (no new class; reuses `.chain` entry and `.layer`) | show a public renunciation in the role it has for this verdict | see "Renunciation on the item page" below | two roles, by verdict | never called "Evidence" unless the verdict is `not_came_true` |
+
+## Renunciation on the item page (2026-11-23, Fable review 7 finding 5)
+
+Since record format 11 an `evidence[]` entry with `kind = 'renunciation'` can stand beside real evidence. Its role
+depends only on the verdict (decision 0013, `renunciation-order`); no new field is needed.
+
+| Verdict | Role | Shown as |
+| --- | --- | --- |
+| `not_came_true` | evidence (alone, or beside other documents) | unchanged: numbered among the evidence, "Evidence N" / « Preuve N », kind "Public renunciation" / « Renonciation publique » |
+| `came_true`, `partly_came_true`, `to_evaluate`, `unverifiable` | ends the wait; not evidence of the result | **not numbered**; its own wording in the chain, the row body and the detail layer (below) |
+
+For the second case only:
+
+1. **Numbering.** "Evidence 1…n" counts the other evidence only, in their existing order with renunciations skipped.
+   Layer anchor `#ren-{claim id}-{k}` (k = 1… among renunciations), so `#ev-…` anchors keep pointing to evidence.
+2. **Dated chain** (`.chain`, same entry style, placed by `published_on` like evidence; tie with evidence on the same
+   date: after it). Entry text, title in serif as for any document title:
+   - EN: `{title link} · public renunciation, the wait for the deadline ends here`
+   - FR: `{lien titre} · renonciation publique, l’attente de l’échéance s’arrête ici`
+3. **Row body in lists** (`.row-basis`, the "Based on" list): the same line, without the link
+   (`{title} · public renunciation, the wait for the deadline ends here` / `{titre} · renonciation publique,
+   l’attente de l’échéance s’arrête ici`).
+4. **Detail layer** (`.layer`, after the evidence layers, before "Where it was said"):
+   - title: EN "Public renunciation" / FR « Renonciation publique »
+   - one-line description: EN `Ends the wait · {publisher} · {date}` / FR `Met fin à l’attente · {publisher} · {date}`
+   - first paragraph (`.muted`), then the excerpt and the usual `dl.meta` (document, place, address, retrieved,
+     fingerprint), exactly as an evidence layer:
+     - EN: `{name} publicly gave up this promise on {date}. From that date, the promise is judged on what had been done; this document is not evidence of that result.`
+     - FR: `{name} a renoncé publiquement à cette promesse le {date}. À partir de cette date, la promesse est jugée sur ce qui avait été fait ; ce document n’est pas la preuve de ce résultat.`
+     (`{name}` = `subject.name`; French: narrow no-break space before « ; » as everywhere.)
+5. No new type size, weight, colour, icon or class. Several renunciations: one entry and one layer each.
+
+Cut: a badge or separate "Wait ended" heading (the chain line already says it); moving the deadline entry (the chain
+stays a plain chronicle: the deadline is still shown at its date).
 
 ## Principles relied on
 
@@ -49,3 +84,8 @@ component per job, native `<details>` for the accordion: no script needed to ope
   outcome and figures first. Worth a line in `team/run/judge-prompt.md` (not my file).
 - Rows are longer on phones (summary line + card padding): about 4–5 rows per screen instead of 6.
 - An open row shows evidence titles but not excerpts or fingerprints: those stay on the item page.
+- Renunciation (2026-11-23): the role is read from the verdict plus `kind`, so a statement wrongly labelled
+  `renunciation` would be shown as ending the wait; the desk reading is the only guard (same as Fable review 7).
+  After a renunciation the chain still shows the original deadline at its later date; the renunciation line says the
+  wait ended earlier, but a quick reader may miss it. A claim-to-renunciation link would make the role explicit; not
+  asked for (record format is not mine to change).

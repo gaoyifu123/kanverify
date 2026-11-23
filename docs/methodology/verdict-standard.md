@@ -1,6 +1,6 @@
 # 判定标准
 
-版本 0.4（2026-11-23）。0.4：期限时的状态、放弃只结束等待、提前成真只限一次性结果、含糊承诺放弃后仍无法验证（决策 0013）。0.3：结论为六种，可提前判成真（决策 0008 修订）。仍是草稿：还没有用真实条目检验过。
+版本 0.5（2026-11-23）。0.5 (2026-11-23): the “partly” and “did not come true” rows of the table in section 5 brought in line with decision 0013 (Fable review 6, B7); wording only, no new rule. The early “came true” bullet in section 5 is with the founder (board item early-act-state): as worded it contradicts itself, since every law can be repealed. 0.4：期限时的状态、放弃只结束等待、提前成真只限一次性结果、含糊承诺放弃后仍无法验证（决策 0013）。0.3：结论为六种，可提前判成真（决策 0008 修订）。仍是草稿：还没有用真实条目检验过。
 计划在第 8 至 10 天用第一个国家的全部条目检验，并和现有追踪器对照后升为 1.0。
 
 ## 1. 什么会被收录
@@ -48,8 +48,8 @@
 | `pending` | 待定 | En attente | Pending | 还没到期 |
 | `to_evaluate` | 待评估 | À évaluer | To be assessed | 已到期，凭据还不够判断 |
 | `came_true` | 成真 | Réalisée | Came true | 完全达到录入时写定的判定标准（可以在期限前） |
-| `partly_came_true` | 部分成真 | Partiellement réalisée | Partly came true | 做到了一部分；可量化的要在说明里写明数据（到期后才判） |
-| `not_came_true` | 未成真 | Non réalisée | Did not come true | 到期，没做到；或期限前本人已明确放弃 |
+| `partly_came_true` | 部分成真 | Partiellement réalisée | Partly came true | 做到了一部分；可量化的要在说明里写明数据（到期后才判，或本人公开明确放弃后，见第 3 节） |
+| `not_came_true` | 未成真 | Non réalisée | Did not come true | 到期（或本人公开明确放弃后，见第 3 节），没做到 |
 
 - 可验证性为 `vague` 或 `hedged` 的，结论自动是“无法验证”。
 - 评判结果，不评判努力。提交了法案但没有通过，不算成真。

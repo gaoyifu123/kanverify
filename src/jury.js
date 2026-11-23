@@ -45,6 +45,7 @@ import {
   EVIDENCE_KINDS, INDEPENDENT_KINDS, OFFICIAL_KINDS, VERDICTS, VOTE_KIND, answerOf, checkPack, checkVote, estimateTokens,
   judgeView, sha256Of, voteProblems,
 } from './pack.js';
+import { sameSessionProblem } from './rules.js';
 
 export { INDEPENDENT_KINDS, OFFICIAL_KINDS, VERDICTS, voteProblems };
 
@@ -636,6 +637,9 @@ export function tallyPack(db, packPath, { checkOptions = {} } = {}) {
     }
     const problems = ctx.problem ? [ctx.problem] : checkVote(vote, pack, checked, ctx);
     if (`${stem}.vote-${vote?.provider}-${vote?.channel}.json` !== f) problems.push('file name does not match provider and channel');
+    // Decision 0012 A2, as at the desk: no vote counts on a pack without a program-stamped session, nor from that session.
+    const session = sameSessionProblem(pack, vote);
+    if (session) problems.push(session);
     return { file: f, ...vote, valid: problems.length === 0, problems };
   });
   const validOf = (m) => votes.find((v) => v.valid && v.provider === m.provider && v.channel === m.channel);

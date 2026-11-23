@@ -204,7 +204,7 @@ person pages, evidence excerpts on the first screen (moved deeper).
 | Verdicts | six, one set for promises and predictions (decision 0008, revised 15:05: partly came true restored; came true / partly may be given early) |
 | Round 4 changes | six patterns ("\|" for partly), dated chain, summary line, accordion rows, groups by source, coverage + "counts, not a score" (coordinator, on the founder's delegation) |
 | Verdict colour | palette B: six muted hues, no red/green, always with pattern and label (founder, 2026-11-22, after comparing A and B side by side) |
-| Renunciation | the person's own public abandonment is evidence for Did not come true only (0008) |
+| Renunciation | the person's own public abandonment is evidence for Did not come true only (0008); under other verdicts it only ends the wait (0013) and is shown unnumbered, see `components.md` "Renunciation on the item page" |
 | Corrections, archives, withdrawn items, jury | one email; files not public; notice only; shown as is, person first |
 | Statistics | donut per person, bars per topic, everyone side by side; counts only; neutral sort |
 | Home | timeline of the current year with cards that follow the period |

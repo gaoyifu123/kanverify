@@ -97,14 +97,16 @@ export function renunciationAlone(sources, verdict) {
 }
 
 /**
- * A cited renunciation dated after `today` is refused: a document cannot be cited before it exists
- * (Fable review 7). Returns the problem, or null. Used by confirm() and the vote checks.
+ * A cited source of any kind dated after `today` is refused: a document cannot be cited before it exists
+ * (Fable review 7 and its re-check: a law dated 2030 must not stand behind came_true today). Returns the
+ * problem, or null. Used by confirm() and the vote checks.
  * @param {{kind: string, published_on: string|null, id?: number, source_id?: number}[]} sources the verdict's evidence sources
  */
-export function futureRenunciation(sources, today) {
-  const late = sources.filter((s) => s?.kind === 'renunciation' && typeof s.published_on === 'string' && s.published_on > today);
+export function futureEvidence(sources, today) {
+  const late = sources.filter((s) => typeof s?.published_on === 'string' && s.published_on > today);
   if (late.length === 0) return null;
-  return late.map((s) => `the renunciation (source ${s.id ?? s.source_id}) is dated ${s.published_on}, after ${today}; it cannot be cited before it is published`).join('; ');
+  const what = (s) => (s.kind === 'renunciation' ? 'the renunciation' : `the ${s.kind} document`);
+  return late.map((s) => `${what(s)} (source ${s.id ?? s.source_id}) is dated ${s.published_on}, after ${today}; it cannot be cited before it is published`).join('; ');
 }
 
 /**
@@ -188,23 +190,24 @@ export function deadlineProblem(claim, verdict, today, renounced, hint = null) {
 }
 
 /**
- * Claude vote integrity, interim (decision 0012 A2): a Claude vote under the subscription must come
- * from a fresh session, not the one that cut the pack. Both files name their session in
- * made_by.session. Returns the problem, or null (also when either session is not recorded; see
- * sessionsRecorded).
+ * Session integrity (decision 0012 A2; Fable review 6 A2): the session that cut a pack is stamped by the
+ * program when the pack is started (`node src/pack.js start`, pack.header.session), never typed by the
+ * agent. A pack without one is refused for every vote. A vote whose made_by.session is that same
+ * session (case and surrounding blanks aside, Fable re-check F) is refused, whoever made it. A vote
+ * that names no session is not refused here (sessionsRecorded tells the desk to say so).
+ * Returns the problem, or null.
  */
 export function sameSessionProblem(pack, vote) {
-  if (vote?.provider !== 'anthropic' || vote?.channel !== 'subscription') return null;
-  const cut = pack?.made_by?.session;
+  const cut = pack?.header?.session;
+  if (!filled(cut)) return 'the evidence pack has no session stamped by the program (node src/pack.js start); cut it again';
   const voted = vote?.made_by?.session;
-  if (!filled(cut) || !filled(voted)) return null;
-  // Case and surrounding blanks aside: "S1" and "s1" name the same session (Fable re-check F).
+  if (!filled(voted)) return null;
   return cut.trim().toLowerCase() === voted.trim().toLowerCase()
-    ? 'this Claude vote was made in the session that cut the pack; a judge must be a fresh session (decision 0012 A2)'
+    ? 'this vote was made in the session that cut the pack; a judge must be a fresh session (decision 0012 A2)'
     : null;
 }
 
 /** True when both the pack and the vote name their session, so sameSessionProblem could check them. */
 export function sessionsRecorded(pack, vote) {
-  return filled(pack?.made_by?.session) && filled(vote?.made_by?.session);
+  return filled(pack?.header?.session) && filled(vote?.made_by?.session);
 }

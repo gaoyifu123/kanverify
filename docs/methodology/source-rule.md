@@ -1,6 +1,7 @@
 # Source rule: no evidence, no claim
 
-Version 0.4 (2026-11-23). Restored and consolidated after the file was found reverted to an early 0.1 draft
+Version 0.5 (2026-11-23). 0.5: the renunciation lines brought in line with decision 0013 and record format 11
+(drift found by Fable review 6, B7); wording only, no new rule. 0.4: restored and consolidated after the file was found reverted to an early 0.1 draft
 (overwritten on 2026-11-22 around 17:06, cause unknown). Content follows the founder's decisions recorded in
 `docs/decisions/0002`, `0008` (renunciation), `0011`, and the founder's board answers of 2026-11-21/22.
 History: 0.1 first draft → 0.2 founder simplified evidence (one official document, or two independent media) →
@@ -30,7 +31,7 @@ media and commentators.
 | Other documents issued by an official body | `official` | Yes — one is enough |
 | Independent, non-official: a news outlet's own reporting | `media` | Yes — but two from different publishers |
 | Independent, non-official: research that publishes its raw data | `dataset_study` | Yes — but two from different publishers |
-| The speaker's own public, explicit abandonment of a **promise** | `renunciation` | Only for "did not come true" on a promise; otherwise a lead |
+| The speaker's own public, explicit abandonment of a **promise** | `renunciation` | On a promise only: ends the wait; alone, only for "did not come true"; beside other evidence for the other verdicts. For a prediction, a lead |
 
 The database enforces the table (`db/schema.sql`, `publication_checks`): a verdict about an outcome needs one official
 document or two independent sources from different publishers; `platform` and `statement` are never accepted as evidence.
@@ -53,9 +54,13 @@ an `official` document that only assesses its own success treats it as a stateme
 
 ## Exception: the speaker's own public renunciation (founder, 2026-11-22; decision 0008)
 
-Before the deadline, the speaker's own public, explicit words abandoning a **promise** are registered as `renunciation`
-and may be the only evidence for "did not come true". Only for that verdict and only for promises; for predictions and
-for every other verdict it is a lead like any statement. Anything unclear ("postponed", "reconsidering") is a `statement`.
+The speaker's own public, explicit words abandoning a **promise** are registered as `renunciation`. Anything unclear
+("postponed", "reconsidering") is a `statement`. For predictions a renunciation is a lead like any statement.
+A renunciation dated on or after the day the promise was made, and on or before its deadline, **ends the wait**
+(decision 0013): the promise is judged as if its deadline had passed on the renunciation's date, on what was actually
+done. It is never evidence of a result: it may be the only evidence for "did not come true", and stands beside the
+evidence of what was done under every other verdict (record format 11). One dated after the deadline changes nothing:
+the state at the deadline counts. How judges apply this: `team/run/judge-prompt.md`, steps 2e and 3d.
 
 ## French law texts: Légifrance official API data (founder, 2026-11-22)
 

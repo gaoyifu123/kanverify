@@ -26,7 +26,7 @@ import { candidateProblems, checkVerbatim, normalizeForMatch } from './extract.j
 import { confirm, hasUnconfirmedChanges, publicationBlockers } from './ledger.js';
 import { readRounds, roundsFileName, voteContext } from './jury.js';
 import { publisherKey, sameSessionProblem, sessionsRecorded } from './rules.js';
-import { DEFAULT_TEXT_DIR, VERDICTS, checkCandidatesFile, checkPack, checkVote, sha256Of, sourceUnits, voteProblems, writeJsonAtomic } from './pack.js';
+import { DEFAULT_TEXT_DIR, PACK_PROMPT_PATH, VERDICTS, checkCandidatesFile, checkPack, checkVote, sha256Of, sourceUnits, voteProblems, writeJsonAtomic } from './pack.js';
 import { renderCandidatePage, renderVerdictPage } from './desk-view.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -650,7 +650,7 @@ export function createDesk({
       }
       const problems = ctx.problem ? [ctx.problem] : checkVote(vote, pack, checked, ctx);
       if (`${stem}.vote-${vote?.provider}-${vote?.channel}.json` !== f) problems.push('file name does not match provider and channel');
-      // Decision 0012 A2: a Claude subscription vote from the session that cut the pack is not independent.
+      // Decision 0012 A2: a vote from the session that cut the pack is not independent; a pack with no program-stamped session counts no vote.
       const session = sameSessionProblem(pack, vote);
       if (session) problems.push(session);
       const unrecorded = vote?.provider === 'anthropic' && vote?.channel === 'subscription' && !sessionsRecorded(pack, vote);
@@ -723,7 +723,7 @@ export function createDesk({
    * play no part. Vague and hedged claims are returned without a pack.
    */
   function scan(entries = readActions(logPath), world = worldKey()) {
-    const globalKey = `${world}|${statKey(JUDGE_PROMPT_PATH)}|${statKey(PRINCIPLES_PATH)}`;
+    const globalKey = `${world}|${statKey(JUDGE_PROMPT_PATH)}|${statKey(PACK_PROMPT_PATH)}|${statKey(PRINCIPLES_PATH)}`;
     const allClaims = db.prepare('SELECT id, source_id, quote_original, verifiability FROM claims').all();
     const claimsByQuote = new Map();
     for (const c of allClaims) {

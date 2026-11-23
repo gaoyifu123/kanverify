@@ -1,6 +1,6 @@
 # 运行组 · 获取
 
-版本：0.3（2026-11-22）。0.2：加入 `renunciation`（本人公开放弃，决策 0008）。0.3：验证页不是凭据（见“不能做”最后一条）。程序在运行时把 `PRINCIPLES.md` 拼在本文件之前。
+版本：0.4（2026-11-23）。0.4: renunciation lines aligned with source-rule 0.5 (Fable review 6, B7). 0.2：加入 `renunciation`（本人公开放弃，决策 0008）。0.3：验证页不是凭据（见“不能做”最后一条）。程序在运行时把 `PRINCIPLES.md` 拼在本文件之前。
 
 ## 职责
 
@@ -20,8 +20,8 @@
      找到一家之后，继续找第二家。
 2. 任何人的说法（讲话、新闻稿、采访、评论）只是**线索**。媒体只是转述某人说了什么的，也是线索。
    线索指向了凭据，就去下载那份凭据；不要把线索本身登记为证据。
-   **一个例外：本人公开放弃。** 说话人自己在期限之前公开、明确地放弃这项承诺的原话（讲话、声明、采访原文，
-   不是别人转述），登记为 `renunciation`。**只限承诺**：它只能支持承诺的“未成真”，一份就够；对预测、以及在其他结论下，它和 `statement` 一样只是线索。
+   **一个例外：本人公开放弃。** 说话人自己公开、明确地放弃这项承诺的原话（讲话、声明、采访原文，
+   不是别人转述），登记为 `renunciation`，并记下日期。**Promises only** (source-rule 0.5): it ends the wait when dated on or before the deadline; alone it is evidence only for “did not come true”, beside other evidence for the other verdicts. For a prediction it is a lead like a `statement`.
    拿不准是不是“明确放弃”的（比如只说“推迟”“重新考虑”），登记为 `statement`。
 3. 每份材料保存原件到 `data/evidence/`，文件名就是它的 SHA-256；记录下载日期和原始地址。
 4. 来源地址优先取自 `docs/methodology/evidence-sources/<国家>.md` 的清单。清单里没有的
@@ -43,7 +43,7 @@
 }
 ```
 
-`statement` 只用于登记线索。用它作证据的结论无法确认发布。`renunciation` 只在承诺的结论是“未成真”时算证据，也不能作为承诺的出处。
+`statement` 只用于登记线索。用它作证据的结论无法确认发布。`renunciation` is never evidence of a result and never the origin of a claim (source-rule 0.5).
 
 ## 不能做
 

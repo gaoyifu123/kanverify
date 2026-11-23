@@ -14,7 +14,7 @@ import { autoImport, candidateKey, claimQuoteSha, createDesk, hasFigures, readAc
 import { blockerText, renderCandidatePage } from '../src/desk-view.js';
 import { closeRound, judgeInputText, readRounds, voteContext } from '../src/jury.js';
 import { publicationBlockers, withdraw } from '../src/ledger.js';
-import { sha256Of } from '../src/pack.js';
+import { packPromptVersion, sha256Of } from '../src/pack.js';
 import { sameSessionProblem } from '../src/rules.js';
 import { addClaim, addSource, freshDb } from './helpers.js';
 
@@ -92,7 +92,7 @@ function writePack(s, verdicts = ['came_true', 'came_true'], { claim: claimOver 
   const law = s.db.prepare('SELECT * FROM sources WHERE id = ?').get(s.law);
   const where = law.media_type === 'application/pdf' ? { locator: 'p. 2', pdf_page: 2 } : { locator: '§2', pdf_page: null };
   const pack = {
-    kind: 'kanverify-evidence-pack', format: 1, made_by: { role: 'evidence', channel: 'subscription', provider: 'anthropic', model: 'claude-opus-5-5', ...(cutSession && { session: cutSession }) },
+    kind: 'kanverify-evidence-pack', format: 1, made_by: { role: 'evidence', channel: 'subscription', provider: 'anthropic', model: 'claude-opus-5-5' },
     claim: {
       key: 'C1', speaker: 'Test Subject', origin: { source_id: s.origin, title: 'Programme', published_on: '2022-03-17', locator: '§2' },
       ...Object.fromEntries(['quote_original', 'lang', 'quote_fr', 'quote_en', 'type', 'domain', 'verifiability', 'deadline', 'deadline_basis', 'criteria_fr', 'criteria_en', 'speaker_role_fr', 'speaker_role_en'].map((f) => [f, c[f]])),
@@ -101,6 +101,13 @@ function writePack(s, verdicts = ['came_true', 'came_true'], { claim: claimOver 
     sources: [{ source_id: s.law, kind: law.kind, title: 'Loi', publisher: 'JO', published_on: '2025-01-01', url: 'https://example.org/l', lang: 'fr' }],
     excerpts: [{ source_id: s.law, locator: where.locator, pdf_page: where.pdf_page, text: 'X est en vigueur depuis 2025.', text_en: 'X has been in force since 2025.' }],
     considered_not_used: [], gaps: null,
+    read: [{ source_id: s.law, units: 'all', not_read_why: null }],
+    before_reading: { met: 'X in force', not_met: 'X not in force, or only in part' }, transcription_doubts: [],
+  };
+  // What node src/pack.js start writes: the program's header with its session.
+  pack.header = {
+    written_by: 'node src/pack.js start', started_at: '2026-11-22T09:00:00Z', prompt_version: packPromptVersion(),
+    session: cutSession ?? 'pack-desk-test', given_sources: [s.law], claim: JSON.parse(JSON.stringify(pack.claim)),
   };
   const bytes = Buffer.from(JSON.stringify(pack));
   const packPath = join(s.packDir, 'c1.pack.json');
@@ -1149,7 +1156,7 @@ test('re-check F: no link nonce for another site\'s page load; an old PDF link d
 });
 
 test('re-check F: sessions compared without case; figures written in words count', () => {
-  const pack = { made_by: { session: 'S1' } };
+  const pack = { header: { session: 'S1' } };
   assert.match(sameSessionProblem(pack, { provider: 'anthropic', channel: 'subscription', made_by: { session: ' s1' } }), /session that cut the pack/);
   for (const text of ['deux millions d’euros', 'two hundred schools', 'cinquante pour cent', '٣', '12', '50 %']) assert.equal(hasFigures(text), true, text);
   for (const text of ['une baisse', 'one plan', 'Article premier', null]) assert.equal(hasFigures(text), false, String(text));
@@ -1167,4 +1174,34 @@ test('Fable review 7: the desk stop for misused evidence names the renunciation 
   assert.match(text, /dated on or after the promise/);
   assert.match(text, /alone only for “Did not come true”/);
   db.close();
+});
+
+test('Fable review 6 (A9, decision 0012 item 1): coverage per cited source, "declared read", the pack prompt, a cut flag; no session, no vote', (t) => {
+  const s = setup(t);
+  importOne(s);
+  const packPath = writePack(s);
+  let [item] = s.desk.verdictQueue().items;
+  let page = s.desk.verdictPage(item.id);
+  assert.match(page, /pack prompt <span class="mono">pack-\d+\.\d+<\/span>/);
+  assert.match(page, /declared read/);
+  assert.match(page, /1 of 2 units excerpted · 1 declared read, not excerpted · 0 not read · 0 not transcribed/);
+  assert.doesNotMatch(page, /Check the cut/);
+  // An excerpt that starts mid-sentence is shown with a flag (the round's votes are then about another version of the pack; only the page is checked here).
+  const pack = JSON.parse(readFileSync(packPath, 'utf8'));
+  pack.excerpts[0].text = 'est en vigueur depuis 2025.';
+  writeFileSync(packPath, JSON.stringify(pack));
+  [item] = s.desk.verdictQueue().items;
+  page = s.desk.verdictPage(item.id);
+  assert.match(page, /Check the cut:<\/b> this excerpt does not start at a sentence or unit boundary/);
+  // A pack without the program-stamped session: no vote counts.
+  const s2 = setup(t);
+  importOne(s2);
+  const path2 = writePack(s2, ['came_true', 'came_true'], { close: false });
+  const p2 = JSON.parse(readFileSync(path2, 'utf8'));
+  delete p2.header.session;
+  writeFileSync(path2, JSON.stringify(p2));
+  writeFileSync(join(s2.packDir, 'c1.judge-input.md'), judgeInputText(p2, sha256Of(readFileSync(path2)), '2026-11-22'));
+  closeRound(path2, { now: () => new Date(Date.now()) });
+  [item] = s2.desk.verdictQueue().items;
+  assert.ok(item.p.votes.every((v) => !v.valid && /no session stamped by the program/.test(v.problems.join())));
 });
