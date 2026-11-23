@@ -24,7 +24,7 @@ import { DEFAULT_EVIDENCE_DIR, evidencePath } from './archive.js';
 import { openDatabase } from './db.js';
 import { candidateProblems, checkVerbatim, normalizeForMatch } from './extract.js';
 import { confirm, hasUnconfirmedChanges, publicationBlockers } from './ledger.js';
-import { readRounds, roundsFileName, voteContext } from './jury.js';
+import { juryVoteProblems, readRounds, roundMembers, roundsFileName, sameCompanyProblems, voteContext } from './jury.js';
 import { publisherKey, sameSessionProblem, sessionsRecorded } from './rules.js';
 import { DEFAULT_TEXT_DIR, PACK_PROMPT_PATH, VERDICTS, checkCandidatesFile, checkPack, checkVote, sha256Of, sourceUnits, voteProblems, writeJsonAtomic } from './pack.js';
 import { renderCandidatePage, renderVerdictPage } from './desk-view.js';
@@ -632,6 +632,7 @@ export function createDesk({
     if (closed && closed.pack_sha256 !== packSha256) {
       roundProblems.push(`the evidence pack changed after round ${closed.round} was closed, so its votes are about another version of it`);
     }
+    const members = roundMembers(closed);
     const votes = (closed?.votes ?? []).map(({ file: f, sha256 }, i) => {
       const at = join(dir, f);
       if (!existsSync(at)) {
@@ -649,27 +650,23 @@ export function createDesk({
       } catch {
         return { n: i + 1, file: f, vote: {}, valid: false, problems: ['not valid JSON'] };
       }
-      const problems = ctx.problem ? [ctx.problem] : checkVote(vote, pack, checked, ctx);
-      if (`${stem}.vote-${vote?.provider}-${vote?.channel}.json` !== f) problems.push('file name does not match provider and channel');
+      // The same test as tally and closeRound: a jury member's vote, of a member of the jury the round was closed under.
+      const identity = juryVoteProblems(vote, f, stem);
+      const problems = [...identity, ...(ctx.problem ? [ctx.problem] : checkVote(vote, pack, checked, ctx))];
+      if (identity.length === 0 && !members.includes(vote.provider)) problems.push(`${vote.provider} is not in the jury round ${closed.round} was closed under; not counted`);
       // Decision 0012 A2: a vote from the session that cut the pack is not independent; a pack with no program-stamped session counts no vote.
       const session = sameSessionProblem(pack, vote);
       if (session) problems.push(session);
       const unrecorded = vote?.provider === 'anthropic' && vote?.channel === 'subscription' && !sessionsRecorded(pack, vote);
-      return { n: i + 1, file: f, vote, valid: problems.length === 0, problems, sessionUnrecorded: unrecorded };
+      return { n: i + 1, file: f, vote, valid: problems.length === 0, problems, sessionUnrecorded: unrecorded, member: identity.length === 0 };
     });
-    // One vote per model. Two files from the same provider and model (case and spaces aside) are not
-    // independent votes, and file order must not pick one: neither is counted.
-    const byModel = new Map();
+    // One vote per company in a round (decision 0010: the channel is a setting, not another judge), the
+    // same rule as tally and closeRound: file order must not pick one, so none of them is counted.
+    const twice = sameCompanyProblems(votes.filter((v) => v.member).map((v) => ({ file: v.file, provider: v.vote.provider })));
     for (const v of votes) {
-      const key = `${String(v.vote?.provider ?? '').trim().toLowerCase()}|${String(v.vote?.model ?? '').trim().toLowerCase()}`;
-      byModel.set(key, [...(byModel.get(key) ?? []), v]);
-    }
-    for (const group of byModel.values()) {
-      if (group.length < 2) continue;
-      for (const v of group) {
-        v.valid = false;
-        v.problems = [...v.problems, `same provider and model as vote ${group.filter((x) => x !== v).map((x) => x.n).join(', ')}; neither is counted`];
-      }
+      if (!twice[v.file]) continue;
+      v.valid = false;
+      v.problems = [...v.problems, twice[v.file]];
     }
     const validSig = roundSig(votes.filter((v) => v.valid).map((v) => voteRow(v.vote)));
     // judgedOn: the date the judges of this round were shown (the judge input's "made" date), for the deadline re-check.

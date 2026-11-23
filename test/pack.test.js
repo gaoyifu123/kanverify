@@ -6,19 +6,22 @@ import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { ask } from '../src/ai/index.js';
+import { ask, unavailable } from '../src/ai/index.js';
 import { createClaudeAdapter } from '../src/ai/claude-cli.js';
 import { childEnv, createCodexAdapter, parseCodexStderr } from '../src/ai/codex-cli.js';
 import { storeEvidenceBytes } from '../src/archive.js';
 import { loadPrompt } from '../src/extract.js';
 import {
-  JUDGE_SCHEMA, judgeInputHeader, judgeInputText, packJudgeRequest, principlesText, runPackVotes, tallyPack, voteFileName,
+  JUDGE_SCHEMA, closeRound, judgeInputHeader, judgeInputText, loadJury, packJudgeRequest, principlesText, runPackVotes, tallyPack, voteFileName,
 } from '../src/jury.js';
 import {
   MAX_PACK_TOKENS, boundaryProblems, checkCandidatesFile, checkPack, checkVote, locateSpan, packPromptVersion, sha256Of, sourceUnits, startPack, unitsListing,
 } from '../src/pack.js';
 import { sameSessionProblem } from '../src/rules.js';
-import { addClaim, addSource, freshDb } from './helpers.js';
+import { TEST_JURY, addClaim, addSource, freshDb } from './helpers.js';
+
+/** The test jury with some members changed: jury({ gemini: { channel: 'api', model: 'gemini-x' } }). */
+const jury = (members = {}) => ({ ...TEST_JURY, members: { ...TEST_JURY.members, ...members } });
 
 const PACK_VERSION = packPromptVersion();
 const clone = (x) => JSON.parse(JSON.stringify(x));
@@ -173,7 +176,7 @@ test('checkCandidatesFile: the program recomputes verbatim and problems, whateve
 function voteFor(s, packSha256, over = {}) {
   return {
     kind: 'kanverify-vote', format: 1, claim: 'C1', pack_file: 'c1.pack.json', pack_sha256: packSha256,
-    provider: 'anthropic', channel: 'subscription', via: 'claude-code', model: 'claude-opus-5-5', promptVersion: JUDGE_VERSION,
+    provider: 'anthropic', channel: 'subscription', via: 'claude-cli', model: 'claude-opus-5-5', promptVersion: JUDGE_VERSION,
     system_sha256: SYSTEM_SHA256, verdict: 'partly_came_true', rules_applied: ['DL-2', 'EV-1', 'OC-2'],
     evidence: [{ source_id: s.ids.law, excerpt: 'Trente minutes d’activité physique quotidienne sont généralisées', locator: '§2', pdf_page: null }],
     reasoning: 'r', open_question_fr: null, open_question_en: null, summary_fr: 'f', summary_en: 'e', ...over,
@@ -316,11 +319,11 @@ test('runPackVotes and tallyPack: Codex votes, Gemini without a key is skipped, 
   const run = fakeRun(answer);
   const noKeyGemini = { name: 'gemini', keyVar: 'GEMINI_API_KEY', documentTypes: [], async call() { throw new Error('must not be called'); } };
   const outcomes = await runPackVotes(s.db, packPath, {
-    codexModel: 'gpt-6.2-sol', geminiModel: 'gemini-x', today: '2026-11-22', checkOptions: s.opts,
+    jury: jury({ anthropic: { channel: 'off', model: null }, gemini: { channel: 'api', model: 'gemini-x' } }), today: '2026-11-22', checkOptions: s.opts,
     askOptions: { adapters: { codex: createCodexAdapter({ run }), gemini: noKeyGemini }, env: {} },
   });
   assert.equal(outcomes[0].verdict, 'partly_came_true');
-  assert.deepEqual(outcomes[1], { provider: 'anthropic', channel: 'subscription', skipped: 'no model given' });
+  assert.deepEqual(outcomes[1], { provider: 'anthropic', channel: 'off', skipped: 'off in the jury settings' });
   assert.match(outcomes[2].skipped, /GEMINI/);
   // Codex got the same request text as the judge-input file, and no file to read in its folder.
   const input = readFileSync(join(s.packDir, 'c1.judge-input.md'), 'utf8');
@@ -333,7 +336,8 @@ test('runPackVotes and tallyPack: Codex votes, Gemini without a key is skipped, 
 
   // The Claude subscription vote is a file written by a fresh agent; the program checks it.
   writeFileSync(voteFileName(packPath, 'anthropic', 'subscription'), JSON.stringify(voteFor(s, packSha256, { created_at: new Date().toISOString() })));
-  let result = tallyPack(s.db, packPath, { checkOptions: s.opts });
+  const tallyJury = jury({ gemini: { channel: 'api', model: 'gemini-x' } });
+  let result = tallyPack(s.db, packPath, { checkOptions: s.opts, jury: tallyJury });
   assert.deepEqual(result.votes.map((v) => [v.file, v.valid]), [['c1.vote-anthropic-subscription.json', true], ['c1.vote-openai-subscription.json', true]]);
   assert.equal(result.agreement, 'incomplete');
   assert.equal(result.agreement_among_given, 'agree');
@@ -341,7 +345,7 @@ test('runPackVotes and tallyPack: Codex votes, Gemini without a key is skipped, 
   writeFileSync(voteFileName(packPath, 'anthropic', 'subscription'), JSON.stringify(voteFor(s, packSha256, {
     created_at: new Date().toISOString(), evidence: [{ source_id: s.ids.law, excerpt: 'Article 2. Fin.', locator: '§3', pdf_page: null }],
   })));
-  result = tallyPack(s.db, packPath, { checkOptions: s.opts });
+  result = tallyPack(s.db, packPath, { checkOptions: s.opts, jury: tallyJury });
   assert.equal(result.votes[0].valid, false);
   assert.deepEqual(result.members.map((m) => m.verdict), ['partly_came_true', null, null]);
   assert.ok(existsSync(join(s.packDir, 'c1.result.json')));
@@ -349,7 +353,7 @@ test('runPackVotes and tallyPack: Codex votes, Gemini without a key is skipped, 
   assert.equal(codexVote.system_sha256, SYSTEM_SHA256);
   // Without its judge input, the date the judges were shown is unknown: no vote counts.
   rmSync(join(s.packDir, 'c1.judge-input.md'));
-  result = tallyPack(s.db, packPath, { checkOptions: s.opts });
+  result = tallyPack(s.db, packPath, { checkOptions: s.opts, jury: tallyJury });
   assert.ok(result.votes.every((v) => !v.valid && /judge input c1\.judge-input\.md is missing/.test(v.problems.join())));
 });
 
@@ -371,10 +375,12 @@ test('runPackVotes: the Claude command-line judge gets the same text as Codex an
   };
   const NOW = new Date('2026-11-23T10:00:00Z');
   const outcomes = await runPackVotes(s.db, packPath, {
-    codexModel: 'gpt-6.2-sol', claudeModel: 'claude-opus-5-5', today: '2026-11-22', checkOptions: s.opts, now: () => NOW,
+    jury: TEST_JURY, today: '2026-11-22', checkOptions: s.opts, now: () => NOW,
     askOptions: { adapters: { codex: createCodexAdapter({ run: codexRun }), claude: createClaudeAdapter({ run: claudeRun }) }, env: {} },
   });
-  assert.deepEqual(outcomes.map((o) => [o.provider, o.verdict]), [['openai', 'partly_came_true'], ['anthropic', 'partly_came_true']]);
+  assert.deepEqual(outcomes.map((o) => [o.provider, o.verdict ?? o.skipped]), [
+    ['openai', 'partly_came_true'], ['anthropic', 'partly_came_true'], ['gemini', 'off in the jury settings'], ['mistral', 'off in the jury settings'],
+  ]);
   // Same system text and prompt as Codex (Codex has them on stdin together, Claude in two parts), from an empty folder.
   const req = packJudgeRequest(s.pack, '2026-11-22');
   const [c] = claudeCalls;
@@ -402,7 +408,7 @@ ${req.prompt}`);
   });
   assert.equal(vote.system_sha256, codexVote.system_sha256);
   // The program checks it like every vote; its session is recorded, and it is not the cutter's.
-  const result = tallyPack(s.db, packPath, { checkOptions: s.opts });
+  const result = tallyPack(s.db, packPath, { checkOptions: s.opts, jury: TEST_JURY });
   assert.deepEqual(result.votes.map((v) => [v.file, v.valid]), [['c1.vote-anthropic-subscription.json', true], ['c1.vote-openai-subscription.json', true]]);
   assert.equal(sameSessionProblem(s.pack, vote), null);
   assert.ok(s.pack.header.session && vote.made_by.session !== s.pack.header.session);
@@ -410,7 +416,7 @@ ${req.prompt}`);
   // F6: a re-vote first moves the earlier vote aside, so a failed call cannot leave it counting.
   const failing = async (args) => (args[0] === '--version' ? { code: 0, stdout: '2.1.330' } : { code: 1, stdout: '', stderr: 'usage limit reached' });
   const again = await runPackVotes(s.db, packPath, {
-    codexModel: null, claudeModel: 'claude-opus-5-5', today: '2026-11-22', checkOptions: s.opts,
+    jury: jury({ openai: { channel: 'off', model: null } }), today: '2026-11-22', checkOptions: s.opts,
     askOptions: { adapters: { claude: createClaudeAdapter({ run: failing }) }, env: {} },
   });
   const claudeOutcome = again.find((o) => o.provider === 'anthropic');
@@ -419,7 +425,7 @@ ${req.prompt}`);
   assert.equal(existsSync(voteFileName(packPath, 'anthropic', 'subscription')), false);
   assert.deepEqual(JSON.parse(readFileSync(join(s.packDir, claudeOutcome.superseded), 'utf8')), vote);
   // The moved file is not read as a vote: only Codex's counts now.
-  const after = tallyPack(s.db, packPath, { checkOptions: s.opts });
+  const after = tallyPack(s.db, packPath, { checkOptions: s.opts, jury: TEST_JURY });
   assert.deepEqual(after.votes.map((v) => v.file), ['c1.vote-openai-subscription.json']);
 });
 
@@ -430,9 +436,181 @@ test('runPackVotes: a pack that fails its checks is never sent to a judge', asyn
   bad.excerpts[0].text = 'Texte inventé.';
   writeFileSync(packPath, JSON.stringify(bad));
   const run = fakeRun();
-  await assert.rejects(runPackVotes(s.db, packPath, { codexModel: 'gpt-6.2-sol', checkOptions: s.opts, askOptions: { adapters: { codex: createCodexAdapter({ run }) } } }),
+  await assert.rejects(runPackVotes(s.db, packPath, { jury: TEST_JURY, checkOptions: s.opts, askOptions: { adapters: { codex: createCodexAdapter({ run }) } } }),
     /fails its checks/);
   assert.equal(run.calls.length, 0);
+});
+
+// ---------------------------------------------------------------- the channel of each judge is a setting (decision 0010 addendum)
+
+/** An API adapter that records its calls and answers. */
+function fakeApi(name, keyVar, answer) {
+  const calls = [];
+  return { calls, adapter: { name, keyVar, documentTypes: [], async call(req) { calls.push(req); return { text: answer, modelVersion: req.model, usage: { inputTokens: 10, outputTokens: 5 } }; } } };
+}
+/** A Claude command-line run that records its calls and answers. */
+function fakeClaudeRun(answer) {
+  const calls = [];
+  const run = async (args) => {
+    if (args[0] === '--version') return { code: 0, stdout: '2.1.330 (Claude Code)\n', stderr: '' };
+    calls.push(args);
+    return { code: 0, stderr: '', stdout: JSON.stringify({
+      type: 'result', subtype: 'success', is_error: false, result: answer, session_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+      num_turns: 1, permission_denials: [], usage: { input_tokens: 10, output_tokens: 5 }, modelUsage: { 'claude-opus-5-5': {} },
+    }) };
+  };
+  run.calls = calls;
+  return run;
+}
+function packFile(s) {
+  const packPath = join(s.packDir, 'c1.pack.json');
+  writeFileSync(packPath, JSON.stringify(s.pack, null, 2));
+  const answer = JSON.stringify({ ...JSON.parse(ANSWER), evidence: [{ source_id: s.ids.law, excerpt: 'Trente minutes d’activité physique quotidienne', locator: '§2', pdf_page: null }] });
+  return { packPath, answer };
+}
+
+test('jury settings: switching a member to the API changes the adapter used, and the vote records the channel', async (t) => {
+  const s = setup(t);
+  const { packPath, answer } = packFile(s);
+  const api = fakeApi('anthropic', 'ANTHROPIC_API_KEY', answer);
+  const claudeRun = fakeClaudeRun(answer);
+  const adapters = { anthropic: api.adapter, claude: createClaudeAdapter({ run: claudeRun }) };
+  const onApi = jury({ openai: { channel: 'off', model: null }, anthropic: { channel: 'api', model: 'claude-api-model' } });
+  const [, viaApi] = await runPackVotes(s.db, packPath, { jury: onApi, today: '2026-11-22', checkOptions: s.opts, askOptions: { adapters, env: { ANTHROPIC_API_KEY: 'k' } } });
+  assert.deepEqual([viaApi.provider, viaApi.channel, viaApi.verdict], ['anthropic', 'api', 'partly_came_true']);
+  assert.equal(api.calls.length, 1);
+  assert.equal(api.calls[0].model, 'claude-api-model');
+  assert.equal(claudeRun.calls.length, 0, 'the command-line tool is not used on the API channel');
+  const apiVote = JSON.parse(readFileSync(voteFileName(packPath, 'anthropic', 'api'), 'utf8'));
+  assert.deepEqual([apiVote.provider, apiVote.channel, apiVote.via, apiVote.model_requested], ['anthropic', 'api', 'api', 'claude-api-model']);
+  // The vote counts for the member anthropic, whichever channel the settings name now.
+  let result = tallyPack(s.db, packPath, { checkOptions: s.opts, jury: TEST_JURY });
+  const anthropic = result.members.find((m) => m.provider === 'anthropic');
+  assert.deepEqual([anthropic.channel, anthropic.voted_channel, anthropic.verdict], ['subscription', 'api', 'partly_came_true']);
+
+  // Back to the subscription: the command-line tool is used, and the API vote is moved aside first (one company, one vote).
+  const onSub = jury({ openai: { channel: 'off', model: null } });
+  const [, viaSub] = await runPackVotes(s.db, packPath, { jury: onSub, today: '2026-11-22', checkOptions: s.opts, askOptions: { adapters, env: { ANTHROPIC_API_KEY: 'k' } } });
+  assert.deepEqual([viaSub.channel, viaSub.verdict], ['subscription', 'partly_came_true']);
+  assert.match(viaSub.superseded, /^c1\.superseded-\d{8}T\d{6}-\d+\.vote-anthropic-api\.json$/);
+  assert.equal(api.calls.length, 1, 'the API adapter is not called again');
+  assert.equal(claudeRun.calls.length, 1);
+  assert.equal(existsSync(voteFileName(packPath, 'anthropic', 'api')), false);
+  const subVote = JSON.parse(readFileSync(voteFileName(packPath, 'anthropic', 'subscription'), 'utf8'));
+  assert.deepEqual([subVote.channel, subVote.via], ['subscription', 'claude-cli']);
+
+  // Two votes from one company (one per channel) are never counted, and close no round.
+  writeFileSync(voteFileName(packPath, 'anthropic', 'api'), JSON.stringify(apiVote));
+  result = tallyPack(s.db, packPath, { checkOptions: s.opts, jury: TEST_JURY });
+  for (const v of result.votes.filter((x) => x.provider === 'anthropic')) {
+    assert.equal(v.valid, false);
+    assert.match(v.problems.join(), /anthropic has more than one vote/);
+  }
+  assert.equal(result.members.find((m) => m.provider === 'anthropic').verdict, null);
+  assert.match(closeRound(packPath, { jury: TEST_JURY }).problem, /round not closed: anthropic has more than one vote/);
+});
+
+test('jury settings: a channel that cannot be used refuses with its reason, and never falls back to the other', async (t) => {
+  const s = setup(t);
+  const { packPath, answer } = packFile(s);
+  const anthropicApi = fakeApi('anthropic', 'ANTHROPIC_API_KEY', answer);
+  const openaiApi = fakeApi('openai', 'OPENAI_API_KEY', answer);
+  const claudeRun = fakeClaudeRun(answer);
+  const codexRun = fakeRun(answer);
+  const adapters = {
+    anthropic: anthropicApi.adapter, claude: createClaudeAdapter({ run: claudeRun }), openai: openaiApi.adapter,
+    codex: createCodexAdapter({ run: codexRun, missingTool: () => 'codex: the command-line tool was not found (not installed, or not on PATH)' }),
+  };
+  const settings = jury({ anthropic: { channel: 'api', model: 'claude-api-model' } });
+  // Earlier votes of both members: an unavailable channel must leave them where they are (F4).
+  writeFileSync(voteFileName(packPath, 'openai', 'subscription'), '{"earlier":"openai"}');
+  writeFileSync(voteFileName(packPath, 'anthropic', 'subscription'), '{"earlier":"anthropic"}');
+  // No keys at all: env {} (and .env is not read).
+  const outcomes = await runPackVotes(s.db, packPath, { jury: settings, today: '2026-11-22', checkOptions: s.opts, askOptions: { adapters, env: {} } });
+  const by = Object.fromEntries(outcomes.map((o) => [o.provider, o]));
+  assert.deepEqual(by.openai, { provider: 'openai', channel: 'subscription', skipped: 'codex: the command-line tool was not found (not installed, or not on PATH)' });
+  assert.equal(codexRun.calls.length, 0);
+  assert.equal(openaiApi.calls.length, 0, 'no switch to the OpenAI API');
+  assert.deepEqual(by.anthropic, { provider: 'anthropic', channel: 'api', skipped: 'ANTHROPIC_API_KEY is not set (add it to .env)' });
+  assert.equal(anthropicApi.calls.length, 0);
+  assert.equal(claudeRun.calls.length, 0, 'no switch to the Claude subscription');
+  assert.equal(readFileSync(voteFileName(packPath, 'openai', 'subscription'), 'utf8'), '{"earlier":"openai"}', 'not moved aside: no call was made');
+  assert.equal(readFileSync(voteFileName(packPath, 'anthropic', 'subscription'), 'utf8'), '{"earlier":"anthropic"}');
+  assert.deepEqual(readdirSync(s.packDir).filter((f) => f.includes('.superseded-')), []);
+  // A member that is on but did not vote keeps the round open.
+  rmSync(voteFileName(packPath, 'openai', 'subscription'));
+  rmSync(voteFileName(packPath, 'anthropic', 'subscription'));
+  assert.match(closeRound(packPath, { jury: settings }).problem, /no vote on this pack yet from openai \(subscription\), anthropic \(api\)/);
+});
+
+test('jury settings: only a command-line tool that does not start is "not found"; any other ENOENT is an error (F5)', async (t) => {
+  const s = setup(t);
+  const { packPath, answer } = packFile(s);
+  const enoent = (syscall) => Object.assign(new Error(`${syscall} ENOENT`), { code: 'ENOENT', syscall });
+  const apiEnoent = { name: 'anthropic', keyVar: 'ANTHROPIC_API_KEY', documentTypes: [], async call() { throw enoent('open'); } };
+  const codexNoSpawn = createCodexAdapter({ run: async () => { throw enoent('open'); } });
+  let outcomes = await runPackVotes(s.db, packPath, {
+    jury: jury({ anthropic: { channel: 'api', model: 'm' } }), today: '2026-11-22', checkOptions: s.opts,
+    askOptions: { adapters: { anthropic: apiEnoent, codex: codexNoSpawn }, env: { ANTHROPIC_API_KEY: 'k' } },
+  });
+  for (const o of outcomes.slice(0, 2)) {
+    assert.equal(o.skipped, undefined, o.provider);
+    assert.match(o.error, /open ENOENT/, o.provider);
+  }
+  const codexSpawn = createCodexAdapter({ run: async () => { throw enoent('spawn codex'); } });
+  outcomes = await runPackVotes(s.db, packPath, {
+    jury: jury({ anthropic: { channel: 'off', model: null } }), today: '2026-11-22', checkOptions: s.opts, askOptions: { adapters: { codex: codexSpawn }, env: {} },
+  });
+  assert.equal(outcomes[0].skipped, 'codex-cli: the command-line tool was not found (not installed, or not on PATH)');
+  // The check the real adapters make before a call, with an empty PATH.
+  assert.match(unavailable('codex', { env: { PATH: '' } }), /codex: the command-line tool was not found/);
+  assert.match(unavailable('claude', { env: { PATH: '' } }), /claude: the command-line tool was not found/);
+  assert.equal(unavailable('gemini', { env: { GEMINI_API_KEY: 'k' } }), null);
+  assert.equal(answer.length > 0, true);
+});
+
+test('jury settings: tally, closeRound and the desk accept the same votes: no alias provider, no via of another channel (F2)', async (t) => {
+  const s = setup(t);
+  const { packPath } = packFile(s);
+  const packSha256 = sha256Of(readFileSync(packPath));
+  writeFileSync(join(s.packDir, 'c1.judge-input.md'), judgeInputText(s.pack, packSha256, '2026-11-22'));
+  const base = voteFor(s, packSha256, { created_at: new Date().toISOString() });
+  const write = (name, over) => writeFileSync(join(s.packDir, `c1.vote-${name}.json`), JSON.stringify({ ...base, ...over }));
+  write('codex-subscription', { provider: 'codex', channel: 'subscription', via: 'codex-cli' });
+  write('google-api', { provider: 'google', channel: 'api', via: 'api' });
+  write('anthropic-subscription', { provider: 'anthropic', channel: 'subscription', via: 'api' });
+  write('openai-subscription', { provider: 'openai', channel: 'subscription', via: 'codex-cli' });
+  const result = tallyPack(s.db, packPath, { checkOptions: s.opts, jury: TEST_JURY });
+  const problems = Object.fromEntries(result.votes.map((v) => [v.file, v.valid ? 'valid' : v.problems.join('; ')]));
+  assert.match(problems['c1.vote-codex-subscription.json'], /not a vote of a jury member: provider "codex"/);
+  assert.match(problems['c1.vote-google-api.json'], /not a vote of a jury member: provider "google"/);
+  assert.match(problems['c1.vote-anthropic-subscription.json'], /via "api" is not how anthropic votes on subscription \(claude-cli\)/);
+  assert.equal(problems['c1.vote-openai-subscription.json'], 'valid');
+  // closeRound leaves the same three out, so the round waits for a real anthropic vote.
+  const r = closeRound(packPath, { jury: TEST_JURY });
+  assert.match(r.problem, /no vote on this pack yet from anthropic \(subscription\)/);
+  for (const f of ['codex-subscription', 'google-api', 'anthropic-subscription']) assert.ok(r.leftOut.includes(`c1.vote-${f}.json (not a vote of a jury member)`), f);
+  // The superseded subagent's votes (via "claude-code", honour system) are not votes either; the command-line judge's are.
+  write('anthropic-subscription', { provider: 'anthropic', channel: 'subscription', via: 'claude-code' });
+  assert.match(closeRound(packPath, { jury: TEST_JURY }).problem, /no vote on this pack yet from anthropic/);
+  write('anthropic-subscription', { provider: 'anthropic', channel: 'subscription', via: 'claude-cli' });
+  assert.equal(closeRound(packPath, { jury: TEST_JURY }).closed.votes.length, 2);
+});
+
+test('jury settings: the file in the repository loads, and a typo is an error, not a default', () => {
+  const real = loadJury();
+  assert.deepEqual(real.map((m) => m.provider), ['openai', 'anthropic', 'gemini', 'mistral']);
+  assert.ok(real.every((m) => ['subscription', 'api', 'off'].includes(m.channel)));
+  assert.throws(() => loadJury(jury({ anthropic: { channel: 'API', model: 'x' } })), /anthropic: channel must be one of subscription, api, off/);
+  assert.throws(() => loadJury(jury({ anthropic: { channel: 'api', model: ' ' } })), /a model is needed on channel api/);
+  assert.throws(() => loadJury(jury({ google: { channel: 'api', model: 'x' } })), /unknown member google/);
+  assert.throws(() => loadJury(jury({ openai: { channel: 'api', model: 'x', via: 'codex-cli' } })), /unknown field via/);
+  const { mistral: _left, ...three } = TEST_JURY.members;
+  assert.throws(() => loadJury({ ...TEST_JURY, members: three }), /member mistral is missing/);
+  assert.equal(loadJury(jury({ mistral: { channel: 'api', model: 'mistral-x' } }))[3].route.ask, 'mistral');
+  // F7: a channel with no adapter is refused when the settings are read, before any pack is touched.
+  assert.throws(() => loadJury(jury({ gemini: { channel: 'subscription', model: 'g' } })), /gemini: no subscription adapter yet; choose api or off/);
+  assert.throws(() => loadJury(jury({ mistral: { channel: 'subscription', model: 'm' } })), /mistral: no subscription adapter yet; choose api or off/);
 });
 
 // ---------------------------------------------------------------- Fable review 6: pack-0.2 enforced by the program

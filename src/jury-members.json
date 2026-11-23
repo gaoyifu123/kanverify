@@ -1,0 +1,11 @@
+{
+  "kind": "kanverify-jury-members",
+  "format": 1,
+  "note": "The pack-flow jury, one member per company (decision 0010). channel: subscription (the vendor's command-line tool under the founder's login), api (src/ai/ with the key from .env) or off. model is the model asked for on that channel; change both together. Read by src/jury.js (loadJury); a member that cannot vote on its channel does not vote, and the run says why.",
+  "members": {
+    "openai": { "channel": "subscription", "model": "gpt-6.2-sol" },
+    "anthropic": { "channel": "subscription", "model": "claude-opus-5-5" },
+    "gemini": { "channel": "off", "model": null },
+    "mistral": { "channel": "off", "model": null }
+  }
+}

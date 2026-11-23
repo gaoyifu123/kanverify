@@ -101,3 +101,39 @@
   smoke check fails on any other prefix.
 - **Still open:** one more smoke run to see the new prefix check pass; how many votes a day the plan allows next to
   layer-1 work; Fable review of the change (spawn, environment, reply checks).
+
+## Addendum (2026-11-23 night, founder in chat): all four judges on subscriptions, if the terms allow it
+
+The founder's direction: subscription prices are far below API prices, so all four judges (Anthropic, OpenAI,
+Google, Mistral) should run on subscriptions where possible. Status, from a first look (not yet a terms check):
+
+- Anthropic (Claude Code CLI) and OpenAI (Codex CLI): running on subscriptions, isolated; terms checked for Claude.
+- Google (Gemini CLI): Google's docs point non-interactive use to API keys or Vertex AI; a Google forum reply says
+  personal AI Pro is for individual, human-driven use; an unofficial post claims subscription sign-in for the CLI was
+  withdrawn in June 2026. Unclear — check the official terms before any setup.
+- Mistral (Vibe CLI, included in the Pro plan at $14.99/month): has a programmatic mode, but the install docs
+  recommend an API key for automation. Unclear — check the terms.
+
+Rule kept from this decision: a judge whose subscription terms do not allow our use runs on the API instead (or the
+founder decides to leave it out). Our use is one person, a few hundred votes, run by hand — the terms are checked
+against that, and again if readers can ever trigger a vote.
+
+Founder, same night: "在机制设置的时候把订阅和 API 两个都保持可能" — every judge must be able to run on either channel.
+The channel is a setting per judge, not code: switching one judge from subscription to API (or back) changes no
+program logic, and every vote already records its `channel` and `via`.
+
+**Progress (2026-11-23, developer):** built. Each member's `channel` (`subscription`, `api` or `off`) and model live in
+`src/jury-members.json` (versioned; replaces `--codex-model`, `--claude-model`, `--gemini-model`, `--anthropic-api-model`);
+`runPackVotes` picks the adapter from it. A member without its key or tool does not vote, with the reason, never on the
+other channel, and its earlier vote is moved aside only right before a real call. A channel with no adapter (Gemini and
+Mistral on subscription) is refused when the settings are read. Gemini and Mistral are `off` until switched on.
+- **A round now needs a vote from every member that is on**, API members included (before, only the subscription judges
+  were needed and Gemini's vote could come in a later round). A member set to `api` without its key keeps rounds open
+  until the key is added or the member is set to `off`.
+- **A round records the jury it was closed under** (`jury`: provider, channel, model of each member that was on; round
+  line format 2). Only those members' votes go into it, and the desk counts no one else's. Format-1 lines (before
+  this) count the jury of that time: openai, anthropic, gemini.
+- One vote per company per round, and one test of what a vote is (`juryVoteProblems` in `src/jury.js`): the
+  provider is one of the four companies exactly (no alias such as "codex" or "google"), its `via` is the route of
+  its channel, the file is named for both. Tally, round closing and the desk use the same two functions. The superseded subagent votes (`via`
+  "claude-code") are not accepted (coordinator, 2026-11-23): the 10 trial claims are re-cut and re-voted under rules 0.8.

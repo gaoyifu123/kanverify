@@ -161,3 +161,14 @@ export function publishableSnapshot(db, claimId) {
   const row = db.prepare('SELECT snapshot FROM publishable WHERE claim_id = ?').get(claimId);
   return row ? row.snapshot : null;
 }
+
+/** The jury settings tests use (shape of src/jury-members.json), so a change to the real settings does not change a test. */
+export const TEST_JURY = Object.freeze({
+  kind: 'kanverify-jury-members', format: 1,
+  members: {
+    openai: { channel: 'subscription', model: 'gpt-6.2-sol' },
+    anthropic: { channel: 'subscription', model: 'claude-opus-5-5' },
+    gemini: { channel: 'off', model: null },
+    mistral: { channel: 'off', model: null },
+  },
+});

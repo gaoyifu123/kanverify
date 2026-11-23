@@ -198,6 +198,26 @@ async function callOnce(adapter, req, key, fetchImpl) {
 }
 
 /**
+ * unavailable(provider, { env?, adapters? }) -> why this provider cannot be called now, or null.
+ * Checks what can be known without a call: the API key named by the adapter's keyVar (in env, or in
+ * .env when env is process.env; the reason names the variable, never the value), and for a
+ * command-line provider whether its tool can be found. Lets a caller refuse before it changes anything.
+ */
+export function unavailable(provider, options = {}) {
+  rejectUnknownKeys(options, OPTION_KEYS, 'option');
+  const { env = process.env, adapters = ADAPTERS } = options;
+  if (!Object.hasOwn(adapters, provider)) return `unknown provider: ${provider}`;
+  const adapter = adapters[provider];
+  try {
+    readKey(adapter, env);
+  } catch (error) {
+    if (error?.code === 'missing_key') return error.message;
+    throw error;
+  }
+  return adapter.missingTool?.(env) ?? null;
+}
+
+/**
  * ask({ provider, model, promptVersion, prompt, system?, json?, maxTokens?, timeoutMs?, document?, documents?, webSearch?, schema? },
  *     { fetchImpl?, env?, adapters? })
  * → { text, json?, provider, model, modelVersion?, promptVersion, usage?, webSearch?, raw }

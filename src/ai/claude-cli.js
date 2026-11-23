@@ -27,7 +27,7 @@
 import { existsSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
-import { removeFolder, spawnTool, stderrTail, sweepStaleFolders } from './codex-cli.js';
+import { findOnPath, removeFolder, spawnTool, stderrTail, sweepStaleFolders } from './codex-cli.js';
 import { AiError } from './errors.js';
 
 const MODEL_RE = /^[A-Za-z0-9._-]+$/;
@@ -85,6 +85,11 @@ export function findClaudeExe(env = process.env) {
   return null;
 }
 
+/** Why the real claude cannot be started from this environment, or null. */
+export function claudeMissing(env = process.env) {
+  return findClaudeExe(env) || findOnPath('claude', env) ? null : 'claude: the command-line tool was not found (not installed, or not on PATH)';
+}
+
 /** Runs the real claude. Resolves { code, stdout, stderr }; rejects with AbortError on timeout. */
 export function spawnClaude(args, { cwd, env, input, signal }) {
   return spawnTool(findClaudeExe(env) ?? 'claude', args, { cwd, env, input, signal });
@@ -105,10 +110,12 @@ export function answeringModel(modelUsage, requested) {
  * The adapter. `run` replaces spawnClaude in tests. `tmpRoot` is where the empty working folder
  * is made (tests give their own, so they can check nothing is left behind).
  */
-export function createClaudeAdapter({ run = spawnClaude, effort = EFFORT, tmpRoot = tmpdir() } = {}) {
+export function createClaudeAdapter({ run = spawnClaude, effort = EFFORT, tmpRoot = tmpdir(), missingTool } = {}) {
   return {
     name: 'claude',
     keyVar: null, // the Claude subscription login of the tool itself; no key in .env
+    // Asked before a call (ask's unavailable()); a test's own `run` needs no installed tool.
+    missingTool: missingTool ?? (run === spawnClaude ? claudeMissing : () => null),
     documentTypes: [],
     jsonSchema: false, // --json-schema exists but is not verified with --tools ""; the program checks every answer anyway
     async call(req, ctx) {

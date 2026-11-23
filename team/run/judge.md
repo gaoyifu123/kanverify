@@ -33,9 +33,11 @@ Six possible verdicts. The answer fields, as the prompt's "Answer format" gives 
 | `summary_fr`, `summary_en` | for every verdict, `pending` included |
 
 The vote file around the answer (`kind`, `pack_sha256`, `promptVersion`, `system_sha256`, `provider`, `channel`, `via`,
-`model`, `model_requested`, `created_at`, `usage`, …) is written by the program (`askVote` in `src/jury.js`) for every judge:
-Codex and Claude through their command-line tools under the founder's subscriptions, Gemini through its API. The Claude
-vote also carries `made_by.session`, the session id its command-line run reported.
+`model`, `model_requested`, `created_at`, `usage`, …) is written by the program (`askVote` in `src/jury.js`) for every judge.
+Which channel each member (openai, anthropic, gemini, mistral) votes on — `subscription` (its vendor's command-line tool),
+`api` (`src/ai/` with the key from `.env`) or `off` — and its model is a setting in `src/jury-members.json`, not code; a
+member whose channel is unavailable (no key, no tool) does not vote and the run says why, never switching
+channel; a channel with no adapter is refused. A round needs every member that is on and records that jury; one vote per company. The Claude command-line vote also carries `made_by.session`.
 
 ## What the program checks
 

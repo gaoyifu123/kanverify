@@ -71,3 +71,8 @@ Site generator, extraction prompt (its output is reviewed before use), design, d
   CLI flag behaviour checked against one version (2.1.330).
 - Open from the code review: R1 the recorded identity prefix is not tied to the CLI version; R2 a re-run moves aside
   every member's earlier vote, so a failed call costs a good vote (option to vote for a single member, later).
+- Added to item 6 (2026-11-23 night, code review passed): judge channel as a setting (`src/jury-members.json`).
+  Narrow scope: in `src/jury.js` `juryVoteProblems`, `sameCompanyProblems`, `readRounds`, `roundMembers`,
+  `closeRound`; `loadPack` in `src/desk.js`; `unavailable()` / `findOnPath` / key read in `src/ai/index.js`.
+  Open low items: a format-2 round line without `jury` is read as format 1; a round's recorded model comes from the
+  settings at closing time, not from the votes.

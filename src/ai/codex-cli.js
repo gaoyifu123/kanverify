@@ -78,6 +78,31 @@ function findCodexScript(env) {
 }
 
 /**
+ * A program on PATH that spawn can start without a shell (on Windows: name, name.exe or name.com),
+ * or null. Used to tell "the tool is not installed" before any vote is moved aside.
+ */
+export function findOnPath(name, env = process.env) {
+  const names = process.platform === 'win32' ? [`${name}.exe`, `${name}.com`, name] : [name];
+  for (const dir of String(env.PATH ?? env.Path ?? '').split(delimiter)) {
+    if (!dir) continue;
+    for (const n of names) {
+      const at = join(dir, n);
+      try {
+        if (lstatSync(at).isFile()) return at;
+      } catch {
+        // not here
+      }
+    }
+  }
+  return null;
+}
+
+/** Why the real codex cannot be started from this environment, or null. */
+export function codexMissing(env = process.env) {
+  return findCodexScript(env) || findOnPath('codex', env) ? null : 'codex: the command-line tool was not found (not installed, or not on PATH)';
+}
+
+/**
  * Runs the real codex. Resolves { code, stdout, stderr }; rejects with AbortError on timeout.
  *
  * When it settles (Fable review 4, F2 and R1): after the launcher has exited ('exit'), waiting
@@ -189,10 +214,12 @@ export function stderrTail(stderr, input) {
  * are made (tests give their own, so they can check nothing is left behind).
  * The request's system prompt and prompt are sent together on stdin: codex exec has one input.
  */
-export function createCodexAdapter({ run = spawnCodex, effort = REASONING_EFFORT, tmpRoot = tmpdir() } = {}) {
+export function createCodexAdapter({ run = spawnCodex, effort = REASONING_EFFORT, tmpRoot = tmpdir(), missingTool } = {}) {
   return {
     name: 'codex',
     keyVar: null, // the ChatGPT login of codex itself; no key in .env
+    // Asked before a call (ask's unavailable()); a test's own `run` needs no installed tool.
+    missingTool: missingTool ?? (run === spawnCodex ? codexMissing : () => null),
     documentTypes: [],
     jsonSchema: true,
     async call(req, ctx) {

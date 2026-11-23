@@ -2,22 +2,23 @@
 //
 // 1. The pack flow (docs/decisions/0010-subscription-vs-api.md, the default from 2026-11-22).
 //    Layer 1 (Claude Code agents under the subscription) cuts an evidence pack per claim; the
-//    program checks it (src/pack.js) and gives the same judge input to three judges, none of
-//    which sees another's vote:
+//    program checks it (src/pack.js) and gives the same judge input to each member of the jury,
+//    one per company, none of which sees another's vote. On the subscription channel:
 //      OpenAI   through the Codex command-line tool, ChatGPT subscription (ask provider codex)
 //      Claude   through the Claude Code command-line tool, Claude subscription (ask provider claude),
 //               from an empty folder with no tools (src/ai/claude-cli.js). Until 2026-11-23 this was
 //               a subagent following team/run/judge-subscription.md (superseded).
-//      Gemini   through its API, only when GEMINI's key is set in .env
+//    On the API channel, each through its adapter in src/ai/ with its key from .env.
+//    Which channel each member uses (subscription, api or off) and its model is a setting in
+//    src/jury-members.json, not code; a member that cannot vote on its channel does not vote.
 //    Stages, each reading files beside the pack <name>.pack.json:
 //      judge-input  pack -> <name>.judge-input.md, the exact text every judge gets
-//      vote         codex, claude (and Gemini if its key is set) -> <name>.vote-<provider>-<channel>.json
+//      vote         every member that is on -> <name>.vote-<provider>-<channel>.json
 //      tally        every vote file -> checks, comparison -> <name>.result.json and a report; then
 //                   closes a jury round: appends one line to <name>.rounds.jsonl (pack sha256, the
-//                   vote files, their sha256 and text, time, round number) once the subscription judges
-//                   have voted on this pack. The review desk reads votes only through closed
+//                   vote files, their sha256 and text, time, round number) once every member that is
+//                   on has voted on this pack. The review desk reads votes only through closed
 //                   rounds (step-back 2026-11-23): only this step knows when a set of votes is complete.
-//    The Anthropic API judge is still there but off unless --anthropic-api-model is given.
 //
 // 2. The earlier dry run (search, archive, judge, report on a run file), which sends whole
 //    documents to Anthropic models through the paid API. search and judge now need --paid-api.
@@ -37,13 +38,13 @@ import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renam
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
-import { ask } from './ai/index.js';
+import { ask, unavailable } from './ai/index.js';
 import { DEFAULT_EVIDENCE_DIR, archive, evidencePath } from './archive.js';
 import { openDatabase } from './db.js';
 import { isLegifranceSource, legifranceToUnits } from './legifrance.js';
 import { checkVerbatim, estimateCost, htmlToParagraphs, loadPrompt, pdfPageCount } from './extract.js';
 import {
-  EVIDENCE_KINDS, INDEPENDENT_KINDS, OFFICIAL_KINDS, VERDICTS, VOTE_KIND, answerOf, checkPack, checkVote, estimateTokens,
+  CHANNELS, EVIDENCE_KINDS, INDEPENDENT_KINDS, OFFICIAL_KINDS, VERDICTS, VOTE_KIND, answerOf, checkPack, checkVote, estimateTokens,
   judgeView, sha256Of, voteProblems,
 } from './pack.js';
 import { sameSessionProblem } from './rules.js';
@@ -476,23 +477,88 @@ export const JUDGE_SCHEMA = Object.freeze({
     summary_en: { type: 'string' },
   },
 });
-// Codex's default model with the founder's ChatGPT login on 2026-11-22; given explicitly so every
-// vote records what was asked for. Change it here or with --codex-model.
-export const DEFAULT_CODEX_MODEL = 'gpt-6.2-sol';
-// The model the Claude command-line judge is asked for; given explicitly so every vote records
-// what was asked for. Change it here or with --claude-model.
-export const DEFAULT_CLAUDE_MODEL = 'claude-opus-5-5';
 // The command-line judges (Codex, Claude) take longer than a plain API call.
 const CLI_TIMEOUT_MS = 600_000;
-// The ask() provider behind each command-line member of the jury.
-const CLI_PROVIDERS = Object.freeze({ 'codex-cli': 'codex', 'claude-cli': 'claude' });
 
-/** The members of the jury in the pack flow (founder, decision 0010). Gemini votes only with its key. */
-export const PACK_JURY = Object.freeze([
-  Object.freeze({ provider: 'openai', channel: 'subscription', via: 'codex-cli' }),
-  Object.freeze({ provider: 'anthropic', channel: 'subscription', via: 'claude-cli' }),
-  Object.freeze({ provider: 'gemini', channel: 'api', via: 'api' }),
-]);
+/**
+ * How each member of the jury can vote: per company and channel, the ask() provider and the `via`
+ * the vote records; null where no adapter exists yet. Which channel a member uses is not code but a
+ * setting (JURY_CONFIG_PATH; founder, decision 0010 addendum): every judge can run on either channel.
+ */
+export const JURY_ROUTES = Object.freeze({
+  openai: Object.freeze({ subscription: Object.freeze({ ask: 'codex', via: 'codex-cli' }), api: Object.freeze({ ask: 'openai', via: 'api' }) }),
+  anthropic: Object.freeze({ subscription: Object.freeze({ ask: 'claude', via: 'claude-cli' }), api: Object.freeze({ ask: 'anthropic', via: 'api' }) }),
+  gemini: Object.freeze({ subscription: null, api: Object.freeze({ ask: 'gemini', via: 'api' }) }),
+  mistral: Object.freeze({ subscription: null, api: Object.freeze({ ask: 'mistral', via: 'api' }) }),
+});
+const MEMBER_CHANNELS = Object.freeze(['subscription', 'api', 'off']);
+
+// Why a JSON file (principle 5): it is versioned with the code, so switching a member's channel is one
+// reviewed line in git, not a flag retyped at every run; JSON.parse needs nothing added.
+export const JURY_CONFIG_PATH = fileURLToPath(new URL('./jury-members.json', import.meta.url));
+
+/**
+ * The jury members from the settings (a path, or the parsed object for tests), in a fixed order:
+ * [{ provider, channel, model, route }]; route is null when the member is off or its channel has no
+ * adapter. A typo (unknown member, field or channel, a missing model) is an error, never a default.
+ */
+export function loadJury(config = JURY_CONFIG_PATH) {
+  const c = typeof config === 'string' ? JSON.parse(readFileSync(config, 'utf8')) : config;
+  const bad = (why) => new Error(`jury settings: ${why}`);
+  if (c?.kind !== 'kanverify-jury-members' || c?.format !== 1) throw bad('kind must be kanverify-jury-members, format 1');
+  const members = c.members ?? {};
+  for (const name of Object.keys(members)) if (!Object.hasOwn(JURY_ROUTES, name)) throw bad(`unknown member ${name}`);
+  return Object.keys(JURY_ROUTES).map((provider) => {
+    const m = members[provider];
+    if (!m) throw bad(`member ${provider} is missing (set its channel to off to leave it out)`);
+    for (const k of Object.keys(m)) if (!['channel', 'model'].includes(k)) throw bad(`${provider}: unknown field ${k}`);
+    if (!MEMBER_CHANNELS.includes(m.channel)) throw bad(`${provider}: channel must be one of ${MEMBER_CHANNELS.join(', ')}`);
+    if (m.channel !== 'off' && !JURY_ROUTES[provider][m.channel]) throw bad(`${provider}: no ${m.channel} adapter yet; choose ${CHANNELS.filter((ch) => JURY_ROUTES[provider][ch]).join(' or ')} or off`);
+    const model = typeof m.model === 'string' && m.model.trim() ? m.model.trim() : null;
+    if (m.channel !== 'off' && !model) throw bad(`${provider}: a model is needed on channel ${m.channel}`);
+    return Object.freeze({ provider, channel: m.channel, model, route: m.channel === 'off' ? null : JURY_ROUTES[provider][m.channel] });
+  });
+}
+
+/**
+ * Whether a vote file is a vote of a jury member at all, the same test for tally, closeRound and the
+ * desk: provider is a company of JURY_ROUTES (exactly; no alias such as "codex" or "google"), its
+ * channel has an adapter, `via` is that route's (the subagent's "claude-code" is not), and the file is named for it.
+ * Returns the problems; none means it is a vote of `vote.provider`.
+ */
+export function juryVoteProblems(vote, file, stem) {
+  const { provider, channel, via } = vote ?? {};
+  if (typeof provider !== 'string' || !Object.hasOwn(JURY_ROUTES, provider)) {
+    return [`not a vote of a jury member: provider ${JSON.stringify(provider ?? null)} is not one of ${Object.keys(JURY_ROUTES).join(', ')}`];
+  }
+  const route = CHANNELS.includes(channel) ? JURY_ROUTES[provider][channel] : null;
+  if (!route) return [`not a vote of a jury member: ${provider} has no ${JSON.stringify(channel ?? null)} channel`];
+  const problems = [];
+  if (via !== route.via) {
+    problems.push(`not a vote of a jury member: via ${JSON.stringify(via ?? null)} is not how ${provider} votes on ${channel} (${route.via})`);
+  }
+  if (file !== `${stem}.vote-${provider}-${channel}.json`) problems.push('file name does not match provider and channel');
+  return problems;
+}
+
+/**
+ * One vote per company: { file: problem } for every vote whose company has another vote in `entries`
+ * ([{ file, provider }], only those that passed juryVoteProblems). File order picks nothing: none of them counts.
+ */
+export function sameCompanyProblems(entries) {
+  const out = {};
+  for (const provider of new Set(entries.map((e) => e.provider))) {
+    const files = entries.filter((e) => e.provider === provider).map((e) => e.file);
+    if (files.length < 2) continue;
+    for (const f of files) out[f] = `${provider} has more than one vote (${files.join(', ')}); one vote per company, none of them counts`;
+  }
+  return out;
+}
+
+/** The members that are not off: the jury whose votes are compared and needed to close a round. */
+export function juryOn(config = JURY_CONFIG_PATH) {
+  return loadJury(config).filter((m) => m.channel !== 'off');
+}
 
 /** <dir>/<name>.pack.json -> <dir>/<name>; every file of the flow is named from it. */
 export function packStem(packPath) {
@@ -584,14 +650,17 @@ export function judgeRulesProblem(path = JUDGE_PROMPT_PATH) {
 }
 
 /**
- * One vote through ask(): Codex or Claude (command line, subscription), Gemini or Anthropic (API).
+ * One vote through ask(), by the route of the member's company and channel (JURY_ROUTES).
  * Returns the vote record. Every judge gets the same system text and prompt (packJudgeRequest).
  */
 export async function askVote(pack, packPath, packSha256, member, { model, today, askOptions = {}, now = () => new Date() }) {
   const req = packJudgeRequest(pack, today);
-  const cliProvider = CLI_PROVIDERS[member.via];
+  // The adapter comes from the member's company and channel only; there is no other route to fall back to.
+  const route = JURY_ROUTES[member.provider]?.[member.channel];
+  if (!route) throw new Error(`no ${member.channel} adapter for ${member.provider}`);
+  const cliProvider = member.channel === 'subscription' ? route.ask : null;
   const reply = await ask({
-    provider: cliProvider ?? member.provider, model, promptVersion: req.promptVersion, system: req.system, prompt: req.prompt,
+    provider: route.ask, model, promptVersion: req.promptVersion, system: req.system, prompt: req.prompt,
     json: true, maxTokens: 16_000, timeoutMs: cliProvider ? CLI_TIMEOUT_MS : CALL_TIMEOUT_MS,
     ...(cliProvider === 'codex' && { schema: JUDGE_SCHEMA }),
   }, askOptions);
@@ -603,7 +672,7 @@ export async function askVote(pack, packPath, packSha256, member, { model, today
   return {
     kind: VOTE_KIND, format: 1,
     claim: pack.claim.key, pack_file: basename(packPath), pack_sha256: packSha256,
-    provider: member.provider, channel: member.channel, via: member.via,
+    provider: member.provider, channel: member.channel, via: route.via,
     model: reply.modelVersion ?? reply.model, model_requested: reply.model,
     promptVersion: reply.promptVersion, system_sha256: req.systemSha256, created_at: now().toISOString(),
     ...answerOf(reply.json),
@@ -631,37 +700,41 @@ export function supersedeVote(packPath, provider, channel, now = new Date()) {
 }
 
 /**
- * Runs the votes of a pack: Codex and Claude (command line) always, Gemini when its key is set,
- * the Anthropic API only when a model is given. Refuses a pack that fails its checks (nothing is sent).
- * Writes one vote file per answer; a failure is reported, not written as a vote.
+ * Runs the votes of a pack: every member of the jury settings (`jury`, default JURY_CONFIG_PATH) on its
+ * own channel. A member that is off, has no adapter on its channel, lacks its API key or its
+ * command-line tool does not vote, and its outcome says why; it is never sent another way.
+ * Refuses a pack that fails its checks (nothing is sent). Writes one vote file per answer; a failure
+ * is reported, not written as a vote.
  */
 export async function runPackVotes(db, packPath, {
-  codexModel, claudeModel, geminiModel, anthropicApiModel, today = localDate(), askOptions = {}, checkOptions = {}, now,
+  jury = JURY_CONFIG_PATH, today = localDate(), askOptions = {}, checkOptions = {}, now,
 } = {}) {
+  const members = loadJury(jury);
   const { pack, packSha256, checked } = readPack(db, packPath, checkOptions);
   if (checked.problems.length > 0) throw new Error(`the pack fails its checks: ${checked.problems.join('; ')}`);
   writeFileSync(`${packStem(packPath)}.judge-input.md`, judgeInputText(pack, packSha256, today));
-  const plan = [
-    { member: PACK_JURY[0], model: codexModel },
-    { member: PACK_JURY[1], model: claudeModel },
-    ...(geminiModel ? [{ member: PACK_JURY[2], model: geminiModel }] : []),
-    ...(anthropicApiModel ? [{ member: { provider: 'anthropic', channel: 'api', via: 'api' }, model: anthropicApiModel }] : []),
-  ];
   const outcomes = [];
-  for (const { member, model } of plan) {
-    if (!model) { outcomes.push({ provider: member.provider, channel: member.channel, skipped: 'no model given' }); continue; }
-    // Outside the try: if the old vote cannot be moved aside, stop rather than leave it counting.
-    const superseded = supersedeVote(packPath, member.provider, member.channel);
-    const aside = superseded ? { superseded: basename(superseded) } : {};
+  for (const member of members) {
+    const { provider, channel, model, route } = member;
+    if (channel === 'off') { outcomes.push({ provider, channel, skipped: 'off in the jury settings' }); continue; }
+    // Before anything changes: a missing key or tool means no vote, the earlier one stays where it is.
+    const missing = unavailable(route.ask, askOptions);
+    if (missing) { outcomes.push({ provider, channel, skipped: missing }); continue; }
+    // Right before the call, outside the try: if an old vote cannot be moved aside, stop rather than
+    // leave it counting. Both channels: one company has one vote, whichever channel it came through.
+    const superseded = CHANNELS.map((c) => supersedeVote(packPath, provider, c)).filter(Boolean).map((f) => basename(f));
+    const aside = superseded.length > 0 ? { superseded: superseded.join(', ') } : {};
     try {
       const vote = await askVote(pack, packPath, packSha256, member, { model, today, askOptions, now });
-      const file = voteFileName(packPath, member.provider, member.channel);
+      const file = voteFileName(packPath, provider, channel);
       writeJsonAtomic(file, vote);
-      outcomes.push({ provider: member.provider, channel: member.channel, file, verdict: vote.verdict, ...aside });
+      outcomes.push({ provider, channel, file, verdict: vote.verdict, ...aside });
     } catch (error) {
-      // No key: the member does not vote this time (Gemini until its key is set).
-      const skipped = error?.code === 'missing_key';
-      outcomes.push({ provider: member.provider, channel: member.channel, [skipped ? 'skipped' : 'error']: String(error?.message ?? error).slice(0, 300), ...aside });
+      // Only the command-line tool failing to start is "not found"; anything else is an error.
+      const notFound = channel === 'subscription' && error?.code === 'ENOENT' && String(error?.syscall ?? '').startsWith('spawn');
+      outcomes.push({ provider, channel, ...(notFound
+        ? { skipped: `${route.via}: the command-line tool was not found (not installed, or not on PATH)` }
+        : { error: String(error?.message ?? error).slice(0, 300) }), ...aside });
     }
   }
   return outcomes;
@@ -669,10 +742,11 @@ export async function runPackVotes(db, packPath, {
 
 /**
  * Reads every vote file of a pack, checks each against the pack, and compares the valid ones.
- * agreement is over the whole jury (PACK_JURY): 'agree' only when every member gave a valid vote
+ * agreement is over the members that are on in the jury settings: 'agree' only when every one gave a valid vote
  * and all are the same; 'incomplete' while any member is missing or voided.
  */
-export function tallyPack(db, packPath, { checkOptions = {} } = {}) {
+export function tallyPack(db, packPath, { checkOptions = {}, jury = JURY_CONFIG_PATH } = {}) {
+  const on = juryOn(jury);
   const { pack, packSha256, checked } = readPack(db, packPath, checkOptions);
   const ctx = voteContext(packPath, packSha256);
   const { promptVersion } = ctx;
@@ -685,15 +759,28 @@ export function tallyPack(db, packPath, { checkOptions = {} } = {}) {
     } catch {
       return { file: f, valid: false, problems: ['not valid JSON'] };
     }
-    const problems = ctx.problem ? [ctx.problem] : checkVote(vote, pack, checked, ctx);
-    if (`${stem}.vote-${vote?.provider}-${vote?.channel}.json` !== f) problems.push('file name does not match provider and channel');
+    const identity = juryVoteProblems(vote, f, stem);
+    const problems = [...identity, ...(ctx.problem ? [ctx.problem] : checkVote(vote, pack, checked, ctx))];
+    // The same jury as closeRound: a vote of a member that is off is not counted.
+    if (identity.length === 0 && !on.some((m) => m.provider === vote.provider)) problems.push(`${vote.provider} is off in the jury settings; its vote is not counted`);
     // Decision 0012 A2, as at the desk: no vote counts on a pack without a program-stamped session, nor from that session.
     const session = sameSessionProblem(pack, vote);
     if (session) problems.push(session);
-    return { file: f, ...vote, valid: problems.length === 0, problems };
+    return { file: f, ...vote, valid: problems.length === 0, problems, member: identity.length === 0 };
   });
-  const validOf = (m) => votes.find((v) => v.valid && v.provider === m.provider && v.channel === m.channel);
-  const members = PACK_JURY.map((m) => ({ ...m, verdict: validOf(m)?.verdict ?? null }));
+  // One company, one vote (runPackVotes moves both channels' votes aside before a member votes again).
+  const twice = sameCompanyProblems(votes.filter((v) => v.member).map((v) => ({ file: v.file, provider: v.provider })));
+  for (const v of votes) {
+    if (!twice[v.file]) continue;
+    v.valid = false;
+    v.problems = [...v.problems, twice[v.file]];
+  }
+  // A member's vote counts from either channel: the channel is a setting, not part of who the judge is.
+  const validOf = (m) => votes.find((v) => v.valid && v.provider === m.provider);
+  const members = on.map(({ provider, channel, model }) => {
+    const v = validOf({ provider });
+    return { provider, channel, model, verdict: v?.verdict ?? null, voted_channel: v?.channel ?? null };
+  });
   const given = members.filter((m) => m.verdict);
   const distinct = new Set(given.map((m) => m.verdict));
   const result = {
@@ -750,20 +837,38 @@ export function readRounds(packPath) {
       && v.file === basename(v.file) && v.file.startsWith(`${stem}.vote-`) && v.file.endsWith('.json') && HEX64.test(v.sha256 ?? '')
       && typeof v.text === 'string' && sha256Of(Buffer.from(v.text, 'utf8')) === v.sha256);
     if (r?.kind !== ROUND_KIND || !Number.isInteger(r.round) || !HEX64.test(r.pack_sha256 ?? '') || !filesOk) continue;
+    // From format 2 a round names the jury it was closed under; a malformed one is skipped like any malformed line.
+    if (r.jury !== undefined && !roundJuryOk(r.jury)) continue;
     out.push({ ...r, id: sha256Of(Buffer.from(line, 'utf8')) });
   }
   return out;
 }
 
+/** The jury of a format-1 round line (closed before the jury settings existed): PACK_JURY of that time. */
+const FORMAT1_ROUND_MEMBERS = Object.freeze(['openai', 'anthropic', 'gemini']);
+
+function roundJuryOk(jury) {
+  return Array.isArray(jury) && jury.length > 0 && new Set(jury.map((m) => m?.provider)).size === jury.length
+    && jury.every((m) => typeof m?.provider === 'string' && Object.hasOwn(JURY_ROUTES, m.provider) && CHANNELS.includes(m.channel)
+      && JURY_ROUTES[m.provider][m.channel] !== null && typeof m.model === 'string' && m.model.length > 0);
+}
+
+/** The companies whose votes a closed round may count: the jury it recorded, or for a format-1 line the jury of that time. */
+export function roundMembers(round) {
+  return Array.isArray(round?.jury) ? round.jury.map((m) => m.provider) : [...FORMAT1_ROUND_MEMBERS];
+}
+
 /**
- * Closes a jury round for a pack: appends { round, pack_sha256, votes: [{file, sha256, text}], closed_at }
- * to <name>.rounds.jsonl. Only the vote files about this version of the pack are in it. Nothing is
- * written while the judge input is stale or a subscription judge (Codex, Claude) has not voted on
- * this pack yet; a vote arriving later (Gemini) goes into the next round. Closing again with the
- * same files changes nothing. A round is never rewritten or renumbered.
+ * Closes a jury round for a pack: appends { round, pack_sha256, jury: [{provider, channel, model}],
+ * votes: [{file, sha256, text}], closed_at } (format 2) to <name>.rounds.jsonl. `jury` is the members that
+ * were on in the jury settings; only their votes (juryVoteProblems) about this version of the pack are in
+ * it, everything else is left out. Nothing is written while the judge input is stale, a member that is on
+ * has not voted on this pack yet (on either channel), or one company has more than one vote. Closing
+ * again with the same files and jury changes nothing. A round is never rewritten or renumbered.
  * @returns {{ closed: object|null, already?: boolean, problem?: string, leftOut: string[] }}
  */
-export function closeRound(packPath, { now = () => new Date() } = {}) {
+export function closeRound(packPath, { now = () => new Date(), jury = JURY_CONFIG_PATH } = {}) {
+  const on = juryOn(jury);
   const bytes = readFileSync(packPath);
   const packSha256 = sha256Of(bytes);
   const pack = JSON.parse(bytes.toString('utf8'));
@@ -782,6 +887,9 @@ export function closeRound(packPath, { now = () => new Date() } = {}) {
       // not a vote; left out
     }
     if (vote?.pack_sha256 !== packSha256) { leftOut.push(f); continue; }
+    // Only votes of the members that are on go into a round (the same test as tally and the desk).
+    if (juryVoteProblems(vote, f, stem).length > 0) { leftOut.push(`${f} (not a vote of a jury member)`); continue; }
+    if (!on.some((m) => m.provider === vote.provider)) { leftOut.push(`${f} (${vote.provider} is off in the jury settings)`); continue; }
     // The file's exact text goes into the round line too, so a later re-vote that overwrites the file
     // cannot lose this round's vote (decision 0003: every vote is recorded). The text must be the file
     // byte for byte: strict UTF-8, byte order mark kept, hashing back to the file's sha256.
@@ -793,24 +901,30 @@ export function closeRound(packPath, { now = () => new Date() } = {}) {
     }
     const sha256 = sha256Of(b);
     if (text === null || sha256Of(Buffer.from(text, 'utf8')) !== sha256) { notText.push(f); continue; }
-    votes.push({ file: f, sha256, text });
+    votes.push({ file: f, sha256, text, provider: vote.provider });
   }
   if (ctx.problem) return { closed: null, problem: `round not closed: ${ctx.problem}`, leftOut };
   if (notText.length > 0) {
     return { closed: null, problem: `round not closed: vote file ${notText.join(', ')} is not UTF-8 text, so its text cannot be recorded exactly; rewrite it as UTF-8`, leftOut };
   }
-  const missing = PACK_JURY.filter((m) => m.channel === 'subscription' && !votes.some((v) => v.file === `${stem}.vote-${m.provider}-${m.channel}.json`));
+  const twice = [...new Set(Object.values(sameCompanyProblems(votes)))];
+  if (twice.length > 0) return { closed: null, problem: `round not closed: ${twice.join('; ')}; move one aside`, leftOut };
+  const missing = on.filter((m) => !votes.some((v) => v.provider === m.provider));
   if (missing.length > 0) {
     return { closed: null, problem: `round not closed: no vote on this pack yet from ${missing.map((m) => `${m.provider} (${m.channel})`).join(', ')}`, leftOut };
   }
   const rounds = readRounds(packPath);
   const last = rounds.at(-1);
-  if (last && last.pack_sha256 === packSha256 && JSON.stringify(last.votes.map((v) => [v.file, v.sha256])) === JSON.stringify(votes.map((v) => [v.file, v.sha256]))) {
+  // The settings the round was closed under: the desk counts only votes of these members.
+  const roundJury = on.map(({ provider, channel, model }) => ({ provider, channel, model }));
+  const kept = votes.map(({ file, sha256, text }) => ({ file, sha256, text }));
+  if (last && last.pack_sha256 === packSha256 && JSON.stringify(last.votes.map((v) => [v.file, v.sha256])) === JSON.stringify(kept.map((v) => [v.file, v.sha256]))
+    && JSON.stringify(last.jury ?? null) === JSON.stringify(roundJury)) {
     return { closed: last, already: true, leftOut };
   }
   const record = {
-    kind: ROUND_KIND, format: 1, round: Math.max(0, ...rounds.map((r) => r.round)) + 1, claim: pack.claim?.key ?? null,
-    pack_file: basename(packPath), pack_sha256: packSha256, votes, closed_at: now().toISOString(),
+    kind: ROUND_KIND, format: 2, round: Math.max(0, ...rounds.map((r) => r.round)) + 1, claim: pack.claim?.key ?? null,
+    pack_file: basename(packPath), pack_sha256: packSha256, jury: roundJury, votes: kept, closed_at: now().toISOString(),
   };
   const path = roundsFileName(packPath);
   const line = JSON.stringify(record);
@@ -831,8 +945,8 @@ export function renderTally(result, pack) {
   out.push(`- 凭据包：${pack.excerpts?.length ?? 0} 段摘录，评审看到的部分约 ${result.pack_tokens_estimate} token；看过没选 ${pack.considered_not_used?.length ?? 0} 项`);
   if (result.pack_problems.length > 0) out.push(`- **凭据包未通过检查**：${result.pack_problems.join('; ')}`);
   out.push('', '**评审团**', '');
-  for (const m of PACK_JURY) {
-    const v = result.votes.find((x) => x.provider === m.provider && x.channel === m.channel);
+  for (const m of result.members) {
+    const v = result.votes.find((x) => x.provider === m.provider && x.valid) ?? result.votes.find((x) => x.provider === m.provider);
     if (!v) { out.push(`- ${m.provider}（${CHANNEL_ZH[m.channel]}）：没有投票`); continue; }
     const flag = v.valid ? '' : `　**程序作废**：${v.problems.join('; ')}`;
     out.push(`- **${v.provider} ${v.model}**（${CHANNEL_ZH[v.channel] ?? v.channel}）：${VERDICT_ZH[v.verdict] ?? v.verdict}（\`${v.verdict}\`）${flag}`);
@@ -949,10 +1063,6 @@ async function main(argv) {
       'transcribe-model': { type: 'string', default: 'claude-haiku-5-5' },
       only: { type: 'string' },
       'paid-api': { type: 'boolean', default: false },
-      'codex-model': { type: 'string', default: DEFAULT_CODEX_MODEL },
-      'claude-model': { type: 'string', default: DEFAULT_CLAUDE_MODEL },
-      'gemini-model': { type: 'string' },
-      'anthropic-api-model': { type: 'string' },
     },
   });
   const [stage, file] = positionals;
@@ -969,9 +1079,8 @@ async function main(argv) {
         writeFileSync(out, judgeInputText(pack, packSha256, today));
         console.log(out);
       } else if (stage === 'vote') {
-        const outcomes = await runPackVotes(db, file, {
-          codexModel: values['codex-model'], claudeModel: values['claude-model'], geminiModel: values['gemini-model'], anthropicApiModel: values['anthropic-api-model'], today,
-        });
+        // Who votes, on which channel and model: src/jury-members.json (decision 0010).
+        const outcomes = await runPackVotes(db, file, { today });
         for (const o of outcomes) console.log(`${o.provider}/${o.channel}: ${o.file ? `${o.verdict} -> ${o.file}` : o.skipped ? `skipped (${o.skipped})` : `error (${o.error})`}${o.superseded ? ` (earlier vote moved to ${o.superseded})` : ''}`);
       } else {
         const result = tallyPack(db, file);

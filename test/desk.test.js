@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { request } from 'node:http';
 import { tmpdir } from 'node:os';
@@ -12,11 +12,15 @@ import { join } from 'node:path';
 import { evidencePath, storeEvidenceBytes } from '../src/archive.js';
 import { autoImport, candidateKey, claimQuoteSha, createDesk, hasFigures, readActions, startDeskServer } from '../src/desk.js';
 import { blockerText, renderCandidatePage } from '../src/desk-view.js';
-import { closeRound, judgeInputText, readRounds, voteContext } from '../src/jury.js';
+import { closeRound as closeRoundWith, judgeInputText, readRounds, roundsFileName, voteContext } from '../src/jury.js';
 import { publicationBlockers, withdraw } from '../src/ledger.js';
 import { packPromptVersion, sha256Of } from '../src/pack.js';
 import { sameSessionProblem } from '../src/rules.js';
-import { addClaim, addSource, addVerdict, freshDb } from './helpers.js';
+import { TEST_JURY, addClaim, addSource, addVerdict, freshDb } from './helpers.js';
+
+// The test jury (openai and anthropic on), not the real settings file.
+const closeRound = (packPath, options = {}) => closeRoundWith(packPath, { jury: TEST_JURY, ...options });
+const JURY_WITH_GEMINI = { ...TEST_JURY, members: { ...TEST_JURY.members, gemini: { channel: 'api', model: 'model-gemini' } } };
 
 const ORIGIN_HTML = '<html><body><p>Préambule.</p><p>Nous ferons X avant 2027. Nous baisserons Y.</p><p>Nous continuerons Z.</p></body></html>';
 const LAW_HTML = '<html><body><p>Article 1.</p><p>X est en vigueur depuis 2025.</p></body></html>';
@@ -114,11 +118,11 @@ function writePack(s, verdicts = ['came_true', 'came_true'], { claim: claimOver 
   writeFileSync(packPath, bytes);
   writeFileSync(join(s.packDir, 'c1.judge-input.md'), judgeInputText(pack, sha256Of(bytes), made));
   const ctx = voteContext(packPath, sha256Of(bytes));
-  const members = [['anthropic', 'subscription'], ['openai', 'subscription'], ['gemini', 'api']];
+  const members = [['anthropic', 'subscription', 'claude-cli'], ['openai', 'subscription', 'codex-cli'], ['gemini', 'api', 'api']];
   verdicts.forEach((verdict, i) => {
-    const [provider, channel] = members[i];
+    const [provider, channel, via] = members[i];
     writeFileSync(join(s.packDir, `c1.vote-${provider}-${channel}.json`), JSON.stringify({
-      kind: 'kanverify-vote', format: 1, claim: 'C1', pack_file: 'c1.pack.json', pack_sha256: sha256Of(bytes), provider, channel,
+      kind: 'kanverify-vote', format: 1, claim: 'C1', pack_file: 'c1.pack.json', pack_sha256: sha256Of(bytes), provider, channel, via,
       model: `model-${provider}`, promptVersion: ctx.promptVersion, system_sha256: ctx.systemSha256, verdict, rules_applied: ['EA-1', 'EV-1'],
       evidence: [{ source_id: s.law, excerpt: 'X est en vigueur depuis 2025.', locator: where.locator, pdf_page: where.pdf_page }],
       ...(sessions[i] && { made_by: { session: sessions[i] } }),
@@ -126,7 +130,8 @@ function writePack(s, verdicts = ['came_true', 'came_true'], { claim: claimOver 
       summary_fr: `X est en vigueur (vote ${i + 1}).`, summary_en: `X is in force (vote ${i + 1}).`,
     }));
   });
-  if (close) closeRound(packPath, { now: () => new Date(Date.now()) });
+  // Three votes: Gemini is on in the jury of that round too.
+  if (close) closeRound(packPath, { now: () => new Date(Date.now()), jury: verdicts.length > 2 ? JURY_WITH_GEMINI : TEST_JURY });
   return packPath;
 }
 const packPathOf = (s) => join(s.packDir, 'c1.pack.json');
@@ -552,20 +557,78 @@ test('review 4: decisions are keyed by file and quote, so reordering a candidate
   assert.equal(readActions(s.logPath).at(-1).item, s.key(2));
 });
 
-test('review 5: a duplicate vote of the same model is set aside; jury rounds are appended, never deleted', (t) => {
+/** Appends a round line the way closeRound writes one, for a set of votes closeRound refuses (to test the desk's own guard). */
+function forceRound(packPath, files, jury) {
+  const dir = join(packPath, '..');
+  const rounds = readRounds(packPath);
+  const votes = files.map((file) => {
+    const b = readFileSync(join(dir, file));
+    return { file, sha256: sha256Of(b), text: b.toString('utf8') };
+  });
+  appendFileSync(roundsFileName(packPath), `${JSON.stringify({
+    kind: 'kanverify-jury-round', format: 1, round: Math.max(0, ...rounds.map((r) => r.round)) + 1, claim: 'C1', pack_file: 'c1.pack.json',
+    pack_sha256: sha256Of(readFileSync(packPath)), ...(jury && { jury }), votes, closed_at: new Date().toISOString(),
+  })}\n`);
+}
+
+test('F1: a round holds only the members that are on, records that jury, and the desk counts no one else', (t) => {
+  const s = setup(t);
+  importOne(s);
+  writePack(s, ['came_true', 'came_true', 'not_came_true'], { close: false });
+  // Gemini voted earlier but is off now: its vote stays out of the round, which names the jury it was closed under.
+  const r = closeRound(packPathOf(s));
+  assert.deepEqual(r.closed.votes.map((v) => v.file), ['c1.vote-anthropic-subscription.json', 'c1.vote-openai-subscription.json']);
+  assert.ok(r.leftOut.includes('c1.vote-gemini-api.json (gemini is off in the jury settings)'));
+  assert.deepEqual(r.closed.jury, [
+    { provider: 'openai', channel: 'subscription', model: 'gpt-6.2-sol' }, { provider: 'anthropic', channel: 'subscription', model: 'claude-opus-5-5' },
+  ]);
+  assert.deepEqual(readRounds(packPathOf(s)).at(-1).jury, r.closed.jury);
+  let [item] = s.desk.verdictQueue().items;
+  assert.deepEqual(item.p.votes.map((v) => v.file), ['c1.vote-anthropic-subscription.json', 'c1.vote-openai-subscription.json']);
+  // A round line naming that jury but listing the Gemini vote (written another way): the desk does not count it.
+  forceRound(packPathOf(s), ['c1.vote-anthropic-subscription.json', 'c1.vote-gemini-api.json', 'c1.vote-openai-subscription.json'], r.closed.jury);
+  [item] = s.desk.verdictQueue().items;
+  const gemini = item.p.votes.find((v) => v.file === 'c1.vote-gemini-api.json');
+  assert.equal(gemini.valid, false);
+  assert.match(gemini.problems.join(), /gemini is not in the jury round 2 was closed under/);
+  assert.equal(item.valid.length, 2);
+});
+
+test('F2: the desk takes only jury members\' votes: no alias provider, no via of another channel', (t) => {
+  const s = setup(t);
+  importOne(s);
+  writePack(s);
+  const vote = JSON.parse(readFileSync(join(s.packDir, 'c1.vote-openai-subscription.json'), 'utf8'));
+  writeFileSync(join(s.packDir, 'c1.vote-codex-subscription.json'), JSON.stringify({ ...vote, provider: 'codex' }));
+  writeFileSync(join(s.packDir, 'c1.vote-google-api.json'), JSON.stringify({ ...vote, provider: 'google', channel: 'api', via: 'api' }));
+  writeFileSync(join(s.packDir, 'c1.vote-anthropic-subscription.json'), JSON.stringify({ ...vote, provider: 'anthropic', via: 'api' }));
+  forceRound(packPathOf(s), ['c1.vote-anthropic-subscription.json', 'c1.vote-codex-subscription.json', 'c1.vote-google-api.json', 'c1.vote-openai-subscription.json']);
+  const [item] = s.desk.verdictQueue().items;
+  const problems = Object.fromEntries(item.p.votes.map((v) => [v.file, v.valid ? 'valid' : v.problems.join('; ')]));
+  assert.match(problems['c1.vote-codex-subscription.json'], /not a vote of a jury member: provider "codex"/);
+  assert.match(problems['c1.vote-google-api.json'], /not a vote of a jury member: provider "google"/);
+  assert.match(problems['c1.vote-anthropic-subscription.json'], /via "api" is not how anthropic votes on subscription/);
+  // The alias is not grouped with openai: openai's own vote stays the one vote of its company.
+  assert.equal(problems['c1.vote-openai-subscription.json'], 'valid');
+});
+
+test('review 5: two votes from one company are set aside; jury rounds are appended, never deleted', (t) => {
   const s = setup(t);
   importOne(s);
   writePack(s);
   const vote = JSON.parse(readFileSync(join(s.packDir, 'c1.vote-anthropic-subscription.json'), 'utf8'));
-  writeFileSync(join(s.packDir, 'c1.vote-anthropic-api.json'), JSON.stringify({ ...vote, channel: 'api', model: '  MODEL-ANTHROPIC ', verdict: 'not_came_true' }));
-  closeRound(packPathOf(s));
+  writeFileSync(join(s.packDir, 'c1.vote-anthropic-api.json'), JSON.stringify({ ...vote, channel: 'api', via: 'api', model: 'another-anthropic-model', verdict: 'not_came_true' }));
+  // The jury step never closes a round with two votes from one company (decision 0010: the channel is a setting).
+  assert.match(closeRound(packPathOf(s)).problem, /anthropic has more than one vote \(c1\.vote-anthropic-api\.json, c1\.vote-anthropic-subscription\.json\); one vote per company/);
+  // A round line written another way still counts neither at the desk, whatever their models.
+  forceRound(packPathOf(s), ['c1.vote-anthropic-api.json', 'c1.vote-anthropic-subscription.json', 'c1.vote-openai-subscription.json']);
   let [item] = s.desk.verdictQueue().items;
-  assert.equal(item.valid.length, 1, 'both votes of the duplicated model are set aside; file order picks nothing');
+  assert.equal(item.valid.length, 1, 'both votes of the company are set aside; file order picks nothing');
   for (const f of ['anthropic-api.json', 'anthropic-subscription.json']) {
-    assert.match(item.p.votes.find((v) => v.file.endsWith(f)).problems.join(), /same provider and model as vote/);
+    assert.match(item.p.votes.find((v) => v.file.endsWith(f)).problems.join(), /anthropic has more than one vote .*one vote per company/);
   }
   assert.equal(item.canConfirm, false);
-  assert.match(s.desk.verdictPage(item.id), /same provider and model/, 'the page shows it, and does not crash');
+  assert.match(s.desk.verdictPage(item.id), /anthropic has more than one vote/, 'the page shows it, and does not crash');
   rmSync(join(s.packDir, 'c1.vote-anthropic-api.json'));
   closeRound(packPathOf(s));
   [item] = s.desk.verdictQueue().items;
@@ -979,9 +1042,9 @@ test('re-check A: votes arriving one by one make no round until the jury step cl
   writePack(s, ['came_true', 'came_true', 'not_came_true'], { close: false });
   s.desk.verdictQueue();
   assert.equal(s.db.prepare('SELECT count(*) AS n FROM jury_votes').get().n, 0, 'no round while the votes arrive');
-  const r = closeRound(packPathOf(s));
+  const r = closeRound(packPathOf(s), { jury: JURY_WITH_GEMINI });
   assert.deepEqual([r.closed.round, r.closed.votes.length], [1, 3]);
-  assert.equal(closeRound(packPathOf(s)).already, true, 'closing again with the same files adds nothing');
+  assert.equal(closeRound(packPathOf(s), { jury: JURY_WITH_GEMINI }).already, true, 'closing again with the same files adds nothing');
   assert.equal(readFileSync(join(s.packDir, 'c1.rounds.jsonl'), 'utf8').trim().split('\n').length, 1);
   [item] = s.desk.verdictQueue().items;
   assert.equal(item.round, 1);
