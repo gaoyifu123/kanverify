@@ -101,6 +101,73 @@ One page per version used by any ledger entry (current or past), header item "Me
 Cut: a short title per rule (would need a new column in the standard's table, not mine), per-rule "comes from ST-n"
 lines, a version switcher, a diff between versions, the rules line on rows and cards.
 
+## Jury line on the item page (2026-11-23, founder: "show the AI jury and what each one judged" / "keep it simple")
+
+One plain sentence directly under the verdict chip, before the summary. No new component, class, size, weight or
+colour: a `<p>` in body text, `--ink`, with ordinary links. Nothing on rows, cards, the timeline or `index.json`.
+
+```html
+<p class="jury-line">Confirmed by a person on 23 November 2026. AI jury: Anthropic: Came true · OpenAI: Came true.
+  <a href="#decided-12">How it was decided</a> · <a href="../../method/#jury">How the jury works</a></p>
+```
+
+(`jury-line` is only a hook for the generator and tests; it has no CSS of its own.)
+
+**Which votes.** Only votes whose `round` = `verdict.based_on_round` (as the detail layer already does). Earlier
+rounds are never named here.
+
+**First sentence: what the person did** (the person before the machine, DESIGN.md rule 11). Computed by comparing
+`verdict.verdict` with the counted votes, so it is true whatever the jury said:
+
+| Case | EN | FR |
+| --- | --- | --- |
+| every vote = the published verdict | Confirmed by a person on {date}. | Confirmé par une personne le {date}. |
+| some votes = the verdict, some not | Decided by a person on {date}; the AI jury was divided. | Tranché par une personne le {date} ; le jury d’IA était partagé. |
+| no vote = the verdict | Changed by a person on {date}; the AI jury voted otherwise. | Modifié par une personne le {date} ; le jury d’IA avait voté autrement. |
+| no counted vote (`based_on_round` empty, or no votes in that round) | Written by a person on {date}, without an AI jury vote. | Rédigé par une personne le {date}, sans vote du jury d’IA. |
+
+`{date}` = `confirmed_at` of the current entry, long date format. `decided_by` is not used for this sentence (the
+vote comparison is what a reader can check against the names that follow); it stays in the "How it was decided"
+layer as today. If `decided_by = 'jury'` but no vote matches the verdict, the build stops: that record contradicts
+itself.
+
+**Second sentence: each member and its vote.** EN `AI jury: {Company}: {verdict label} · …` /
+FR `Jury d’IA : {Société} : {libellé du verdict} · …` (narrow no-break space before each French colon). Omitted in
+the last case of the table.
+
+- Name = the company, not the adapter or the model, from this fixed table (vendors named factually, none favoured,
+  principle 8). An unknown `provider` value stops the build.
+
+  | `provider` | Shown as |
+  | --- | --- |
+  | anthropic, claude | Anthropic |
+  | openai, codex | OpenAI |
+  | gemini | Google |
+  | mistral | Mistral AI |
+
+- Two counted votes from the same company (e.g. `anthropic` and `claude`): add the model id after the name, in the
+  existing mono style: `Anthropic (claude-…): Came true`.
+- Order: company name A–Z, always. Never grouped by agreement, never the agreeing votes first.
+- The verdict label as plain text (the six labels of DESIGN.md), not a chip: a row of chips would compete with the
+  verdict itself and make the jury look like the verdict.
+- **A member that did not vote** is shown as `{Company}: did not vote` / `{Société} : n’a pas voté`, in A–Z order with
+  the others — **only once the record says so.** Today the snapshot holds only votes that were cast; it does not say
+  who was on the jury for that round. See Objections.
+
+**Links.** "How it was decided" / « Comment ce verdict a été rendu » → the existing "How this was decided" layer,
+which gets `id="decided-{claim.id}"` (and opens when it is the URL hash, like every layer). "How the jury works" /
+« Fonctionnement du jury » → `/{lang}/method/#jury` (existing string `howJury`).
+
+**Agreement at a glance** is the first sentence (confirmed / divided / changed); no "2/2" mark, no count, no icon.
+
+Wide screens: in the summary column, under the chip, like the chip. The dated chain keeps its "Confirmed by a person"
+entry (it is the chronology; the line is the who).
+
+Cut (principle 5): any mark on rows and cards (a "2/2" there is a score without its basis, and the open row already
+says "Confirmed by a person"; jury data stays out of `index.json`); vendor colours or logos; per-member chips; model
+ids and prompt versions on the line (they stay in the layer's table); a jury count in the layer summary line
+(`jurySummary`) may stay as is.
+
 ## Principles relied on
 
 3 (one chip, equal-ink patterns, neutral order, no good/bad icons), 1 (what is missing never collapsed,
@@ -129,5 +196,15 @@ component per job, native `<details>` for the accordion: no script needed to ope
   rule texts say « prédiction » (ST-2, VG-3) while the site says « Prévision »; they should match. VG-1 and RN-1 say
   « reniée », which carries blame (principle 3); « sur laquelle son auteur est revenu explicitement et publiquement »
   matches the label « Revirement public de l’auteur ». These sentences are now shown on every item page.
+- **Jury line (2026-11-23).** (a) "Did not vote" cannot be shown truthfully yet: the record holds only cast votes, not
+  who was on the jury for that round. Taking the roster from today's configuration would mislabel older verdicts
+  (Gemini was not a member when they were decided). Showing a non-voter needs the record to carry it, e.g. a
+  per-round list of members asked, with no vote for those that did not answer — a record-format change I may not
+  make; raised to the coordinator. Until then the line names voters only, and the method page says who the jury is.
+  (b) Order differs from the founder's wording ("names and votes, then confirmed by a person"): I put the person
+  first, because the AI votes are not the decision and DESIGN.md rule 11 says so; "decided by AI votes" alone would
+  be untrue. (c) With two members, "divided" means one against one; readers may read it as a coin toss. The verdict
+  is still the person's, which the sentence says. (d) Naming companies on every verdict invites "which AI is right
+  most often" comparisons; per-vendor tallies are not shown anywhere (counts by verdict only).
 - Decision 0013's amendment says decision 0014 is "removed in record format 12", while the code and 0014 itself show
   it is in force; I designed for "in force". The coordinator should reword the amendment.

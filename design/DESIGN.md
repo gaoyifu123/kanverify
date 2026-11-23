@@ -207,6 +207,7 @@ person pages, evidence excerpts on the first screen (moved deeper).
 | Verdict colour | palette B: six muted hues, no red/green, always with pattern and label (founder, 2026-11-22, after comparing A and B side by side) |
 | Public reversal | the speaker's explicit public reversal of a promise is cited only under Did not come true, as ordinary numbered evidence (0013 amendment, 0015, RN-1; record format 12). The "the wait ends here" display is retired, see `components.md` |
 | Rules applied | every verdict shows, at the end of the item page's summary layer, the rules it was judged by in plain words, each id linking to a page per standard version (0014; `components.md` "Rules applied and the rules page") |
+| Jury on the item page | one plain line under the chip: what the person did (confirmed / decided between divided votes / changed / wrote without a vote), then each company and its vote, A–Z; nothing on rows or cards (founder, 2026-11-23; `components.md` "Jury line") |
 | Corrections, archives, withdrawn items, jury | one email; files not public; notice only; shown as is, person first |
 | Statistics | donut per person, bars per topic, everyone side by side; counts only; neutral sort |
 | Home | timeline of the current year with cards that follow the period |

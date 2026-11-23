@@ -468,7 +468,7 @@ test('"partly came true" is labelled in both languages and has its own chart pat
 test('format 11: the jury shown is the round the verdict rests on, not every round', () => {
   const snap = currentSnapshot(ids.cameTrue);
   const vote = (round, provider, verdict) => ({ round, provider, model: `m-${provider}-${round}`, prompt_version: 'judge-0.6', verdict });
-  snap.jury = [vote(1, 'p1', 'pending'), vote(1, 'p2', 'pending'), vote(2, 'p1', 'came_true'), vote(2, 'p2', 'came_true')];
+  snap.jury = [vote(1, 'anthropic', 'pending'), vote(1, 'openai', 'pending'), vote(2, 'anthropic', 'came_true'), vote(2, 'openai', 'came_true')];
   const dir = mkdtempSync(join(tmpdir(), 'kv-round-'));
   try {
     const build = (based_on_round) => {
@@ -480,17 +480,110 @@ test('format 11: the jury shown is the round the verdict rests on, not every rou
     const two = build(2);
     assert.match(two, /AI jury: 2 votes</, 'a 2:0 round is two votes');
     assert.doesNotMatch(two, /not unanimous/);
-    assert.match(two, /m-p1-2/);
-    assert.doesNotMatch(two, /m-p1-1/, 'earlier rounds are not counted or listed as this jury');
+    assert.match(two, /m-anthropic-2/);
+    assert.doesNotMatch(two, /m-anthropic-1/, 'earlier rounds are not counted or listed as this jury');
     const one = build(1);
     assert.match(one, /AI jury: 2 votes</);
-    assert.match(one, /m-p1-1/);
-    assert.doesNotMatch(one, /m-p1-2/);
+    assert.match(one, /m-anthropic-1/);
+    assert.doesNotMatch(one, /m-anthropic-2/);
     // A verdict resting on no round shows no jury.
-    assert.doesNotMatch(build(null), /AI jury/);
+    assert.doesNotMatch(build(null), /AI jury:/);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+// components.md "Jury line": one sentence under the verdict, the person first, then each company's vote A–Z.
+function juryLines(snap) {
+  const dir = mkdtempSync(join(tmpdir(), 'kv-juryline-'));
+  try {
+    buildSite(fakeLedger(snap), join(dir, 'site'), { today: TODAY });
+    const read = (lang) => readFileSync(join(dir, 'site', lang, 'claim', String(snap.claim.id), 'index.html'), 'utf8');
+    const line = (html) => {
+      const m = html.match(/<p class="jury-line">([\s\S]*?)<\/p>/);
+      assert.ok(m, 'the item page has a jury line');
+      return m[1].replace(/\s+<a /, ' <a ');
+    };
+    return { en: line(read('en')), fr: line(read('fr')), enPage: read('en') };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+function jurySnap(verdict, votes, { round = 2, decidedBy = 'human' } = {}) {
+  const snap = currentSnapshot(ids.cameTrue);
+  snap.verdict.verdict = verdict;
+  snap.verdict.decided_by = decidedBy;
+  snap.verdict.based_on_round = round;
+  snap.jury = votes.map(([provider, v, model = `model-${provider}`, r = 2]) => ({ round: r, provider, model, prompt_version: 'judge-0.6', verdict: v }));
+  return snap;
+}
+
+const NNB = String.fromCharCode(0x202f);
+const JD = { en: longDate('2026-11-22', 'en'), fr: longDate('2026-11-22', 'fr') }; // fakeLedger's confirmed_at
+
+test('jury line: every counted vote = the verdict → confirmed; links to the layer and the method page', () => {
+  const snap = jurySnap('came_true', [['openai', 'came_true'], ['anthropic', 'came_true'], ['anthropic', 'pending', 'old', 1]]);
+  const { en, fr, enPage } = juryLines(snap);
+  const id = snap.claim.id;
+  assert.equal(en, `Confirmed by a person on ${JD.en}. AI jury: Anthropic: Came true · OpenAI: Came true. ` +
+    `<a href="#decided-${id}">How it was decided</a> · <a href="../../../en/method/#jury">How the jury works</a>`);
+  assert.equal(fr, `Confirmé par une personne le ${JD.fr}. Jury d’IA${NNB}: Anthropic${NNB}: Réalisée · OpenAI${NNB}: Réalisée. ` +
+    `<a href="#decided-${id}">Comment ce verdict a été rendu</a> · <a href="../../../fr/method/#jury">Fonctionnement du jury</a>`);
+  assert.match(enPage, new RegExp(`<details class="layer" id="decided-${id}">\\s*<summary><span class="t">How this was decided`));
+  // Under the chip, before the summary.
+  assert.ok(enPage.indexOf('class="verdict-line"') < enPage.indexOf('class="jury-line"'));
+  assert.ok(enPage.indexOf('class="jury-line"') < enPage.indexOf('Summary of the outcome.'));
+});
+
+test('jury line: some votes = the verdict → decided by a person, the jury divided', () => {
+  const { en, fr } = juryLines(jurySnap('came_true', [['openai', 'came_true'], ['anthropic', 'to_evaluate']]));
+  assert.ok(en.startsWith(`Decided by a person on ${JD.en}; the AI jury was divided. AI jury: Anthropic: To be assessed · OpenAI: Came true. <a `), en);
+  assert.ok(fr.startsWith(`Tranché par une personne le ${JD.fr}${NNB}; le jury d’IA était partagé. Jury d’IA${NNB}: Anthropic${NNB}: À évaluer · OpenAI${NNB}: Réalisée. <a `), fr);
+});
+
+test('jury line: no vote = the verdict → changed by a person', () => {
+  const { en, fr } = juryLines(jurySnap('came_true', [['mistral', 'pending'], ['gemini', 'to_evaluate']]));
+  assert.ok(en.startsWith(`Changed by a person on ${JD.en}; the AI jury voted otherwise. AI jury: Google: To be assessed · Mistral AI: Pending. <a `), en);
+  assert.ok(fr.startsWith(`Modifié par une personne le ${JD.fr}${NNB}; le jury d’IA avait voté autrement. Jury d’IA${NNB}: Google${NNB}: À évaluer · Mistral AI${NNB}: En attente. <a `), fr);
+});
+
+test('jury line: no counted vote → written by a person, no jury sentence', () => {
+  for (const snap of [jurySnap('came_true', [['anthropic', 'came_true', 'm', 1]]), jurySnap('came_true', [['anthropic', 'came_true']], { round: null })]) {
+    const { en, fr } = juryLines(snap);
+    assert.ok(en.startsWith(`Written by a person on ${JD.en}, without an AI jury vote. <a `), en);
+    assert.ok(fr.startsWith(`Rédigé par une personne le ${JD.fr}, sans vote du jury d’IA. <a `), fr);
+    assert.doesNotMatch(en, /AI jury:/);
+  }
+  // The real ledger fixture: a verdict resting on no round.
+  assert.match(page(`en/claim/${ids.pending}/index.html`), /<p class="jury-line">Written by a person on /);
+});
+
+test('jury line: companies A–Z whatever the input order or agreement; one company twice shows each model', () => {
+  const { en } = juryLines(jurySnap('came_true', [
+    ['openai', 'came_true'], ['mistral', 'came_true'], ['claude', 'pending', 'claude-z'], ['gemini', 'came_true'], ['anthropic', 'came_true', 'claude-a'],
+  ]));
+  assert.ok(en.includes('AI jury: Anthropic (<span class="mono">claude-a</span>): Came true · Anthropic (<span class="mono">claude-z</span>): Pending · ' +
+    'Google: Came true · Mistral AI: Came true · OpenAI: Came true.'), en);
+  const { en: en2 } = juryLines(jurySnap('came_true', [['openai', 'came_true', 'gpt-y'], ['codex', 'came_true', 'gpt-x']]));
+  assert.ok(en2.includes('AI jury: OpenAI (<span class="mono">gpt-x</span>): Came true · OpenAI (<span class="mono">gpt-y</span>): Came true.'), en2);
+});
+
+test('jury line: nothing on rows, cards, other pages or index.json', () => {
+  for (const [path, content] of files) {
+    if (!/\/claim\/\d+\/index\.html$/.test(path)) assert.doesNotMatch(content, /jury-line|decided-\d/, path);
+  }
+});
+
+test('jury line: an unknown provider, or "decided by the jury" with no vote for the verdict, stops the build', () => {
+  const unknown = jurySnap('came_true', [['anthropic', 'came_true'], ['fake', 'came_true']]);
+  assertPreviousSiteKept((site) => () => buildSite(fakeLedger(unknown), site, { today: TODAY }), /unknown jury provider "fake"/);
+  const contradicts = jurySnap('came_true', [['anthropic', 'pending'], ['openai', 'pending']], { decidedBy: 'jury' });
+  assertPreviousSiteKept((site) => () => buildSite(fakeLedger(contradicts), site, { today: TODAY }), /decided by the jury, but no counted vote/);
+  const noVotes = jurySnap('came_true', [], { decidedBy: 'jury', round: null });
+  assertPreviousSiteKept((site) => () => buildSite(fakeLedger(noVotes), site, { today: TODAY }), /decided by the jury, but no counted vote/);
+  // decided_by = 'jury' with one matching vote builds.
+  assert.ok(juryLines(jurySnap('came_true', [['anthropic', 'came_true'], ['openai', 'pending']], { decidedBy: 'jury' })).en.startsWith('Decided by a person'));
 });
 
 function currentSnapshot(id) {
@@ -711,7 +804,7 @@ const chainOf = (html) => between(html, '<ol class="chain">', '</ol>');
 test('reversal under not_came_true: numbered among the evidence; the format-11 "wait ends here" display is gone', () => {
   buildRenounced('not_came_true', (read, id) => {
     const en = read(`en/claim/${id}/index.html`);
-    assert.deepEqual(layerIds(en), [1, 2, 3, 4].map((n) => `ev-${id}-${n}=Evidence ${n}`).concat(`src-${id}=Where it was said`));
+    assert.deepEqual(layerIds(en), [1, 2, 3, 4].map((n) => `ev-${id}-${n}=Evidence ${n}`).concat(`src-${id}=Where it was said`, `decided-${id}=How this was decided`));
     assert.match(en, new RegExp(`id="ev-${id}-1">\\s*<summary><span class="t">Evidence 1</span><span class="s">Public reversal by the speaker · Ren Publisher · `));
     assert.doesNotMatch(en, /ren-\d|wait for the deadline|Ends the wait|publicly gave up/);
     assert.ok(chainOf(en).includes(`<a href="#ev-${id}-1" lang="fr">Renonciation A</a> · public reversal by the speaker`));

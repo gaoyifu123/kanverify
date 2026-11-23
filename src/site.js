@@ -38,6 +38,10 @@ const DOMAINS = ['economy', 'tax', 'employment', 'health', 'education', 'environ
   'defence', 'justice', 'immigration', 'foreign_affairs', 'institutions', 'social', 'housing', 'transport',
   'agriculture', 'digital', 'culture', 'other'];
 const NB = String.fromCharCode(160); // no-break space
+const NNB = String.fromCharCode(0x202f); // narrow no-break space (components.md "Jury line": before each French colon)
+// The jury line names the company, never the adapter or the model (components.md "Jury line",
+// principle 8). A provider not in this table stops the build.
+const COMPANY = { anthropic: 'Anthropic', claude: 'Anthropic', openai: 'OpenAI', codex: 'OpenAI', gemini: 'Google', mistral: 'Mistral AI' };
 
 const T = {
   en: {
@@ -90,6 +94,14 @@ const T = {
     jurySummary: (n, unanimous) => `AI jury: ${n === 1 ? '1 vote' : `${n} votes`}${unanimous ? '' : ', not unanimous'}`,
     decidedHuman: 'Verdict written by a person.', decidedJury: 'Verdict proposed by the AI jury.',
     juryListed: 'The AI jury’s first assessments are listed as recorded.', howJury: 'How the jury works',
+    // components.md "Jury line": the person first, then each member's vote.
+    juryPerson: {
+      confirmed: (d) => `Confirmed by a person on ${d}.`,
+      divided: (d) => `Decided by a person on ${d}; the AI jury was divided.`,
+      changed: (d) => `Changed by a person on ${d}; the AI jury voted otherwise.`,
+      none: (d) => `Written by a person on ${d}, without an AI jury vote.`,
+    },
+    juryVotes: (list) => `AI jury: ${list}.`, juryMember: (name, vote) => `${name}: ${vote}`, howDecidedLink: 'How it was decided',
     company: 'Company', model: 'Model', instructions: 'Instructions', vote: 'Vote',
     history: 'History', firstPublished: (d) => `First published ${d}`, updated: (n, d) => `Updated ${n === 1 ? 'once' : `${n} times`} since ${d}`,
     firstPub: 'first published', seeChange: 'see the change', withdrawnLabel: 'Withdrawn', publishedLabel: 'Published',
@@ -166,6 +178,13 @@ const T = {
     jurySummary: (n, unanimous) => `jury d’IA${NB}: ${n === 1 ? '1 vote' : `${n} votes`}${unanimous ? '' : ', non unanimes'}`,
     decidedHuman: 'Verdict rédigé par une personne.', decidedJury: 'Verdict proposé par le jury d’IA.',
     juryListed: 'Les premières évaluations du jury d’IA sont indiquées telles qu’enregistrées.', howJury: 'Fonctionnement du jury',
+    juryPerson: {
+      confirmed: (d) => `Confirmé par une personne le ${d}.`,
+      divided: (d) => `Tranché par une personne le ${d}${NNB}; le jury d’IA était partagé.`,
+      changed: (d) => `Modifié par une personne le ${d}${NNB}; le jury d’IA avait voté autrement.`,
+      none: (d) => `Rédigé par une personne le ${d}, sans vote du jury d’IA.`,
+    },
+    juryVotes: (list) => `Jury d’IA${NNB}: ${list}.`, juryMember: (name, vote) => `${name}${NNB}: ${vote}`, howDecidedLink: 'Comment ce verdict a été rendu',
     company: 'Société', model: 'Modèle', instructions: 'Instructions', vote: 'Vote',
     history: 'Historique', firstPublished: (d) => `Première publication le ${d}`, updated: (n, d) => `Mise à jour ${n === 1 ? 'une fois' : `${n} fois`} depuis le ${d}`,
     firstPub: 'première publication', seeChange: 'voir la modification', withdrawnLabel: 'Retirée', publishedLabel: 'Publiée',
@@ -950,6 +969,7 @@ function claimPage(lang, m, claim) {
   // Earlier rounds stay in the snapshot but are not shown or counted as this verdict's jury; a
   // verdict that rests on no round (written from the wording alone) shows no jury.
   const jury = (s.jury || []).filter((j) => Number.isInteger(v.based_on_round) && j.round === v.based_on_round);
+  const juryLine = juryLineHtml(lang, c.id, cur, v, jury, up);
 
   // "Based on, in date order": said → evidence by published_on → deadline → confirmed, sorted by
   // date (ties in that order). Undated entries come after the dated ones, marked as such.
@@ -1037,7 +1057,7 @@ function claimPage(lang, m, claim) {
             </tbody>
           </table></div>`
     : '';
-  layers.push(`<details class="layer">
+  layers.push(`<details class="layer" id="decided-${c.id}">
           <summary><span class="t">${L.howDecided}</span><span class="s">${L.confirmedShort}${jurySum}</span></summary>
           <p><strong>${L.confirmedOn(fmt(cur.date, lang))}.</strong> ${v.decided_by === 'jury' ? L.decidedJury : L.decidedHuman}${jury.length ? ` ${L.juryListed}` : ''} <a href="${up}${lang}/method/#jury">${L.howJury}</a></p>${juryTable}
         </details>`);
@@ -1061,7 +1081,8 @@ function claimPage(lang, m, claim) {
       <p class="muted">${L.itemNo(c.id)} · ${L.ty[c.type]} · <a href="${up}${lang}/topic/${c.domain}/">${esc(L.d[c.domain])}</a></p>
       <h1><a href="${subjectHref}">${esc(subject.name)}</a>, ${fmt(c.said_on, lang)}</h1>
       ${quoteBlock(c.quote_original, c.lang, translationOf(c, c.lang, 'quote', lang), lang)}
-      <p class="verdict-line">${chip(v.verdict, lang)}</p>${summary ? `\n      <p>${esc(summary)}</p>` : ''}${questionBlock}
+      <p class="verdict-line">${chip(v.verdict, lang)}</p>
+      ${juryLine}${summary ? `\n      <p>${esc(summary)}</p>` : ''}${questionBlock}
       <h2>${L.chainH}</h2>
       <ol class="chain">
         ${chainHtml}
@@ -1078,6 +1099,41 @@ function claimPage(lang, m, claim) {
   </div>
 </article>`;
   return shell({ lang, path, title: `${L.by(L.ty[c.type], subject.name, fmt(c.said_on, lang))} — KANVERIFY`, body });
+}
+
+/**
+ * The jury line under the verdict (components.md "Jury line"): what the person did, found by
+ * comparing the published verdict with the counted votes, then each company and its vote, A–Z.
+ * Stops the build on a provider not in COMPANY, or on decided_by = 'jury' with no vote for the verdict.
+ */
+function juryLineHtml(lang, claimId, cur, v, jury, up) {
+  const L = T[lang];
+  for (const j of jury) {
+    if (!Object.hasOwn(COMPANY, j.provider)) {
+      throw new Error(`Ledger entry ${cur.id}: unknown jury provider "${j.provider}" has no company name. Nothing was written.`);
+    }
+  }
+  const agree = jury.filter((j) => j.verdict === v.verdict).length;
+  if (v.decided_by === 'jury' && agree === 0) {
+    throw new Error(`Ledger entry ${cur.id}: decided by the jury, but no counted vote is "${v.verdict}". Nothing was written.`);
+  }
+  const date = fmt(cur.date, lang);
+  const kase = !jury.length ? 'none' : agree === jury.length ? 'confirmed' : agree === 0 ? 'changed' : 'divided';
+  let text = L.juryPerson[kase](date);
+  if (jury.length) {
+    const perCompany = new Map();
+    for (const j of jury) perCompany.set(COMPANY[j.provider], (perCompany.get(COMPANY[j.provider]) || 0) + 1);
+    const cmp = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+    const members = jury
+      .map((j) => ({ name: COMPANY[j.provider], model: String(j.model ?? ''), vote: L.v[j.verdict] }))
+      .sort((a, b) => cmp(a.name, b.name) || cmp(a.model, b.model));
+    const list = members
+      .map((x) => L.juryMember(perCompany.get(x.name) > 1 ? `${esc(x.name)} (<span class="mono">${esc(x.model)}</span>)` : esc(x.name), esc(x.vote)))
+      .join(' · ');
+    text += ` ${L.juryVotes(list)}`;
+  }
+  return `<p class="jury-line">${text}
+        <a href="#decided-${claimId}">${L.howDecidedLink}</a> · <a href="${up}${lang}/method/#jury">${L.howJury}</a></p>`;
 }
 
 /** The page the rules line links to (`<lang>/method/rules-<version>/`). */

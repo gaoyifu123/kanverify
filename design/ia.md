@@ -133,7 +133,8 @@ Summary layer:
 1. claim.id · type label · domain label (link to topic).
 2. Heading: `subject.name` (link), `said_on`.
 3. The quoted text: translation first, original directly underneath (see §1).
-4. Verdict label; `verdict.summary_{lang}` (required for all but pending).
+4. Verdict label; the jury line (`components.md` "Jury line": `confirmed_at`, the votes of `based_on_round`,
+   `jury[].provider` / `verdict`); `verdict.summary_{lang}` (required for all but pending).
 5. If `to_evaluate`: heading "What is missing / Ce qui manque" + `open_question_{lang}`. Otherwise, if
    present: "Open question / Question en suspens" + `open_question_{lang}`.
 6. "Based on, in date order" / « Fondé sur, dans l'ordre des dates »: one list, sorted by date
