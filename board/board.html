@@ -12,9 +12,9 @@
   "meta": {
     "day": 2,
     "totalDays": 14,
-    "updated": "2026-11-23 09:52:16",
+    "updated": "2026-11-23 10:10:00",
     "launch": "Dec 5",
-    "headline": "Judge prompt rewritten once (judge-0.5); the same Fable reviewer is re-checking it. Fable review 2 (desk) running. Four quick questions for you below."
+    "headline": "All five Fable reviews done. Judge prompt passed; desk, record format and fetching code are being fixed. The design critique found the biggest risk in how evidence is selected; fixes decided (decision 0012). Questions for you below."
   },
   "counts": [
     {
@@ -49,12 +49,14 @@
     "Design frozen: palette B, two sizes and weights, timeline home, person and topic pages",
     "Review desk built, security-reviewed by Opus and browser-tested; Fable review today",
     "Link mailbox read every morning at 08:30",
-    "Board, interface and new documents now in English"
+    "Board, interface and new documents now in English",
+    "Source rule restored to its full version (0.4) after it was found reverted to an early draft; content matches your decisions",
+    "Judge prompt rewritten once as judge-0.5 and passed Fable review"
   ],
   "next": [
-    "Fable review queue (running now, one at a time): judge prompt, review desk, record formats 6–9, fetching code; design critique if quota remains",
-    "After the desk passes: create Macron and Trump, auto-import candidates, you confirm only the flagged ones (about 90)",
-    "Translation step (needed before French evidence can be published), then re-run the 10 trial verdicts under the new rule",
+    "Fable reviews: 1 judge prompt PASSED; 2 desk, 3 record format, 4 fetching code being fixed, then re-checked by the same reviewers; 5 design critique if quota remains",
+    "After the desk passes: create Macron and Trump, auto-import candidates; you confirm only the flagged ones (about 90)",
+    "Translation step (needed before French evidence can be published); re-vote the 10 trial claims under the new judge prompt",
     "More evidence packs and verdicts towards the first 10 confirmed items"
   ],
   "needs": [
@@ -97,6 +99,56 @@
         "Change it"
       ],
       "placeholder": "Your wording changes, if any"
+    },
+    {
+      "id": "vague-renounced",
+      "t": "A vague promise that the speaker explicitly abandons",
+      "d": "Today a vague promise (e.g. \"we will make the country fairer\") can only ever be \"unverifiable\", even if the speaker later says publicly \"we give this up\". Option A: keep it unverifiable (the wording was never checkable). Option B: an explicit public abandonment makes it \"did not come true\", even when vague. Recommendation: A — one rule, and the abandonment is still shown in the summary.",
+      "options": [
+        "A: stays unverifiable",
+        "B: abandonment = did not come true"
+      ],
+      "placeholder": "Anything to add"
+    },
+    {
+      "id": "judge-file-access",
+      "t": "Judges can read files on this computer: accept the remaining risk?",
+      "d": "The Codex and Claude judges run on your computer with read access to files (Codex in a read-only sandbox). A malicious document in an evidence pack could try to make a judge quote a secret (an API key) into its vote. Guards being added: any reply containing a key from .env or a token-like string is refused and nothing is stored; votes never reach the site without your confirmation. Fully closing it means running the judges under a separate Windows user account that cannot read the project or your profile (more setup). Recommendation: accept with the guards for now; revisit before opening reader submissions.",
+      "options": [
+        "Accept with the guards",
+        "Set up a separate account first"
+      ],
+      "placeholder": "Anything to add"
+    },
+    {
+      "id": "calibration-count",
+      "t": "How the 10/30/100 test counts (before automatic approval)",
+      "d": "Fable found that the current count would mostly measure easy items (vague promises are forced to \"unverifiable\"; most items are \"pending\") and that you see the jury's pre-selected answer first. Recommendation: count only measurable items with a real outcome; for those, hide the votes until you have picked your verdict; count a send-back or a rewritten summary on a unanimous item as a jury miss; on 1 in 5 you open the original document, not only the excerpts. Slower for you now, but it makes the 99% mean something.",
+      "options": [
+        "Use the stricter count",
+        "Keep the current count"
+      ],
+      "placeholder": "Anything to add"
+    },
+    {
+      "id": "launch-scope",
+      "t": "What to publish at launch on 5 December",
+      "d": "Recommendation: publish every recorded promise with its source, but give an outcome verdict (came true / partly / did not come true) only on the items you have checked against the original documents (likely 20–40 at launch); never publish \"pending\" for an item nobody has searched evidence for — it would wrongly suggest we checked.",
+      "options": [
+        "Agree",
+        "Publish more verdicts"
+      ],
+      "placeholder": "Anything to add"
+    },
+    {
+      "id": "claude-cli",
+      "t": "Install the Claude Code command line for the Claude judge?",
+      "d": "Today the Claude judge is a helper inside this project: it can see project files and other votes, and once it already broke the rule. Codex runs isolated (empty folder, read-only). Running Claude the same way needs the Claude Code command-line tool installed on this computer, using your existing Claude subscription login. Terms for this kind of use are not yet checked; I would check them first.",
+      "options": [
+        "Yes, check the terms and install",
+        "Not now"
+      ],
+      "placeholder": "Anything to add"
     },
     {
       "id": "note",

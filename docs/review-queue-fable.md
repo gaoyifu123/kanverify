@@ -56,3 +56,9 @@ Site generator, extraction prompt (its output is reviewed before use), design, d
 - Questions: are the judges independent enough (same vendor cuts the evidence and votes; one layer-1 agent chooses what the
   judges see)? Can the evidence pack be gamed or bias the verdicts? Does the 10/30/100 calibration still mean something
   with these judges? What is the biggest design risk before launch on 2026-12-05?
+
+## Status 2026-11-23 (morning)
+- 1 judge prompt: PASSED on re-check (tag `fable-judge-prompt-2026-11-23`).
+- 2 desk, 3 record format, 4 fetching code: SENT BACK, fixes in progress; re-check by the same reviewers.
+- 5 design critique: done (`docs/log/2026-11-23-fable-review-5.md`, decision 0012).
+- **Next for Fable:** `team/run/pack-prompt.md` once written (it decides what the judges see — same category as the judge prompt).

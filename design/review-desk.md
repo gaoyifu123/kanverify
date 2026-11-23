@@ -356,3 +356,22 @@ that day's Opus stand-in).
    to calibrate the jury); when all three agree, that vote is pre-selected.
 8. The local server's security requirements (start-up token, `Host` and `Origin` checks, `127.0.0.1`
    only) go through the critical review.
+
+## Coordinator decision 9 (2026-11-23, after Fable review 2): votes are rounds, verdicts are tied to a round
+
+Fable review 2 found that the desk has no notion of "the votes changed since this verdict was written". One rule fixes
+both high findings (principle 4: one rule, not two patches):
+
+1. **A round** is one set of votes for one pack (pack sha256 + the set of vote files). Rounds are numbered per claim and
+   are **append-only**: a round is written to `jury_votes` as soon as the desk first ingests it — whether the founder later
+   adopts, edits, sends back or rejects. Nothing ever deletes a round (undo included).
+2. **Every workspace verdict records the round it was based on.** When a newer round exists for the claim, the verdict is
+   **stale**: the item returns to queue B, labelled "new votes since your last decision" — also when the claim is already
+   published (then labelled "re-check of a published item"; confirming writes a new ledger entry as usual).
+3. **The page shows and pre-selects only the newest round.** Adopt / edit / confirm carry the round id; a commit is refused
+   if the newest round changed after the page was shown (always, not only when a vote was pre-selected).
+4. **Undo** reverts only the workspace verdict to its previous value; it never removes votes or rounds.
+5. **Performance:** the queue is built from an index of packs and vote files (path, size, mtime, sha256), rebuilt only for
+   files that changed, so a page or action stays well under one second at 500 packs.
+6. Small items from the review: add U+180E, U+2800, U+115F, U+3164 to the blank-character list in the desk checks;
+   log desk actions with the claim's quote hash as well as its id; write the reject log line in the same step as the delete.
