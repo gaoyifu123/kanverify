@@ -6,6 +6,7 @@
 // the single JSON retry, caching, streaming, rate limiting.
 
 import anthropic from './anthropic.js';
+import claude from './claude-cli.js';
 import codex from './codex-cli.js';
 import { loadEnv } from './env.js';
 import { AiError } from './errors.js';
@@ -18,9 +19,10 @@ export { AiError } from './errors.js';
 
 // The registry stays private: exporting adapter objects would let business code call a vendor
 // without ask() (docs/log/2026-11-22-step-back-ai-guard.md). Only names are public.
-// codex runs the Codex command-line tool under the founder's ChatGPT subscription (decision 0010).
-const ADAPTERS = Object.freeze({ anthropic, gemini, openai, mistral, codex });
-// The providers paid through an API key in .env. codex needs no key and is not listed.
+// codex runs the Codex command-line tool under the founder's ChatGPT subscription (decision 0010);
+// claude runs the Claude Code command-line tool under his Claude subscription (decision 0013).
+const ADAPTERS = Object.freeze({ anthropic, gemini, openai, mistral, codex, claude });
+// The providers paid through an API key in .env. codex and claude need no key and are not listed.
 export const PROVIDERS = Object.freeze(
   Object.values(ADAPTERS).filter(({ keyVar }) => keyVar).map(({ name, keyVar }) => Object.freeze({ name, keyVar })),
 );
@@ -214,6 +216,10 @@ async function callOnce(adapter, req, key, fetchImpl) {
  * subscription: no key, no documents, no web search; maxTokens is not enforced by the tool.
  * schema (a JSON Schema object, json: true only) is passed to it as --output-schema; any other
  * provider refuses schema with code unsupported.
+ *
+ * provider 'claude' runs the Claude Code command-line tool (src/ai/claude-cli.js) under the Claude
+ * subscription, from an empty folder with no tools: no key, no documents, no web search, no schema;
+ * maxTokens is not enforced by the tool.
  *
  * Options exist for tests: fetchImpl replaces global fetch, env replaces process.env (and then
  * .env is not read), adapters replaces the registry (tests: { fake: createFakeAdapter([...]) } from ./fake.js).

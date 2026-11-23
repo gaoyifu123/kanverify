@@ -69,3 +69,8 @@ Consequence (coordinator): record format 11's widening (a renunciation beside ot
 to_evaluate / unverifiable) and the site's "the wait ends here" display are no longer needed and are removed in record
 format 12, the same change that puts decision 0014 into effect (rules recorded with each verdict; 0014 stays in force). The step-back
 (docs/log/2026-11-23-step-back-renunciation.md) is closed by this choice.
+
+Correction (2026-11-23 evening): the coordinator's install ran inside its sandbox and never reached the real system.
+The founder installed `@anthropic-ai/claude-code` 2.1.330 himself (`npm install -g --allow-scripts=...`) and signed in
+with his subscription; checked in his terminal: `claude -p` answers. Lesson: installs and anything that must persist
+outside the project are checked in the founder's own terminal, not from the coordinator's shell.

@@ -1,3 +1,8 @@
+> **Superseded on 2026-11-23.** The Claude subscription vote is now made by the program through the Claude Code
+> command line, isolated like Codex (`src/ai/claude-cli.js`; `node src/jury.js vote <name>.pack.json` runs it;
+> `team/run/judge.md`, "Independence of the Claude judge"). Do not dispatch subagents to vote. This file is kept as
+> the record of how earlier Claude votes were made.
+
 # 运行组 · 评审团成员（Claude，订阅）
 
 版本：0.3（2026-11-23）。0.3 (record format 12, decision 0014): the vote carries `rules_applied`, the ids of the rules that decided it, as judge-0.8 asks. 0.2：配合 judge-0.5（Fable 审查 1 第 8、10 条）——子 agent 不再写 `created_at`（它没有时钟，期限按 judge-input 的 made 日期核对），改为照抄 `system_sha256`。

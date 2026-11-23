@@ -7,6 +7,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ask } from '../src/ai/index.js';
+import { createClaudeAdapter } from '../src/ai/claude-cli.js';
 import { childEnv, createCodexAdapter, parseCodexStderr } from '../src/ai/codex-cli.js';
 import { storeEvidenceBytes } from '../src/archive.js';
 import { loadPrompt } from '../src/extract.js';
@@ -319,7 +320,8 @@ test('runPackVotes and tallyPack: Codex votes, Gemini without a key is skipped, 
     askOptions: { adapters: { codex: createCodexAdapter({ run }), gemini: noKeyGemini }, env: {} },
   });
   assert.equal(outcomes[0].verdict, 'partly_came_true');
-  assert.match(outcomes[1].skipped, /GEMINI/);
+  assert.deepEqual(outcomes[1], { provider: 'anthropic', channel: 'subscription', skipped: 'no model given' });
+  assert.match(outcomes[2].skipped, /GEMINI/);
   // Codex got the same request text as the judge-input file, and no file to read in its folder.
   const input = readFileSync(join(s.packDir, 'c1.judge-input.md'), 'utf8');
   assert.ok(input.includes(packJudgeRequest(s.pack, '2026-11-22').prompt));
@@ -349,6 +351,76 @@ test('runPackVotes and tallyPack: Codex votes, Gemini without a key is skipped, 
   rmSync(join(s.packDir, 'c1.judge-input.md'));
   result = tallyPack(s.db, packPath, { checkOptions: s.opts });
   assert.ok(result.votes.every((v) => !v.valid && /judge input c1\.judge-input\.md is missing/.test(v.problems.join())));
+});
+
+test('runPackVotes: the Claude command-line judge gets the same text as Codex and the program writes its vote file', async (t) => {
+  const s = setup(t);
+  const packPath = join(s.packDir, 'c1.pack.json');
+  writeFileSync(packPath, JSON.stringify(s.pack, null, 2));
+  const packSha256 = sha256Of(readFileSync(packPath));
+  const answer = JSON.stringify({ ...JSON.parse(ANSWER), evidence: [{ source_id: s.ids.law, excerpt: 'Trente minutes d’activité physique quotidienne', locator: '§2', pdf_page: null }] });
+  const codexRun = fakeRun(answer);
+  const claudeCalls = [];
+  const claudeRun = async (args, opts) => {
+    if (args[0] === '--version') return { code: 0, stdout: '2.1.330 (Claude Code)\n', stderr: '' };
+    claudeCalls.push({ args, cwdFiles: readdirSync(opts.cwd), system: args[args.indexOf('--system-prompt') + 1], input: opts.input });
+    return { code: 0, stderr: '', stdout: JSON.stringify({
+      type: 'result', subtype: 'success', is_error: false, result: answer, session_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+      num_turns: 1, permission_denials: [], usage: { input_tokens: 10, output_tokens: 5 }, modelUsage: { 'claude-opus-5-5': {} },
+    }) };
+  };
+  const NOW = new Date('2026-11-23T10:00:00Z');
+  const outcomes = await runPackVotes(s.db, packPath, {
+    codexModel: 'gpt-6.2-sol', claudeModel: 'claude-opus-5-5', today: '2026-11-22', checkOptions: s.opts, now: () => NOW,
+    askOptions: { adapters: { codex: createCodexAdapter({ run: codexRun }), claude: createClaudeAdapter({ run: claudeRun }) }, env: {} },
+  });
+  assert.deepEqual(outcomes.map((o) => [o.provider, o.verdict]), [['openai', 'partly_came_true'], ['anthropic', 'partly_came_true']]);
+  // Same system text and prompt as Codex (Codex has them on stdin together, Claude in two parts), from an empty folder.
+  const req = packJudgeRequest(s.pack, '2026-11-22');
+  const [c] = claudeCalls;
+  assert.equal(c.system, req.system);
+  assert.equal(c.input, req.prompt);
+  assert.equal(codexRun.calls[0].input, `${req.system}
+
+---
+
+${req.prompt}`);
+  assert.deepEqual(c.cwdFiles, []);
+  const vote = JSON.parse(readFileSync(voteFileName(packPath, 'anthropic', 'subscription'), 'utf8'));
+  const codexVote = JSON.parse(readFileSync(voteFileName(packPath, 'openai', 'subscription'), 'utf8'));
+  assert.deepEqual(vote, {
+    kind: 'kanverify-vote', format: 1, claim: 'C1', pack_file: 'c1.pack.json', pack_sha256: packSha256,
+    provider: 'anthropic', channel: 'subscription', via: 'claude-cli',
+    model: 'claude-opus-5-5', model_requested: 'claude-opus-5-5', promptVersion: JUDGE_VERSION, system_sha256: SYSTEM_SHA256,
+    created_at: NOW.toISOString(), ...JSON.parse(answer),
+    usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 }, cost_usd_estimate: 0,
+    made_by: { role: 'judge', tool: 'claude-cli', tool_version: '2.1.330', session: 'claude-cli-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee' },
+    raw: {
+      tool: 'claude -p', cli_version: '2.1.330', system_prefix: "You are a Claude agent, built on Anthropic's Claude Agent SDK.", effort: 'high', model: 'claude-opus-5-5', models_used: ['claude-opus-5-5'],
+      session_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', subtype: 'success', num_turns: 1, permission_denials: [],
+    },
+  });
+  assert.equal(vote.system_sha256, codexVote.system_sha256);
+  // The program checks it like every vote; its session is recorded, and it is not the cutter's.
+  const result = tallyPack(s.db, packPath, { checkOptions: s.opts });
+  assert.deepEqual(result.votes.map((v) => [v.file, v.valid]), [['c1.vote-anthropic-subscription.json', true], ['c1.vote-openai-subscription.json', true]]);
+  assert.equal(sameSessionProblem(s.pack, vote), null);
+  assert.ok(s.pack.header.session && vote.made_by.session !== s.pack.header.session);
+
+  // F6: a re-vote first moves the earlier vote aside, so a failed call cannot leave it counting.
+  const failing = async (args) => (args[0] === '--version' ? { code: 0, stdout: '2.1.330' } : { code: 1, stdout: '', stderr: 'usage limit reached' });
+  const again = await runPackVotes(s.db, packPath, {
+    codexModel: null, claudeModel: 'claude-opus-5-5', today: '2026-11-22', checkOptions: s.opts,
+    askOptions: { adapters: { claude: createClaudeAdapter({ run: failing }) }, env: {} },
+  });
+  const claudeOutcome = again.find((o) => o.provider === 'anthropic');
+  assert.match(claudeOutcome.error, /usage limit reached/);
+  assert.match(claudeOutcome.superseded, /^c1\.superseded-\d{8}T\d{6}-\d+\.vote-anthropic-subscription\.json$/);
+  assert.equal(existsSync(voteFileName(packPath, 'anthropic', 'subscription')), false);
+  assert.deepEqual(JSON.parse(readFileSync(join(s.packDir, claudeOutcome.superseded), 'utf8')), vote);
+  // The moved file is not read as a vote: only Codex's counts now.
+  const after = tallyPack(s.db, packPath, { checkOptions: s.opts });
+  assert.deepEqual(after.votes.map((v) => v.file), ['c1.vote-openai-subscription.json']);
 });
 
 test('runPackVotes: a pack that fails its checks is never sent to a judge', async (t) => {

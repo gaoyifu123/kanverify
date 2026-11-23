@@ -89,6 +89,14 @@ function findCodexScript(env) {
 export function spawnCodex(args, { cwd, env, input, signal }) {
   const script = findCodexScript(env);
   const [command, argv] = script ? [process.execPath, [script, ...args]] : ['codex', args];
+  return spawnTool(command, argv, { cwd, env, input, signal });
+}
+
+/**
+ * Runs a command-line tool without a shell and settles as spawnCodex describes. Shared with the
+ * Claude command-line adapter (claude-cli.js), so both judges have the same timeout behaviour.
+ */
+export function spawnTool(command, argv, { cwd, env, input, signal }) {
   return new Promise((resolvePromise, reject) => {
     const child = spawn(command, argv, { cwd, env, signal, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
     let stdout = '';
@@ -133,7 +141,7 @@ export function spawnCodex(args, { cwd, env, input, signal }) {
  * a folder that cannot be removed now is left to sweepStaleFolders on a later call, and the
  * caller's own error (an AbortError, say) is never replaced by a cleanup error.
  */
-function removeFolder(dir) {
+export function removeFolder(dir) {
   try {
     rmSync(dir, { recursive: true, force: true, maxRetries: RM_RETRIES, retryDelay: RM_RETRY_DELAY_MS });
   } catch {
@@ -141,8 +149,8 @@ function removeFolder(dir) {
   }
 }
 
-/** Remove our own temporary folders left over from earlier calls (older than an hour). */
-export function sweepStaleFolders(root, now = Date.now()) {
+/** Remove our own temporary folders (named with `prefixes`) left over from earlier calls (older than an hour). */
+export function sweepStaleFolders(root, now = Date.now(), prefixes = [WORK_PREFIX, IO_PREFIX]) {
   let names;
   try {
     names = readdirSync(root);
@@ -150,7 +158,7 @@ export function sweepStaleFolders(root, now = Date.now()) {
     return;
   }
   for (const name of names) {
-    if (!name.startsWith(WORK_PREFIX) && !name.startsWith(IO_PREFIX)) continue;
+    if (!prefixes.some((prefix) => name.startsWith(prefix))) continue;
     const dir = join(root, name);
     try {
       const stat = lstatSync(dir);

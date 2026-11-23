@@ -344,7 +344,7 @@ function voteColumn(x, v, excerptIndex) {
   return `<article class="judge${isAdopted || isPre ? ' adopted' : ''}" aria-label="Juror ${x.n}${isAdopted ? ', adopted' : isPre ? ', pre-selected' : ''}">
 <p><b>${x.n}</b> · <span class="mono">${esc(vote.model ?? '?')}</span> <span class="muted">${esc(label('channel', vote.channel))}</span></p>
 ${x.valid ? '' : `<p class="ok-line">This vote failed the program's check: ${esc(x.problems.join('; '))}. It does not count towards agreement.</p>`}
-${x.sessionUnrecorded ? '<p class="muted">This Claude vote does not name its session (made_by.session), so the program cannot check that the judge was not the session that cut the pack.</p>' : ''}
+${x.sessionUnrecorded ? '<p class="muted">This Claude vote does not name its session (made_by.session), so the program cannot check that the judge was not the session that cut the pack. Votes from the isolated command-line judge always name one, so this one was made another way (for example by a subagent, the way used before 2026-11-23). A vote that names a session is not thereby shown to be independent: vote files are not signed.</p>' : ''}
 <p>${verdictChip(vote.verdict)}</p>
 <p class="muted">Cites ${cites || 'nothing'}${isAdopted ? ' · adopted' : isPre ? ' · pre-selected' : ''} · rules ${esc(Array.isArray(vote.rules_applied) && vote.rules_applied.length ? vote.rules_applied.join(', ') : 'none named')}</p>
 ${vote.summary_fr ? `<p lang="fr">${esc(vote.summary_fr)}</p>` : ''}

@@ -5,12 +5,13 @@
 //    program checks it (src/pack.js) and gives the same judge input to three judges, none of
 //    which sees another's vote:
 //      OpenAI   through the Codex command-line tool, ChatGPT subscription (ask provider codex)
-//      Claude   a fresh Claude Code subagent under the subscription, following
-//               team/run/judge-subscription.md; it writes a vote file, the program checks it
+//      Claude   through the Claude Code command-line tool, Claude subscription (ask provider claude),
+//               from an empty folder with no tools (src/ai/claude-cli.js). Until 2026-11-23 this was
+//               a subagent following team/run/judge-subscription.md (superseded).
 //      Gemini   through its API, only when GEMINI's key is set in .env
 //    Stages, each reading files beside the pack <name>.pack.json:
 //      judge-input  pack -> <name>.judge-input.md, the exact text every judge gets
-//      vote         codex (and Gemini if its key is set) -> <name>.vote-<provider>-<channel>.json
+//      vote         codex, claude (and Gemini if its key is set) -> <name>.vote-<provider>-<channel>.json
 //      tally        every vote file -> checks, comparison -> <name>.result.json and a report; then
 //                   closes a jury round: appends one line to <name>.rounds.jsonl (pack sha256, the
 //                   vote files, their sha256 and text, time, round number) once the subscription judges
@@ -478,13 +479,18 @@ export const JUDGE_SCHEMA = Object.freeze({
 // Codex's default model with the founder's ChatGPT login on 2026-11-22; given explicitly so every
 // vote records what was asked for. Change it here or with --codex-model.
 export const DEFAULT_CODEX_MODEL = 'gpt-6.2-sol';
-// Codex is an agent and takes longer than a plain API call.
-const CODEX_TIMEOUT_MS = 600_000;
+// The model the Claude command-line judge is asked for; given explicitly so every vote records
+// what was asked for. Change it here or with --claude-model.
+export const DEFAULT_CLAUDE_MODEL = 'claude-opus-5-5';
+// The command-line judges (Codex, Claude) take longer than a plain API call.
+const CLI_TIMEOUT_MS = 600_000;
+// The ask() provider behind each command-line member of the jury.
+const CLI_PROVIDERS = Object.freeze({ 'codex-cli': 'codex', 'claude-cli': 'claude' });
 
 /** The members of the jury in the pack flow (founder, decision 0010). Gemini votes only with its key. */
 export const PACK_JURY = Object.freeze([
   Object.freeze({ provider: 'openai', channel: 'subscription', via: 'codex-cli' }),
-  Object.freeze({ provider: 'anthropic', channel: 'subscription', via: 'claude-code' }),
+  Object.freeze({ provider: 'anthropic', channel: 'subscription', via: 'claude-cli' }),
   Object.freeze({ provider: 'gemini', channel: 'api', via: 'api' }),
 ]);
 
@@ -518,7 +524,7 @@ export function packJudgeRequest(pack, today) {
   return { promptVersion: version, system, systemSha256, prompt };
 }
 
-/** The judge input as one file, for a judge that reads files (a fresh Claude Code subagent). */
+/** The judge input as one file: the record of what every judge got, and the date votes are checked against. */
 export function judgeInputText(pack, packSha256, today) {
   const req = packJudgeRequest(pack, today);
   return [
@@ -577,15 +583,22 @@ export function judgeRulesProblem(path = JUDGE_PROMPT_PATH) {
   return `the judge prompt is written for verdict standard ${written ?? '(none named)'}, but the standard is ${current}: update the prompt and its rule ids before judges vote`;
 }
 
-/** One vote through ask(): Codex (subscription), Gemini or Anthropic (API). Returns the vote record. */
+/**
+ * One vote through ask(): Codex or Claude (command line, subscription), Gemini or Anthropic (API).
+ * Returns the vote record. Every judge gets the same system text and prompt (packJudgeRequest).
+ */
 export async function askVote(pack, packPath, packSha256, member, { model, today, askOptions = {}, now = () => new Date() }) {
   const req = packJudgeRequest(pack, today);
-  const viaCodex = member.via === 'codex-cli';
+  const cliProvider = CLI_PROVIDERS[member.via];
   const reply = await ask({
-    provider: viaCodex ? 'codex' : member.provider, model, promptVersion: req.promptVersion, system: req.system, prompt: req.prompt,
-    json: true, maxTokens: 16_000, timeoutMs: viaCodex ? CODEX_TIMEOUT_MS : CALL_TIMEOUT_MS,
-    ...(viaCodex && { schema: JUDGE_SCHEMA }),
+    provider: cliProvider ?? member.provider, model, promptVersion: req.promptVersion, system: req.system, prompt: req.prompt,
+    json: true, maxTokens: 16_000, timeoutMs: cliProvider ? CLI_TIMEOUT_MS : CALL_TIMEOUT_MS,
+    ...(cliProvider === 'codex' && { schema: JUDGE_SCHEMA }),
   }, askOptions);
+  // The Claude command-line judge names the session it ran in and the tool's version, and keeps the
+  // run facts the adapter checked (one turn, no permission denials) with the vote.
+  const viaClaude = cliProvider === 'claude';
+  const session = viaClaude ? reply.raw?.session_id : null;
   const call = member.channel === 'api' ? callRecord('judge', reply) : null;
   return {
     kind: VOTE_KIND, format: 1,
@@ -596,37 +609,59 @@ export async function askVote(pack, packPath, packSha256, member, { model, today
     ...answerOf(reply.json),
     usage: reply.usage ?? null,
     cost_usd_estimate: member.channel === 'subscription' ? 0 : call?.cost_usd_estimate ?? null,
+    ...(viaClaude && {
+      made_by: { role: 'judge', tool: 'claude-cli', tool_version: reply.raw?.cli_version ?? null, ...(session && { session: `claude-cli-${session}` }) },
+      raw: reply.raw ?? null,
+    }),
   };
 }
 
 /**
- * Runs the program-run votes of a pack: Codex always, Gemini when its key is set, the Anthropic
- * API only when a model is given. Refuses a pack that fails its checks (nothing is sent).
+ * Before a member votes again, its earlier vote file is moved aside, so a call that fails cannot leave
+ * the old vote counting as if it were the new one. The new name does not start with "<name>.vote-",
+ * so tally, closed rounds and the desk never read it as a vote; a vote already in a closed round
+ * keeps its exact text in the round line (record format 11). Returns the new name, or null.
+ */
+export function supersedeVote(packPath, provider, channel, now = new Date()) {
+  const file = voteFileName(packPath, provider, channel);
+  if (!existsSync(file)) return null;
+  const aside = `${packStem(packPath)}.superseded-${stamp(now)}-${now.getMilliseconds()}.vote-${provider}-${channel}.json`;
+  renameSync(file, aside);
+  return aside;
+}
+
+/**
+ * Runs the votes of a pack: Codex and Claude (command line) always, Gemini when its key is set,
+ * the Anthropic API only when a model is given. Refuses a pack that fails its checks (nothing is sent).
  * Writes one vote file per answer; a failure is reported, not written as a vote.
  */
 export async function runPackVotes(db, packPath, {
-  codexModel, geminiModel, anthropicApiModel, today = localDate(), askOptions = {}, checkOptions = {}, now,
+  codexModel, claudeModel, geminiModel, anthropicApiModel, today = localDate(), askOptions = {}, checkOptions = {}, now,
 } = {}) {
   const { pack, packSha256, checked } = readPack(db, packPath, checkOptions);
   if (checked.problems.length > 0) throw new Error(`the pack fails its checks: ${checked.problems.join('; ')}`);
   writeFileSync(`${packStem(packPath)}.judge-input.md`, judgeInputText(pack, packSha256, today));
   const plan = [
     { member: PACK_JURY[0], model: codexModel },
+    { member: PACK_JURY[1], model: claudeModel },
     ...(geminiModel ? [{ member: PACK_JURY[2], model: geminiModel }] : []),
     ...(anthropicApiModel ? [{ member: { provider: 'anthropic', channel: 'api', via: 'api' }, model: anthropicApiModel }] : []),
   ];
   const outcomes = [];
   for (const { member, model } of plan) {
     if (!model) { outcomes.push({ provider: member.provider, channel: member.channel, skipped: 'no model given' }); continue; }
+    // Outside the try: if the old vote cannot be moved aside, stop rather than leave it counting.
+    const superseded = supersedeVote(packPath, member.provider, member.channel);
+    const aside = superseded ? { superseded: basename(superseded) } : {};
     try {
       const vote = await askVote(pack, packPath, packSha256, member, { model, today, askOptions, now });
       const file = voteFileName(packPath, member.provider, member.channel);
       writeJsonAtomic(file, vote);
-      outcomes.push({ provider: member.provider, channel: member.channel, file, verdict: vote.verdict });
+      outcomes.push({ provider: member.provider, channel: member.channel, file, verdict: vote.verdict, ...aside });
     } catch (error) {
       // No key: the member does not vote this time (Gemini until its key is set).
       const skipped = error?.code === 'missing_key';
-      outcomes.push({ provider: member.provider, channel: member.channel, [skipped ? 'skipped' : 'error']: String(error?.message ?? error).slice(0, 300) });
+      outcomes.push({ provider: member.provider, channel: member.channel, [skipped ? 'skipped' : 'error']: String(error?.message ?? error).slice(0, 300), ...aside });
     }
   }
   return outcomes;
@@ -915,6 +950,7 @@ async function main(argv) {
       only: { type: 'string' },
       'paid-api': { type: 'boolean', default: false },
       'codex-model': { type: 'string', default: DEFAULT_CODEX_MODEL },
+      'claude-model': { type: 'string', default: DEFAULT_CLAUDE_MODEL },
       'gemini-model': { type: 'string' },
       'anthropic-api-model': { type: 'string' },
     },
@@ -934,10 +970,9 @@ async function main(argv) {
         console.log(out);
       } else if (stage === 'vote') {
         const outcomes = await runPackVotes(db, file, {
-          codexModel: values['codex-model'], geminiModel: values['gemini-model'], anthropicApiModel: values['anthropic-api-model'], today,
+          codexModel: values['codex-model'], claudeModel: values['claude-model'], geminiModel: values['gemini-model'], anthropicApiModel: values['anthropic-api-model'], today,
         });
-        for (const o of outcomes) console.log(`${o.provider}/${o.channel}: ${o.file ? `${o.verdict} -> ${o.file}` : o.skipped ? `skipped (${o.skipped})` : `error (${o.error})`}`);
-        console.log('Claude (subscription): a fresh subagent follows team/run/judge-subscription.md, then run tally.');
+        for (const o of outcomes) console.log(`${o.provider}/${o.channel}: ${o.file ? `${o.verdict} -> ${o.file}` : o.skipped ? `skipped (${o.skipped})` : `error (${o.error})`}${o.superseded ? ` (earlier vote moved to ${o.superseded})` : ''}`);
       } else {
         const result = tallyPack(db, file);
         process.stdout.write(renderTally(result, JSON.parse(readFileSync(file, 'utf8'))));

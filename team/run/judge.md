@@ -32,8 +32,10 @@ Six possible verdicts. The answer fields, as the prompt's "Answer format" gives 
 | `open_question_fr`, `open_question_en` | for `to_evaluate`; otherwise `null` |
 | `summary_fr`, `summary_en` | for every verdict, `pending` included |
 
-The vote file around the answer (`kind`, `pack_sha256`, `promptVersion`, `system_sha256`, `provider`, `channel`, `model`, …)
-is described in `team/run/judge-subscription.md` and written by the program for the judges it calls itself.
+The vote file around the answer (`kind`, `pack_sha256`, `promptVersion`, `system_sha256`, `provider`, `channel`, `via`,
+`model`, `model_requested`, `created_at`, `usage`, …) is written by the program (`askVote` in `src/jury.js`) for every judge:
+Codex and Claude through their command-line tools under the founder's subscriptions, Gemini through its API. The Claude
+vote also carries `made_by.session`, the session id its command-line run reported.
 
 ## What the program checks
 
@@ -54,15 +56,27 @@ positively shows the outcome (silence is not evidence), whether an `official` do
 whether a partial result is a result on the measure, whether a statement is an explicit, precise reversal of the same
 promise (RN-1 rows 5, 8), and whether the right rule ids are named (the founder sees and corrects them at the desk).
 
-## Independence of the Claude judge (honest note, Fable review 6 re-check)
+## Independence of the Claude judge (2026-11-23)
 
-The program refuses a vote from the session that cut the pack only when the vote names that session
-(`made_by.session`). A Claude Code subagent writes that field itself, and the pack's session id is in a file it could
-read, so for the Claude subscription judge this check cannot actually fire: its independence from the cutter is on the
-honour system (a fresh subagent per vote, given only the judge input, team/run/judge-subscription.md). It becomes a
-real check when the isolated Claude command-line judge (`src/ai/claude-cli.js`, like `codex-cli.js`; decision 0013) is
-wired, which runs from an empty folder and records its own session. Until then the desk says so only when a Claude
-vote names no session; a vote that names one is not thereby shown to be independent.
+The Claude subscription judge is run by the program like Codex (`src/ai/claude-cli.js`, decision 0013): a new
+`claude -p` process per vote, started in an empty temporary folder, with no tools at all (no file reading, no shell, no
+web), no MCP servers, skills, hooks, plugins, CLAUDE.md or settings files, an allowlist of environment variables, and
+the same system text and prompt as every other judge. It cannot see the project, the pack file, the cutter's session or
+another judge's vote; it is not the session that cut the pack, because the program starts it. A reply is refused unless
+the tool reports one turn, no permission denials, success, and the model that answered. The program writes its vote
+file and records the tool's version, the fixed identity sentence Claude Code puts before our system text
+(`raw.system_prefix`, "You are a Claude agent, built on Anthropic's Claude Agent SDK."; `system_sha256` covers only our text), the session id the tool reported (`made_by.session`) and those run facts (`raw`).
+
+What this does **not** prove: vote files are not signed. Anyone (or any agent) that can write in the pack folder can
+write a file that names a session and looks like a command-line vote. A named session shows how the program made a
+vote, not that a file on disk was made that way; the desk says so. Before a member votes again, the program moves its
+earlier vote file aside (`<name>.superseded-<time>.vote-<provider>-<channel>.json`, which no step reads as a vote), so a
+failed call cannot leave an old vote counting.
+
+Until 2026-11-23 the Claude vote was written by a fresh subagent (`team/run/judge-subscription.md`, now superseded),
+whose independence was on the honour system. Votes made that way name no session or a session the subagent wrote
+itself; the desk says so when a Claude vote names none. Such votes are not re-checked after the fact: re-vote the pack
+with the command-line judge where it matters.
 
 ## Must not
 

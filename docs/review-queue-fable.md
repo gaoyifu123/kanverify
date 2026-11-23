@@ -62,3 +62,12 @@ Site generator, extraction prompt (its output is reviewed before use), design, d
 - 2 desk, 3 record format, 4 fetching code: SENT BACK, fixes in progress; re-check by the same reviewers.
 - 5 design critique: done (`docs/log/2026-11-23-fable-review-5.md`, decision 0012).
 - **Next for Fable:** `team/run/pack-prompt.md` once written (it decides what the judges see — same category as the judge prompt).
+
+## 6. Isolated Claude judge (added 2026-11-23 evening; code review passed)
+
+- Files: `src/ai/claude-cli.js`, the `spawnTool` / `sweepStaleFolders` part of `src/ai/codex-cli.js`, the `askVote` /
+  `supersedeVote` part of `src/jury.js`, `scripts/smoke-claude-judge.mjs`.
+- Why Fable: a process that holds the founder's subscription login and whose output decides verdicts, isolated only by
+  CLI flag behaviour checked against one version (2.1.330).
+- Open from the code review: R1 the recorded identity prefix is not tied to the CLI version; R2 a re-run moves aside
+  every member's earlier vote, so a failed call costs a good vote (option to vote for a single member, later).

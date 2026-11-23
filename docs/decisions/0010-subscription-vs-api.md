@@ -75,3 +75,29 @@
 - 创始人同意装 Codex 并已有 ChatGPT 订阅。Codex 命令行 0.171.0 已装（npm），沿用创始人已有的 ChatGPT 登录。
 - 试跑成功：在空的临时文件夹里，只读、不留会话记录（`--ephemeral -s read-only`）、按 JSON 格式要求回答，默认模型 gpt-6.2-sol。
 - 尚未核实：完整的使用条款；每周用量上限；能否完全关掉它的联网和命令执行（目前靠空文件夹加只读限制）。
+
+## Progress (2026-11-23): the Claude judge runs isolated, like Codex
+
+- The Claude subscription vote is now made by the program through the Claude Code command line (2.1.330, the
+  founder's own login; terms in decision 0013): `src/ai/claude-cli.js`, provider `claude` in the AI interface layer,
+  run by `node src/jury.js vote <name>.pack.json` next to Codex (`--claude-model`, default `claude-opus-5-5`).
+- Each vote is a new `claude -p` process in an empty temporary folder, with no tools (`--tools ""`), no MCP, skills,
+  hooks, plugins, CLAUDE.md or settings files (`--strict-mcp-config --disable-slash-commands --safe-mode
+  --setting-sources ""`), nothing saved (`--no-session-persistence`), no permission prompts, the system text as
+  `--system-prompt` (documented; 16,561 characters, refused above 24,000 for the Windows command-line limit), and an
+  environment allowlist (no `.env` keys, no `ANTHROPIC_API_KEY`, so it never bills the API) plus
+  `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1` and `DISABLE_AUTOUPDATER=1`. Same system text and prompt as Codex, so
+  `system_sha256` is the same. A reply is refused unless the tool reports `subtype` success, one turn, no permission
+  denials and the model that answered. The program writes the vote file with the tool's version, its session id and
+  those run facts; before a re-vote it moves the member's earlier vote file aside.
+- The subagent path (`team/run/judge-subscription.md`) is superseded; `team/run/judge.md` says what the isolation
+  proves and what it does not (vote files are not signed).
+- **Smoke test in the founder's terminal (coordinator, 2026-11-23), first version:** made-up claim, vote via
+  `claude-cli`, model `claude-opus-5-5`, session named, verdict `partly_came_true` (4 of 10 pools: correct). No-tools
+  probe: tools `[]`, working folder an empty `kv-claude-work-*` folder, one turn, no permission denials.
+- **Smoke re-run with `--system-prompt` (2026-11-23):** vote and no-tools checks pass. Claude Code puts one fixed
+  sentence before our system text ("You are a Claude agent, built on Anthropic's Claude Agent SDK."). Coordinator
+  accepted it as a known prefix, like Codex's own instructions; every vote records it in `raw.system_prefix`, and the
+  smoke check fails on any other prefix.
+- **Still open:** one more smoke run to see the new prefix check pass; how many votes a day the plan allows next to
+  layer-1 work; Fable review of the change (spawn, environment, reply checks).

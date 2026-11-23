@@ -285,7 +285,7 @@ function insideAi(rel) {
 }
 const VENDOR_RE = /api\.anthropic\.com|generativelanguage\.googleapis\.com|api\.openai\.com|api\.mistral\.ai|_API_KEY/;
 // Business code goes through ask(): importing an adapter or helper file directly is refused.
-const INTERNAL_IMPORT_RE = /['"][^'"]*\bai\/(anthropic|openai|gemini|mistral|http|chat-completions|fake|codex-cli)\.js['"]/;
+const INTERNAL_IMPORT_RE = /['"][^'"]*\bai\/(anthropic|openai|gemini|mistral|http|chat-completions|fake|codex-cli|claude-cli)\.js['"]/;
 
 test('principle 8 guard: its own checks catch what they should', () => {
   assert.equal(insideAi('ai/index.js'), true);
