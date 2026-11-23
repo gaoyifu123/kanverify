@@ -13,6 +13,9 @@ const UNCONFIRMED = 'Uncnfmarkq8';
 const NEVER = 'Nevermarkq9';
 const REVIEWER = 'reviewer-zq5'; // publications.confirmed_by is internal
 const TODAY = '2026-11-22';
+// The deadline rule in confirm() (record format 10): verdicts that wait for the deadline
+// (to_evaluate, not_came_true, ...) are confirmed in this fixture as if after it.
+const AFTER_DEADLINE = { today: '2027-06-01' };
 // A confirmation date is publications.confirmed_at, which the schema pins to the real clock
 // (trigger ledger_now), so the tests read it back instead of assuming the day they were written.
 const confirmedOn = (claimId) => db.prepare('SELECT substr(confirmed_at, 1, 10) AS d FROM publications WHERE claim_id = ? ORDER BY id DESC LIMIT 1').get(claimId).d;
@@ -90,9 +93,9 @@ function fixture() {
     open_question_fr: 'Il manque le registre des logements.',
     open_question_en: 'The housing register is missing.',
   });
-  confirm(d, c.toEvaluate, REVIEWER);
+  confirm(d, c.toEvaluate, REVIEWER, AFTER_DEADLINE);
   d.prepare("UPDATE verdicts SET summary_en = 'Updated summary.', summary_fr = 'Résumé mis à jour.' WHERE claim_id = ?").run(c.toEvaluate);
-  confirm(d, c.toEvaluate, REVIEWER);
+  confirm(d, c.toEvaluate, REVIEWER, AFTER_DEADLINE);
 
   // 5. Published twice, then withdrawn. Its subject has nothing else published.
   d.prepare("INSERT INTO subjects (kind, name, country) VALUES ('person', ?, 'CA')").run(`Withdrawn Person ${WITHDRAWN}`);
@@ -129,14 +132,14 @@ function fixture() {
   confirm(d, c.republished, REVIEWER);
   withdraw(d, c.republished, REVIEWER, { noteFr: 'La mauvaise page était citée.', noteEn: 'The wrong page was cited.' });
   d.prepare("UPDATE verdicts SET verdict = 'not_came_true' WHERE id = ?").run(v);
-  confirm(d, c.republished, REVIEWER);
+  confirm(d, c.republished, REVIEWER, AFTER_DEADLINE);
 
   // 8. Published as came true, then as did not come true, then withdrawn: P, P, W.
   //    No verdict of this item may appear anywhere, not even the superseded one.
   ({ claim: c.changedThenWithdrawn, v } = outcomeClaim(d, 1));
   confirm(d, c.changedThenWithdrawn, REVIEWER);
   d.prepare("UPDATE verdicts SET verdict = 'not_came_true' WHERE id = ?").run(v);
-  confirm(d, c.changedThenWithdrawn, REVIEWER);
+  confirm(d, c.changedThenWithdrawn, REVIEWER, AFTER_DEADLINE);
   withdraw(d, c.changedThenWithdrawn, REVIEWER, { noteFr: 'La citation n’était pas de cette personne.', noteEn: 'The quote was not the speaker’s.' });
 
   // 9. Subject 4, for the person page grouped by where it was said (round 4).

@@ -67,6 +67,53 @@ test('a quote has no translation into its own language: the original is that tex
   db.prepare("UPDATE claims SET lang = 'en', quote_en = NULL, quote_fr = 'Nous ferons X.' WHERE id = ?").run(claim);
 });
 
+test('a source id is never reused, and its id, address and file never change', () => {
+  const db = freshDb();
+  const first = addSource(db, 'law');
+  const highest = addSource(db, 'law', { url: 'https://example.org/second' });
+  db.prepare('DELETE FROM sources WHERE id = ?').run(highest);
+  assert.ok(addSource(db, 'law', { url: 'https://example.org/third' }) > highest);
+  for (const sql of [
+    "UPDATE sources SET url = 'https://example.org/elsewhere' WHERE id = ?",
+    `UPDATE sources SET sha256 = '${'d'.repeat(64)}' WHERE id = ?`,
+    'UPDATE sources SET id = 500 WHERE id = ?',
+    'UPDATE sources SET rowid = 500 WHERE id = ?',
+    'UPDATE sources SET oid = 500 WHERE id = ?',
+    'UPDATE sources SET _rowid_ = 500 WHERE id = ?',
+  ]) {
+    assert.throws(() => db.prepare(sql).run(first), /permanent/, sql);
+  }
+  assert.throws(
+    () => db.prepare(`INSERT INTO sources (id, kind, url, title, publisher, retrieved_on, sha256, media_type, lang)
+      VALUES (?, 'law', 'u', 't', 'p', '2026-11-23', '${'a'.repeat(64)}', 'text/html', 'fr')
+      ON CONFLICT(id) DO UPDATE SET url = 'https://example.org/upsert'`).run(first),
+    /permanent/
+  );
+  // Everything else about a source may be corrected.
+  db.prepare("UPDATE sources SET title = 'Corrected title', publisher = 'Corrected', published_on = '2025-02-02' WHERE id = ?").run(first);
+});
+
+test('a measurable claim always has a deadline', () => {
+  const db = freshDb();
+  const platform = addSource(db, 'platform');
+  assert.throws(() => addClaim(db, platform, { deadline: null, deadline_basis: null }), /CHECK/);
+  const claim = addClaim(db, platform);
+  assert.throws(() => db.prepare('UPDATE claims SET deadline = NULL, deadline_basis = NULL WHERE id = ?').run(claim), /CHECK/);
+  addClaim(db, platform, { verifiability: 'hedged', criteria_fr: null, criteria_en: null, deadline: null, deadline_basis: null });
+});
+
+test('the desk bookkeeping columns: a vote names its pack by hash; a verdict may name its round', () => {
+  const db = freshDb();
+  const claim = addClaim(db, addSource(db, 'platform'));
+  for (const bad of [null, 'abc', 'A'.repeat(64), 'a'.repeat(63), 'a'.repeat(64) + '\0x', '']) {
+    assert.throws(() => addVote(db, claim, 'm', 'pending', { pack_sha256: bad }), /CHECK|NOT NULL/, JSON.stringify(bad));
+  }
+  addVote(db, claim, 'm', 'pending', { pack_sha256: 'f'.repeat(64) });
+  const v = addVerdict(db, claim, 'pending');
+  assert.equal(db.prepare('SELECT based_on_round FROM verdicts WHERE id = ?').get(v).based_on_round, null);
+  db.prepare('UPDATE verdicts SET based_on_round = 2 WHERE id = ?').run(v);
+});
+
 test('a subject id is never reused and never changed', () => {
   const db = freshDb();
   const insert = db.prepare("INSERT INTO subjects (kind, name, country) VALUES ('person', ?, 'FR')");

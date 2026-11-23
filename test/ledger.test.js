@@ -7,11 +7,26 @@ import { DatabaseSync } from 'node:sqlite';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { confirm, withdraw, hasUnconfirmedChanges, publicationBlockers } from '../src/ledger.js';
+import {
+  confirm as confirmOn, withdraw, hasUnconfirmedChanges, publicationBlockers as blockersOn,
+} from '../src/ledger.js';
+import { publisherKey } from '../src/rules.js';
 import {
   freshDb, addSource, addClaim, addVerdict, addEvidence, addVote, readyClaim, OUTCOMES, VERDICTS,
   ledger, publicRecord, publishableSnapshot,
 } from './helpers.js';
+
+// The deadline rule (record format 10) is tested on its own below, with explicit dates. The
+// other tests are about other rules, so they confirm on a date the deadline allows: before
+// the default deadline (2027-05-13) for pending and came_true, after it for the rest.
+const BEFORE = '2026-11-23';
+const AFTER = '2027-06-01';
+function allowedDate(db, claimId) {
+  const v = db.prepare('SELECT verdict FROM verdicts WHERE claim_id = ?').get(claimId)?.verdict;
+  return v === 'pending' || v === 'came_true' ? BEFORE : AFTER;
+}
+const confirm = (db, claimId, by, opts = {}) => confirmOn(db, claimId, by, { today: allowedDate(db, claimId), ...opts });
+const publicationBlockers = (db, claimId, opts = {}) => blockersOn(db, claimId, { today: allowedDate(db, claimId), ...opts });
 
 const SOURCE_KEYS = ['kind', 'url', 'title', 'publisher', 'published_on', 'retrieved_on', 'sha256', 'media_type', 'lang'];
 
@@ -183,11 +198,123 @@ test("the speaker's own renunciation is evidence for \"not_came_true\" only, and
   assert.throws(() => confirm(db, fromRenunciation, 'founder'), /not the speaker's own published words/);
 });
 
+// ---- Record format 10 (Fable review 3) ------------------------------------------------
+
+test('confirm() applies the deadline rule, on the local date it is given', () => {
+  const db = freshDb();
+  const platform = addSource(db, 'platform');
+  const law = addSource(db, 'law', { sha256: 'b'.repeat(64) });
+  const QUESTION = { open_question_fr: 'Le chiffre manque.', open_question_en: 'The figure is missing.' };
+  const make = (verdict, verifiability = 'measurable') => {
+    const claim = addClaim(db, platform, verifiability === 'measurable' ? {} : { verifiability, criteria_fr: null, criteria_en: null });
+    addEvidence(db, addVerdict(db, claim, verdict, verdict === 'to_evaluate' ? QUESTION : {}), law);
+    return claim;
+  };
+  // The deadline day (2027-05-13) is still inside the deadline.
+  for (const today of ['2026-11-23', '2027-05-13']) {
+    for (const verdict of ['to_evaluate', 'partly_came_true', 'not_came_true', 'unverifiable']) {
+      const claim = make(verdict);
+      assert.throws(() => confirmOn(db, claim, 'founder', { today }), /not over/, `${verdict} ${today}`);
+      assert.match(blockersOn(db, claim, { today }).join(), /not over/);
+      confirmOn(db, claim, 'founder', { today: '2027-05-14' });
+    }
+    confirmOn(db, make('came_true'), 'founder', { today }); // may be given early
+    confirmOn(db, make('pending'), 'founder', { today });
+    confirmOn(db, make('unverifiable', 'vague'), 'founder', { today }); // vague: no deadline involved
+  }
+  const late = make('pending');
+  assert.throws(() => confirmOn(db, late, 'founder', { today: '2027-05-14' }), /passed, but verdict is pending/);
+  assert.deepEqual(blockersOn(db, late, { today: '2027-05-14' }), ['deadline 2027-05-13 passed, but verdict is pending']);
+  for (const bad of ['23/11/2026', '2026-11-23T10:00:00Z', 20261123]) {
+    assert.throws(() => confirmOn(db, late, 'founder', { today: bad }), /local date/, String(bad));
+  }
+  assert.equal(db.prepare('SELECT count(*) AS n FROM publications WHERE claim_id = ?').get(late).n, 0);
+});
+
+test('a renunciation lets "not_came_true" come early only if it was published on or after the promise', () => {
+  const db = freshDb();
+  const platform = addSource(db, 'platform');
+  const given = (published_on) => {
+    const claim = addClaim(db, platform); // said on 2022-03-17, due 2027-05-13
+    const ren = addSource(db, 'renunciation', { published_on, url: `https://example.org/ren/${published_on}` });
+    addEvidence(db, addVerdict(db, claim, 'not_came_true'), ren);
+    return claim;
+  };
+  confirmOn(db, given('2022-03-17'), 'founder', { today: '2026-11-23' });
+  for (const published_on of ['2022-03-16', null]) {
+    const claim = given(published_on);
+    const blockers = blockersOn(db, claim, { today: '2027-06-01' });
+    assert.ok(blockers.some((b) => /needs one official document/.test(b)), String(published_on));
+    assert.ok(blockers.some((b) => /evidence must be an official document/.test(b)), String(published_on));
+    assert.throws(() => confirmOn(db, claim, 'founder', { today: '2026-11-23' }), /not over/, String(published_on));
+  }
+});
+
+test('two independent sources: different publishers by one normalisation, and different files', () => {
+  const db = freshDb();
+  const platform = addSource(db, 'platform');
+  let n = 0;
+  const media = (publisher, sha256 = (++n).toString(16).padStart(64, '0')) =>
+    addSource(db, 'media', { publisher, sha256, url: `https://example.org/m/${++n}` });
+  const withTwo = (a, b) => {
+    const claim = addClaim(db, platform);
+    const v = addVerdict(db, claim, 'came_true');
+    addEvidence(db, v, a);
+    addEvidence(db, v, b);
+    return claim;
+  };
+  // The same publisher written differently (full width, case, invisible characters, spaces).
+  for (const [base, twin] of [['Le Monde', '\uff2c\uff25\u3000\uff2d\uff2f\uff2e\uff24\uff25'], ['Lemonde', 'le\u200bmonde'],
+    ['Le Monde', ' LE \u00a0 MONDE\ufeff'], ['Straße', 'STRASSE']]) {
+    const claim = withTwo(media(base), media(twin));
+    assert.throws(() => confirm(db, claim, 'founder'), /needs one official document/, JSON.stringify(twin));
+  }
+  // One archived file under two publisher names is one source.
+  const same = withTwo(media('Le Quotidien', 'e'.repeat(64)), media('The Daily', 'e'.repeat(64)));
+  assert.throws(() => confirm(db, same, 'founder'), /needs one official document/);
+  confirm(db, withTwo(media('Le Quotidien'), media('The Daily')), 'founder');
+});
+
+test('confirm() reports success only when exactly one ledger entry was written', () => {
+  const db = freshDb();
+  const { claim } = readyClaim(db);
+  // A connection on which the insert writes nothing (as if the claim stopped being publishable
+  // between the check and the insert): confirm must not return a stale id.
+  const silent = new Proxy(db, {
+    get(target, key) {
+      if (key !== 'prepare') return Reflect.get(target, key).bind?.(target) ?? Reflect.get(target, key);
+      return (sql) => (/INSERT INTO publications/.test(sql) ? { run: () => ({ changes: 0, lastInsertRowid: 7 }) } : target.prepare(sql));
+    },
+  });
+  assert.throws(() => confirm(silent, claim, 'founder'), /not written \(0 rows\)/);
+});
+
+test('a connection without the publisher normalisation cannot publish anything', (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'kanverify-nofn-'));
+  t.after(() => rmSync(dir, { recursive: true }));
+  const file = join(dir, 'test.db');
+  const db = freshDb(file);
+  const { claim } = readyClaim(db);
+  db.close();
+  const plain = new DatabaseSync(file);
+  assert.throws(
+    () => plain.exec(`INSERT INTO publications (claim_id, status, snapshot, confirmed_by) SELECT claim_id, 'published', snapshot, 'x' FROM publishable WHERE claim_id = ${claim}`),
+    /no such function: kv_publisher_key/
+  );
+  assert.equal(plain.prepare('SELECT count(*) AS n FROM publications').get().n, 0);
+  plain.close();
+});
+
 test('one official document is enough; independent reporting needs two different publishers', () => {
   const db = freshDb();
   const platform = addSource(db, 'platform');
+  let files = 0;
   const media = (publisher, kind = 'media') =>
-    addSource(db, kind, { publisher, url: `https://example.org/${encodeURIComponent(publisher)}/${kind}` });
+    addSource(db, kind, {
+      publisher,
+      url: `https://example.org/${encodeURIComponent(publisher)}/${kind}/${++files}`,
+      sha256: files.toString(16).padStart(64, '0'),
+    });
   const fresh = () => {
     const claim = addClaim(db, platform);
     return { claim, verdict: addVerdict(db, claim, 'not_came_true') };
@@ -519,7 +646,8 @@ test('editing the claim, its subject or its sources after confirmation does not 
   db.prepare("INSERT INTO subjects (kind, name, country) VALUES ('person', 'Someone Else', 'US')").run();
   db.prepare("UPDATE claims SET subject_id = 2, criteria_en = 'Something easier.', deadline = '2040-01-01', quote_original = 'Other words.' WHERE id = ?").run(claim);
   db.prepare("UPDATE subjects SET name = 'Renamed' WHERE id = 1").run();
-  db.prepare("UPDATE sources SET url = 'https://example.org/elsewhere', sha256 = ? WHERE id = ?").run('d'.repeat(64), law);
+  db.prepare("UPDATE sources SET title = 'Retitled', publisher = 'Another office' WHERE id = ?").run(law);
+  assert.throws(() => db.prepare("UPDATE sources SET url = 'https://example.org/elsewhere' WHERE id = ?").run(law), /permanent/);
 
   assert.equal(JSON.stringify(publicRecord(db, claim)), before);
   assert.equal(hasUnconfirmedChanges(db, claim), true);
@@ -569,8 +697,10 @@ test('the ledger cannot be edited, deleted from or overwritten — even on a pla
   confirm(db, claim, 'founder');
   db.close();
 
-  // Not opened through src/db.js: no pragmas set, nothing prepared.
+  // Not opened through src/db.js: no pragmas set, nothing prepared. It registers the one
+  // publisher normalisation, as any connection must to evaluate what is publishable.
   const plain = new DatabaseSync(file);
+  plain.function('kv_publisher_key', { deterministic: true }, (n) => publisherKey(n));
   const before = JSON.stringify(plain.prepare('SELECT * FROM publications').all());
   const fromPublishable = "claim_id, 'published', snapshot, 'intern' FROM publishable";
   const attacks = [

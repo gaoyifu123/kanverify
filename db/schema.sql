@@ -1,5 +1,7 @@
--- KANVERIFY record format, version 9. (9: the snapshot carries the origin's source id and
--- each evidence item's source id, so the site can group items by document.)
+-- KANVERIFY record format, version 10. (9: the snapshot carries the origin's source id and
+-- each evidence item's source id. 10: Fable review 3 — source ids and files fixed, one
+-- publisher normalisation, renunciation dated, measurable claims have a deadline, and the
+-- review desk's round bookkeeping: jury_votes.pack_sha256, verdicts.based_on_round.)
 --
 -- Verdicts (docs/decisions/0008-five-verdicts.md and its revision, verdict-standard.md
 -- v0.3 section 5): six values shared by promises and predictions —
@@ -7,25 +9,28 @@
 --   pending           not due yet
 --   to_evaluate       due, but the evidence is not enough to decide; says what is missing
 --   came_true         the criteria were fully met (may be given before the deadline)
---   partly_came_true  the criteria were met in part; the summary gives the figures
---                     (may be given before the deadline)
---   not_came_true     due, and it did not happen; or the speaker explicitly gave it up
--- The deadline is not checked here; the jury program checks it (src/jury.js).
+--   partly_came_true  due, and the criteria were met in part; the summary gives the figures
+--   not_came_true     due, and it did not happen; or the speaker explicitly gave up a promise
+-- The deadline is not checked in this file: a view that depends on today's date would give
+-- a different answer depending on when and where it is read. It is checked, with the same
+-- function as the jury's vote checks (src/rules.js deadlineProblem, local date), in
+-- confirm() in src/ledger.js — the one way into the ledger.
 --
 -- Two parts, kept apart on purpose:
 --
 --   The WORKSPACE (subjects, sources, claims, verdicts, verdict_evidence, jury_votes)
 --   is where work happens. Rows can be edited freely. Only facts about a single row
 --   are checked here, with column types and plain CHECK constraints, plus one trigger
---   that keeps a subject's public id from changing.
+--   that keeps a subject's public id from changing and one that keeps a source's id, address
+--   and archived file from changing.
 --
 --   The LEDGER (publications) is what the public sees. Each time someone confirms a
 --   claim, the complete content at that moment is stored as one snapshot. The ledger
 --   only grows: nothing in it is ever edited, overwritten or deleted, and entries are
 --   numbered in order by the database. The website is built from the ledger alone.
 --
--- What may enter the ledger is defined in exactly one place, the view
--- publication_checks. That is where the two principles are enforced:
+-- What may enter the ledger is defined by the view publication_checks plus the deadline
+-- rule in confirm() (src/ledger.js), and nowhere else. The view enforces the principles:
 --   Principle 2 (nothing without a source): a claim's origin must be the speaker's own
 --     words; a verdict that asserts an outcome needs one official document, or two
 --     independent sources from different publishers; a statement is a lead, never
@@ -94,8 +99,8 @@ CREATE TABLE subjects (
                                      AND length(CAST(wikidata_id AS BLOB)) = length(wikidata_id)))
 ) STRICT;
 
--- The one trigger in the workspace: a subject's public id cannot be changed, whether or
--- not a claim refers to it yet.
+-- The workspace has two triggers. This one: a subject's public id cannot be changed,
+-- whether or not a claim refers to it yet.
 -- It fires on every update, not only on updates naming id: id is the rowid, so it can
 -- also be changed as rowid, oid or _rowid_, including in an upsert's DO UPDATE.
 CREATE TRIGGER subjects_id_fixed BEFORE UPDATE ON subjects
@@ -116,16 +121,19 @@ END;
 --     a promise, verbatim (decision 0008, source-rule.md last section). Against the
 --     speaker's interest, so for "not_came_true" on a promise alone it is evidence, and
 --     one is enough. On a prediction (taking back a forecast says nothing about whether
---     the event happened) and under any other verdict it is a lead like 'statement'.
---     Never an origin;
+--     the event happened) and under any other verdict it is a lead like 'statement'. It
+--     must be published on or after the day the promise was made. Never an origin;
 --   official — issued by a public institution and recording something: 'law',
 --     'gazette', 'statistic', 'budget', 'parliament', 'court', 'audit', and 'official'
 --     for any other official document that records rather than assesses. One is enough;
 --   independent, not official — 'media' (a news outlet's own reporting, not a quote of
 --     someone's statement) and 'dataset_study' (research that publishes its raw data).
 --     Two from different publishers are needed.
+-- A source's id is public (it is in every snapshot), so it is never reused (AUTOINCREMENT)
+-- and, with its address and its archived file, never changed (trigger sources_fixed). To
+-- correct a source, register the corrected document as a new source.
 CREATE TABLE sources (
-  id           INTEGER PRIMARY KEY,
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
   kind         TEXT NOT NULL CHECK (kind IN (
                  'platform', 'statement', 'renunciation',
                  'law', 'gazette', 'statistic', 'budget', 'parliament',
@@ -142,6 +150,14 @@ CREATE TABLE sources (
   -- ISO 639-1, lowercase, exactly two letters (nothing hidden after a NUL character).
   lang         TEXT NOT NULL CHECK (lang GLOB '[a-z][a-z]' AND length(CAST(lang AS BLOB)) = 2)
 ) STRICT;
+
+-- A source's id, address and archived file are what a snapshot points to; they never
+-- change. Fires on every update for the same reason as subjects_id_fixed (rowid aliases).
+CREATE TRIGGER sources_fixed BEFORE UPDATE ON sources
+WHEN NEW.id IS NOT OLD.id OR NEW.url IS NOT OLD.url OR NEW.sha256 IS NOT OLD.sha256
+BEGIN
+  SELECT RAISE(ABORT, 'a source id, url and sha256 are permanent; register a new source instead');
+END;
 
 -- One promise or prediction, quoted verbatim from its origin.
 --
@@ -203,7 +219,10 @@ CREATE TABLE claims (
          OR length(trim(coalesce(criteria_fr, ''), char(32, 9, 10, 11, 12, 13, 133, 160, 173, 5760, 8192, 8193, 8194, 8195, 8196, 8197, 8198, 8199, 8200, 8201, 8202, 8203, 8204, 8205, 8232, 8233, 8239, 8287, 8288, 12288, 65279))) > 0
          OR length(trim(coalesce(criteria_en, ''), char(32, 9, 10, 11, 12, 13, 133, 160, 173, 5760, 8192, 8193, 8194, 8195, 8196, 8197, 8198, 8199, 8200, 8201, 8202, 8203, 8204, 8205, 8232, 8233, 8239, 8287, 8288, 12288, 65279))) > 0),
   -- A deadline always says whether the speaker stated it or we inferred it.
-  CHECK ((deadline IS NULL) = (deadline_basis IS NULL))
+  CHECK ((deadline IS NULL) = (deadline_basis IS NULL)),
+  -- A measurable claim always has a deadline, stated or inferred (verdict-standard.md
+  -- section 3); without one no verdict could ever be due.
+  CHECK (verifiability <> 'measurable' OR deadline IS NOT NULL)
 ) STRICT;
 
 -- The working verdict on a claim. One row per claim.
@@ -218,6 +237,8 @@ CREATE TABLE verdicts (
   open_question_fr TEXT,
   open_question_en TEXT,
   decided_by       TEXT NOT NULL CHECK (decided_by IN ('human', 'jury')),
+  -- The jury round this working verdict was based on (review desk bookkeeping).
+  based_on_round   INTEGER,
   -- Principle 1: "to_evaluate" says where it is stuck and what is missing — in at least
   -- one language. Both languages are required only to publish (rule "bilingual").
   CHECK (verdict <> 'to_evaluate'
@@ -257,6 +278,8 @@ CREATE TABLE jury_votes (
                    'not_came_true')),
   reasoning      TEXT NOT NULL CHECK (length(trim(reasoning, char(32, 9, 10, 11, 12, 13, 133, 160, 173, 5760, 8192, 8193, 8194, 8195, 8196, 8197, 8198, 8199, 8200, 8201, 8202, 8203, 8204, 8205, 8232, 8233, 8239, 8287, 8288, 12288, 65279))) > 0),
   open_question  TEXT,
+  -- The evidence pack the vote was cast on: exactly 64 lowercase hex characters.
+  pack_sha256    TEXT NOT NULL CHECK (length(CAST(pack_sha256 AS BLOB)) = 64 AND pack_sha256 NOT GLOB '*[^0-9a-f]*'),
   -- [{"source_id": 12, "excerpt": "...", "locator": "..."}]
   evidence_json  TEXT NOT NULL DEFAULT '[]'
                  CHECK (json_valid(evidence_json) AND json_type(evidence_json) = 'array'),
@@ -273,7 +296,10 @@ CREATE INDEX evidence_by_verdict ON verdict_evidence(verdict_id);
 
 -- The whole publication policy, one row per claim, one column per rule (1 = satisfied).
 -- The review desk reads this to say why a claim cannot be confirmed yet.
--- The rules are written out in full here, in one place; nothing else decides what is public.
+-- Together with the deadline rule in confirm() (src/ledger.js), this decides what is public.
+-- Publisher names are compared with kv_publisher_key, the one normalisation shared with the
+-- jury's checks (src/rules.js publisherKey; openDatabase registers it). A connection that
+-- has not registered it cannot evaluate this view, so it cannot publish anything.
 CREATE VIEW publication_checks AS
 SELECT
   c.id AS claim_id,
@@ -300,28 +326,37 @@ SELECT
   -- claim (the evidence
   -- shows its condition never arose; principle 2). "unverifiable" on a vague or hedged
   -- claim follows from the wording alone and needs none. For "not_came_true" on a
-  -- promise, one renunciation by the speaker is also enough.
+  -- promise, one renunciation by the speaker is also enough, if it was published on or
+  -- after the day the promise was made. Two independent sources means two documents
+  -- with different publishers (kv_publisher_key) and different archived files (sha256).
   (v.id IS NOT NULL
    AND (v.verdict IN ('pending', 'to_evaluate')
         OR (v.verdict = 'unverifiable' AND c.verifiability IS NOT 'measurable')
         OR (v.verdict = 'not_came_true' AND c.type = 'promise'
             AND EXISTS (SELECT 1 FROM verdict_evidence e JOIN sources s ON s.id = e.source_id
-                        WHERE e.verdict_id = v.id AND s.kind = 'renunciation'))
+                        WHERE e.verdict_id = v.id AND s.kind = 'renunciation'
+                          AND s.published_on >= c.said_on))
         OR EXISTS (SELECT 1 FROM verdict_evidence e JOIN sources s ON s.id = e.source_id
                    WHERE e.verdict_id = v.id
                      AND s.kind IN ('law', 'gazette', 'statistic', 'budget', 'parliament',
                                     'court', 'audit', 'official'))
-        OR (SELECT count(DISTINCT lower(trim(s.publisher, char(32, 9, 10, 11, 12, 13, 133, 160, 173, 5760, 8192, 8193, 8194, 8195, 8196, 8197, 8198, 8199, 8200, 8201, 8202, 8203, 8204, 8205, 8232, 8233, 8239, 8287, 8288, 12288, 65279))))
-            FROM verdict_evidence e JOIN sources s ON s.id = e.source_id
-            WHERE e.verdict_id = v.id AND s.kind IN ('media', 'dataset_study')) >= 2)) AS outcome_has_evidence,
+        OR EXISTS (SELECT 1
+                   FROM verdict_evidence e1 JOIN sources s1 ON s1.id = e1.source_id,
+                        verdict_evidence e2 JOIN sources s2 ON s2.id = e2.source_id
+                   WHERE e1.verdict_id = v.id AND e2.verdict_id = v.id
+                     AND s1.kind IN ('media', 'dataset_study') AND s2.kind IN ('media', 'dataset_study')
+                     AND kv_publisher_key(s1.publisher) IS NOT kv_publisher_key(s2.publisher)
+                     AND s1.sha256 <> s2.sha256))) AS outcome_has_evidence,
   -- A statement is a lead, never evidence — whoever made it. So is a renunciation, except
-  -- under "not_came_true" on a promise. Evidence whose source is missing does not count.
+  -- under "not_came_true" on a promise, published on or after the day it was made.
+  -- Evidence whose source is missing does not count.
   (NOT EXISTS (SELECT 1 FROM verdict_evidence e LEFT JOIN sources s ON s.id = e.source_id
                WHERE e.verdict_id = v.id
                  AND (s.id IS NULL
                       OR s.kind IN ('platform', 'statement')
                       OR (s.kind = 'renunciation'
-                          AND (v.verdict IS NOT 'not_came_true' OR c.type IS NOT 'promise'))))) AS evidence_is_primary,
+                          AND (v.verdict IS NOT 'not_came_true' OR c.type IS NOT 'promise'
+                               OR s.published_on IS NULL OR s.published_on < c.said_on))))) AS evidence_is_primary,
   -- Both sites show the same record (decision 0007). Blank counts as missing.
   --   Quoted text: the claim's quote, and every evidence excerpt, has a translation into
   --     French unless its own language is French, and into English unless it is English.

@@ -22,3 +22,7 @@ Reviewer: code reviewer, Fable 5.2. Date: 2026-11-23. Saved by the coordinator f
 ## Objections and risks
 - Putting a date check into `publication_checks` makes it time-dependent (UTC vs local date) — think it through, don't patch.
 - Not reviewed: desk files, real two-process concurrency, out-of-scope paths.
+
+## Re-check (record format 10): PASS
+All six findings closed. Over 1,512 cases, `confirm()`, `publicationBlockers()` and `voteProblems()` agree. Ledger append-only battery unchanged.
+Residual (low): `confirm()` accepts a caller-chosen date → added to the reviewer's always-send-back list; explicit source ids can reuse a deleted id → same boundary as subjects, added to the list; pack "said" date fallback is more lenient than the database (the database is the final gate); founder question on vague + renounced still open.

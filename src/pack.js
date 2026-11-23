@@ -26,6 +26,7 @@ import { DEFAULT_EVIDENCE_DIR, evidencePath } from './archive.js';
 import { openDatabase } from './db.js';
 import { candidateProblems, checkVerbatim, htmlToParagraphs, normalizeForMatch } from './extract.js';
 import { isLegifranceSource, legifranceToUnits } from './legifrance.js';
+import { deadlineProblem, filled, renunciationCounts, twoIndependent } from './rules.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 export const DEFAULT_TEXT_DIR = resolve(here, '../data/candidates');
@@ -48,9 +49,6 @@ export const MAX_EXCERPT_CHARS = 1_500;
 // ---------------------------------------------------------------- small helpers
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-function filled(value) {
-  return typeof value === 'string' && value.trim().length > 0;
-}
 export function sha256Of(bytes) {
   return createHash('sha256').update(bytes).digest('hex');
 }
@@ -266,7 +264,7 @@ export function checkPack(db, pack, opts = {}) {
     for (const f of SOURCE_FIELDS) if ((s[f] ?? null) !== (row[f] ?? null)) problems.push(`source ${row.id}: ${f} differs from the database`);
     if (['platform', 'statement'].includes(row.kind)) problems.push(`source ${row.id} is a ${row.kind}, never evidence (list it under considered_not_used)`);
     if (row.kind === 'renunciation' && claim.type !== 'promise') problems.push(`source ${row.id} is a renunciation, evidence only for a promise`);
-    docs.push({ meta: { source_id: row.id, kind: row.kind, title: row.title, publisher: row.publisher, published_on: row.published_on, url: row.url, media_type: row.media_type } });
+    docs.push({ meta: { source_id: row.id, kind: row.kind, title: row.title, publisher: row.publisher, published_on: row.published_on, url: row.url, media_type: row.media_type, sha256: row.sha256 } });
   }
   const textOf = (row) => {
     if (!sourceTexts.has(row.id)) sourceTexts.set(row.id, sourceUnits(row, opts));
@@ -335,21 +333,20 @@ export function voteProblems(vote, claim, docs, texts, today, { withinUnit = fal
   if (['vague', 'hedged'].includes(claim.verifiability) && verdict !== 'unverifiable') problems.push('vague or hedged claim, verdict must be unverifiable');
   if (verdict !== 'pending' && !(filled(vote.summary_fr) && filled(vote.summary_en))) problems.push('summary missing in French or English');
   if (verdict === 'to_evaluate' && !(filled(vote.open_question_fr) && filled(vote.open_question_en))) problems.push('to_evaluate without an open question in both languages');
-  const renounced = verdict === 'not_came_true' && claim.type === 'promise'
-    && evidence.some((e) => byId.get(e?.source_id)?.meta.kind === 'renunciation');
-  // Before the deadline only came_true may be given early (verdict standard section 5, as
-  // amended); partly_came_true waits like not_came_true, which only a renounced promise skips.
-  // unverifiable on a measurable claim is only "the condition did not arise by the deadline".
-  const notOver = claim.deadline && today <= claim.deadline;
-  const waits = (['to_evaluate', 'partly_came_true', 'not_came_true'].includes(verdict) && !renounced)
-    || (verdict === 'unverifiable' && claim.verifiability === 'measurable');
-  if (notOver && waits) problems.push(`deadline ${claim.deadline} not over (not reached until the day after it), but verdict is ${verdict}`);
-  if (claim.deadline && today > claim.deadline && verdict === 'pending') problems.push(`deadline ${claim.deadline} passed, but verdict is pending`);
+  // The renunciation and deadline rules are shared with confirm() (src/rules.js). A pack's
+  // claim carries the day it was said as its origin's publication date.
+  const said = { type: claim.type, said_on: claim.said_on ?? claim.origin?.published_on ?? null };
+  const renounced = evidence.some((e) => renunciationCounts(byId.get(e?.source_id)?.meta, said, verdict));
+  const late = deadlineProblem(claim, verdict, today, renounced);
+  if (late) problems.push(late);
   for (const e of evidence) {
     const doc = byId.get(e?.source_id);
     if (!doc) { problems.push(`evidence cites source_id ${e?.source_id}, which was not given`); continue; }
     if (['platform', 'statement'].includes(doc.meta.kind)) problems.push(`source ${doc.meta.source_id} is a ${doc.meta.kind}, never evidence`);
     if (doc.meta.kind === 'renunciation' && !(verdict === 'not_came_true' && claim.type === 'promise')) problems.push(`source ${doc.meta.source_id} is a renunciation, evidence only for not_came_true on a promise`);
+    else if (doc.meta.kind === 'renunciation' && !renunciationCounts(doc.meta, said, verdict)) {
+      problems.push(`source ${doc.meta.source_id} is a renunciation published before the promise was made (or with no date), so it is no evidence`);
+    }
     if (!filled(e.excerpt)) { problems.push(`empty excerpt for source ${doc.meta.source_id}`); continue; }
     const units = texts.get(doc.meta.source_id);
     const found = !units ? null
@@ -367,8 +364,7 @@ export function voteProblems(vote, claim, docs, texts, today, { withinUnit = fal
   if (needsEvidence && !renounced) {
     const kinds = evidence.map((e) => byId.get(e?.source_id)).filter(Boolean);
     const official = kinds.some((d) => OFFICIAL_KINDS.includes(d.meta.kind));
-    const publishers = new Set(kinds.filter((d) => INDEPENDENT_KINDS.includes(d.meta.kind)).map((d) => d.meta.publisher.trim().toLowerCase()));
-    if (!official && publishers.size < 2) problems.push('outcome verdict without one official document or two independent publishers');
+    if (!official && !twoIndependent(kinds.map((d) => d.meta))) problems.push('outcome verdict without one official document or two independent publishers (different publishers and different files)');
   }
   return problems;
 }

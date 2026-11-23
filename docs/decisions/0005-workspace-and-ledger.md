@@ -82,3 +82,20 @@
 - 出现必须彻底抹掉某条公开记录的情况（例如法律上的强制要求）。那时需要一个有明确授权、
   留有记录的特别流程，而不是放开账本的删除。
 - 快照使数据库大到影响使用。
+
+## Addendum 2026-11-23: the deadline rule lives in confirm() (record format 10)
+
+- Status: decided by the coordinator after Fable review 3 (finding 1; `docs/log/2026-11-23-fable-review-3.md`).
+- What may enter the ledger is now **`publication_checks` plus the deadline rule in `confirm()`** (`src/ledger.js`),
+  and nothing else. `confirm()` is the one way into the ledger the code uses.
+- Why not in the view: a rule that depends on today's date would make the view give different answers depending on
+  when and where it is read (UTC or local date). The view stays time-independent; the deadline rule is applied at the
+  moment of confirming, on a local date passed in or today on this machine.
+- One function for the rule (`deadlineProblem` in `src/rules.js`) is used both by `confirm()` and by the jury's vote
+  checks (`src/pack.js`), so the two cannot drift apart. The review desk shows it through `publicationBlockers`.
+- Known limit, accepted: a statement that inserts into `publications` directly (not through `confirm()`) is still held
+  to `publication_checks` by the `ledger_exact` trigger, but not to the deadline rule. That is the same boundary as
+  the scope section above: code that bypasses `confirm()` is rejected in review.
+- `confirm()` also checks that exactly one entry was written before it reports success (finding 2).
+- Principles: 2 (no conclusion before the evidence can exist), 4 (no time-dependent patch in the view, as the
+  reviewer warned), 5 (one shared function, not two copies).

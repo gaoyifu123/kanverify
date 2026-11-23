@@ -3,18 +3,22 @@
 // on a network.
 //
 // The rules that protect the public record live in db/schema.sql and hold on any
-// connection. This module only adds conveniences: foreign keys on, a wait instead of an
-// immediate failure when the file is busy, and a refusal to touch a file that is not ours.
+// connection. This module adds: foreign keys on, a wait instead of an immediate failure
+// when the file is busy, a refusal to touch a file that is not ours, and kv_publisher_key,
+// the one publisher-name normalisation the publication rules use (src/rules.js). A
+// connection without that function cannot evaluate what is publishable, so it cannot
+// publish anything.
 
 import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { publisherKey } from './rules.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const SCHEMA_PATH = resolve(here, '../db/schema.sql');
 const DEFAULT_DB_PATH = resolve(here, '../data/kanverify.db');
-const SCHEMA_VERSION = 9;
+const SCHEMA_VERSION = 10;
 const BUSY_WAIT_MS = 5000;
 
 /**
@@ -27,6 +31,7 @@ export function openDatabase(path = DEFAULT_DB_PATH) {
   let inTransaction = false;
   try {
     db.exec('PRAGMA foreign_keys = ON');
+    db.function('kv_publisher_key', { deterministic: true }, (name) => publisherKey(name));
     const readVersion = () => db.prepare('PRAGMA user_version').get().user_version;
 
     // An existing database is only read here, so opening it never waits on other work.

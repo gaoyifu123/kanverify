@@ -1,7 +1,11 @@
 // Confirming and withdrawing: the only two ways anything becomes public.
 //
-// The rules themselves are in db/schema.sql. These functions are the convenient way to
-// follow them, and they explain a refusal in terms a reviewer can act on.
+// What may be published is publication_checks in db/schema.sql plus one rule that depends
+// on the date and so is not in the database: the deadline rule (src/rules.js, shared with
+// the jury's vote checks). confirm() is the one way into the ledger and applies both.
+// These functions explain a refusal in terms a reviewer can act on.
+
+import { deadlineProblem, localToday, renunciationCounts } from './rules.js';
 
 // In the order a reviewer would fix them. Those in NEEDS_VERDICT only make sense once a
 // verdict exists; translations come last because they are done after the content.
@@ -18,15 +22,40 @@ const CHECK_MESSAGES = [
 const NEEDS_VERDICT = new Set(['verdict_fits_verifiability', 'summary_stated', 'outcome_has_evidence', 'evidence_is_primary']);
 
 /**
+ * The deadline rule for a claim's working verdict on a given local date, or null.
+ * The same function the jury's vote checks use (src/rules.js).
+ */
+function deadlineBlocker(db, claimId, today) {
+  const claim = db.prepare('SELECT type, verifiability, deadline, said_on FROM claims WHERE id = ?').get(claimId);
+  const verdict = db.prepare('SELECT id, verdict FROM verdicts WHERE claim_id = ?').get(claimId);
+  if (!claim || !verdict) return null;
+  const sources = db
+    .prepare('SELECT s.kind, s.published_on FROM verdict_evidence e JOIN sources s ON s.id = e.source_id WHERE e.verdict_id = ?')
+    .all(verdict.id);
+  const renounced = sources.some((s) => renunciationCounts(s, claim, verdict.verdict));
+  return deadlineProblem(claim, verdict.verdict, today, renounced);
+}
+
+function checkToday(today) {
+  if (typeof today !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(today)) throw new Error('today must be a local date, YYYY-MM-DD');
+  return today;
+}
+
+/**
  * Why a claim cannot be confirmed right now. Empty when it can.
+ * @param {{ today?: string }} [options] local date for the deadline rule (default: today here)
  * @returns {string[]}
  */
-export function publicationBlockers(db, claimId) {
+export function publicationBlockers(db, claimId, { today = localToday() } = {}) {
+  checkToday(today);
   const checks = db.prepare('SELECT * FROM publication_checks WHERE claim_id = ?').get(claimId);
   if (!checks) return ['there is no such claim'];
-  return CHECK_MESSAGES.filter(([name]) => !checks[name] && (checks.has_verdict || !NEEDS_VERDICT.has(name))).map(
+  const blockers = CHECK_MESSAGES.filter(([name]) => !checks[name] && (checks.has_verdict || !NEEDS_VERDICT.has(name))).map(
     ([, message]) => message
   );
+  const late = deadlineBlocker(db, claimId, today);
+  if (late) blockers.push(late);
+  return blockers;
 }
 
 function currentlyPublished(db, claimId) {
@@ -36,11 +65,14 @@ function currentlyPublished(db, claimId) {
 }
 
 /**
- * Stores what is publishable right now as a new ledger entry.
- * @param {{ reviewSeconds?: number }} [options] how long the human review took
+ * Stores what is publishable right now as a new ledger entry. Refuses what
+ * publication_checks refuses, and a verdict the deadline rule does not allow on `today`.
+ * @param {{ reviewSeconds?: number, today?: string }} [options] how long the human review
+ *   took; the local date for the deadline rule (default: today on this machine)
  * @returns {number} id of the new ledger entry
  */
-export function confirm(db, claimId, confirmedBy, { reviewSeconds = null } = {}) {
+export function confirm(db, claimId, confirmedBy, { reviewSeconds = null, today = localToday() } = {}) {
+  checkToday(today);
   if (reviewSeconds !== null) {
     if (!Number.isFinite(reviewSeconds) || reviewSeconds < 0) {
       throw new Error('reviewSeconds must be a non-negative number of seconds');
@@ -49,8 +81,10 @@ export function confirm(db, claimId, confirmedBy, { reviewSeconds = null } = {})
   }
   const now = db.prepare('SELECT snapshot FROM publishable WHERE claim_id = ?').get(claimId);
   if (!now) {
-    throw new Error(`Claim ${claimId} cannot be confirmed: ${publicationBlockers(db, claimId).join('; ')}`);
+    throw new Error(`Claim ${claimId} cannot be confirmed: ${publicationBlockers(db, claimId, { today }).join('; ')}`);
   }
+  const late = deadlineBlocker(db, claimId, today);
+  if (late) throw new Error(`Claim ${claimId} cannot be confirmed: ${late}`);
   const current = currentlyPublished(db, claimId);
   if (current && current.snapshot === now.snapshot) {
     throw new Error(`Claim ${claimId}: nothing has changed since the last confirmation`);
@@ -61,6 +95,8 @@ export function confirm(db, claimId, confirmedBy, { reviewSeconds = null } = {})
        SELECT claim_id, 'published', snapshot, ?, ? FROM publishable WHERE claim_id = ?`
     )
     .run(confirmedBy, reviewSeconds, claimId);
+  // Exactly one entry, or nothing happened: never report a stale id as success.
+  if (result.changes !== 1) throw new Error(`Claim ${claimId}: the ledger entry was not written (${result.changes} rows)`);
   return Number(result.lastInsertRowid);
 }
 

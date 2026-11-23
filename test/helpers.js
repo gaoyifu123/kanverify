@@ -113,12 +113,13 @@ export function addVote(db, claimId, model, verdict, overrides = {}) {
     reasoning: 'The gazette shows the law in force.',
     open_question: null,
     evidence_json: '[]',
+    pack_sha256: 'c'.repeat(64),
     ...overrides,
   };
   const result = db
     .prepare(
-      `INSERT INTO jury_votes (claim_id, round, provider, model, prompt_version, verdict, reasoning, open_question, evidence_json)
-       VALUES (:claim_id, :round, :provider, :model, :prompt_version, :verdict, :reasoning, :open_question, :evidence_json)`
+      `INSERT INTO jury_votes (claim_id, round, provider, model, prompt_version, verdict, reasoning, open_question, evidence_json, pack_sha256)
+       VALUES (:claim_id, :round, :provider, :model, :prompt_version, :verdict, :reasoning, :open_question, :evidence_json, :pack_sha256)`
     )
     .run(row);
   return Number(result.lastInsertRowid);

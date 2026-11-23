@@ -24,7 +24,8 @@ Before anything else, read `PRINCIPLES.md` at the project root, then `team/READM
    - uses `REPLACE INTO`, `INSERT OR REPLACE` or `UPDATE OR REPLACE` on any table of the record format;
    - opens the database other than through `openDatabase` in `src/db.js`;
    - writes to `publications` other than through `confirm` and `withdraw` in `src/ledger.js`;
-   - inserts into `subjects` with an explicit `id`, or touches `sqlite_sequence` (subject ids are public URLs and must never be reused).
+   - inserts into `subjects` or `sources` with an explicit `id`, or touches `sqlite_sequence` (these ids are public and must never be reused);
+   - passes a `today` option to `confirm()` outside tests (the publication date must be the machine date).
    One exemption, for files under `test/` only: a test may open `DatabaseSync` directly to build a fixture
    (for example a file that is not a KANVERIFY database) or to test that `openDatabase` refuses it.
    Tests still may not switch off integrity settings: what they would test is out of scope.

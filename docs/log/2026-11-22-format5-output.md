@@ -294,3 +294,65 @@ CHECK 要写 `json_valid`、`json_type`、两次 `json_extract` 再判空，网�
   - 用 `openDatabase` 新建格式 9 的库，用草稿目录里的一次性脚本把 `sources` 的 33 行按原编号 INSERT 进去，放在一个事务里；
   - 核对结果：33 行，编号 1 到 38，每一行的每一列都和备份相同，33 个存证文件的 SHA-256 都和记录一致，其他表都是 0 行。
 - 这改变了公开的内容，所以列入明天的 Fable 审查。我没有审查自己的代码。
+
+## Format 10: Fable review 3, sent back (narrow)
+
+(This and later entries are in English, the project's working language since 2026-11-22.)
+
+What changed, by finding:
+1. **Deadline rule.** It stays out of the time-independent view. `confirm()` in `src/ledger.js` applies it, on a local
+   date passed in or today, with the same function as the jury's vote checks: `deadlineProblem` in the new
+   `src/rules.js`, also used by `src/pack.js`. `publicationBlockers` lists it, so the desk shows it.
+   The schema header now says `partly_came_true` only after the deadline, and that the rule lives in `confirm()`.
+   The "nothing else decides" line now reads "publication_checks plus the deadline rule in confirm()".
+   Decision 0005 has a short addendum.
+2. `confirm()` throws unless exactly one ledger entry was written.
+3. **One publisher normalisation** (`publisherKey` in `src/rules.js`: NFKC, case-fold, invisible characters removed,
+   blank runs collapsed). SQLite cannot do NFKC or Unicode case-folding, so `openDatabase` registers the function as
+   the deterministic SQL function `kv_publisher_key`, which the view uses. A connection without it cannot evaluate
+   `publishable`, so it cannot publish (fails closed; tested). Two independent sources must also be different files
+   (sha256), in SQL and in `pack.js`. `filled()` in `pack.js` now uses the project's blank list.
+4. A renunciation counts only if its source `published_on >= claims.said_on` (SQL and `pack.js`). With no date, it does
+   not count. A pack's claim takes `said_on` from its origin's `published_on`, which is how the desk fills it.
+5. `sources.id` is `AUTOINCREMENT`. Trigger `sources_fixed` refuses any change of id (including the rowid aliases),
+   `url` or `sha256`. Title, publisher, date and kind may still be corrected.
+6. CHECK: a measurable claim has a deadline.
+- Coordinator addition: `jury_votes.pack_sha256` (64 lowercase hex, NOT NULL) and `verdicts.based_on_round`
+  (INTEGER, nullable). No other meaning in the schema.
+
+Why a new module (principle 5): `ledger.js` must not import `pack.js`, which pulls in archive and extraction code,
+and two copies of these rules are what drifted apart before.
+
+Tests:
+- New: the deadline rule in `confirm()`, including the deadline day; the renunciation date; one publisher
+  normalisation in SQL and JS; same file under two names; `changes === 1`; a connection without the function cannot
+  publish; source ids and the trigger; measurable needs a deadline; the two bookkeeping columns; format 9 refused.
+- In `ledger.test.js`, tests of other rules confirm on a date the deadline allows (a small wrapper). The site fixture
+  passes an after-deadline date for its to-evaluate and did-not-come-true confirmations.
+
+Results:
+- All test files pass except two.
+- `desk.test.js`: 17 fail, all because `src/desk.js` inserts jury votes without `pack_sha256`. That is the desk
+  developer's switch-over; I was told not to touch `src/desk*`.
+- `archive.test.js`: 2 fail, the same with the format-9 schema swapped back in an isolated copy, so they come from the
+  other developer's `archive.js` work in progress, not from format 10.
+
+Mutation check: 22 mutations, all caught. Two needed a fix first:
+- the NFKC mutant left a second normalisation in place, so it was not a real change; with both removed it is caught;
+- no test gave a vote a summary made of zero-width characters, so I added one.
+
+Data: `data/kanverify.db` backed up byte-identically to `data/kanverify-format9-backup-20261123.db`
+(SHA-256 `30b351f8…8a6e`). Then a fresh format-10 database, and the 38 `sources` rows copied unchanged (ids 1–43) in
+one transaction with plain INSERTs. Verified: every column of every row, 38/38 archived files match their sha256,
+other tables empty. The `sources` counter starts at 43.
+
+Objections and risks:
+- **Until the desk writes `pack_sha256`, the desk cannot record a jury round on the live database.** Format 10 is
+  ready for the switch-over.
+- A direct INSERT into `publications` (not through `confirm()`) is held to `publication_checks` but not to the deadline
+  rule. That is accepted as the same boundary as decision 0005 (code that bypasses `confirm()` is rejected in review),
+  and recorded there.
+- Ids of sources deleted before format 10, above today's highest id, were not recorded anywhere, so AUTOINCREMENT
+  cannot protect them. None was ever published (the ledger is empty), so no snapshot points to them.
+- Finding 7 (vague promise explicitly abandoned) was skipped as asked; it is still a founder question.
+- This needs the same Fable reviewer's re-check. I did not review my own code.

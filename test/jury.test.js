@@ -16,7 +16,9 @@ const CLAIM = {
   type: 'promise', verifiability: 'measurable', deadline: '2023-12-31', deadline_basis: 'stated',
   criteria_fr: 'Loi.', criteria_en: 'A law.', speaker_role_en: 'Candidate',
 };
-const doc = (id, kind, publisher = 'Pub') => ({ meta: { source_id: id, kind, publisher, title: 't' } });
+// Each document is its own archived file (sha256 differs by id) unless told otherwise.
+const doc = (id, kind, publisher = 'Pub', { sha256 = String(id).padStart(64, '0'), published_on = '2025-01-01' } = {}) =>
+  ({ meta: { source_id: id, kind, publisher, title: 't', sha256, published_on } });
 const UNITS = [{ unit: 1, text: 'Article 16. La taxe d’habitation sur les résidences principales est supprimée.' }];
 const okVote = (over = {}) => ({
   verdict: 'came_true', reasoning: 'r', summary_fr: 'f', summary_en: 'e',
@@ -41,6 +43,17 @@ test('voteProblems: the evidence rule of publication_checks', () => {
   const two = okVote({ evidence: [1, 2].map((id) => ({ source_id: id, excerpt: 'Article 16', locator: '§1' })) });
   assert.deepEqual(voteProblems(two, CLAIM, [doc(1, 'media', 'A'), doc(2, 'media', 'B')], texts, '2026-11-22'), []);
   assert.match(voteProblems(two, CLAIM, [doc(1, 'media', 'A'), doc(2, 'media', ' a ')], texts, '2026-11-22').join(), /one official document or two/);
+  // One normalisation for publisher names (review 3, finding 3): NFKC, case-fold, invisible
+  // characters and runs of blanks — the same function the database uses.
+  // Invisible characters (zero-width, joiners, soft hyphen, BOM) are removed; other blanks are one space.
+  for (const [base, twin] of [['Le Monde', 'ＬＥ　ＭＯＮＤＥ'], ['Lemonde', 'le​monde'], ['Le Monde', 'LE   MONDE'],
+    ['Le Monde', '﻿Le Monde '], ['Le monde', 'le⁠­ monde'], ['Straße', 'STRASSE']]) {
+    const pair = [doc(1, 'media', base), doc(2, 'media', twin)];
+    assert.match(voteProblems(two, CLAIM, pair, texts, '2026-11-22').join(), /one official document or two/, JSON.stringify(twin));
+  }
+  // The same archived file under two publisher names is one source, not two.
+  const sameFile = [doc(1, 'media', 'A', { sha256: 'f'.repeat(64) }), doc(2, 'media', 'B', { sha256: 'f'.repeat(64) })];
+  assert.match(voteProblems(two, CLAIM, sameFile, texts, '2026-11-22').join(), /one official document or two/);
   const st = okVote();
   const p = voteProblems(st, CLAIM, [doc(1, 'statement')], texts, '2026-11-22').join();
   assert.match(p, /never evidence/);
@@ -50,6 +63,14 @@ test('voteProblems: the evidence rule of publication_checks', () => {
   assert.deepEqual(voteProblems(ren, { ...CLAIM, deadline: '2027-05-13' }, [doc(3, 'renunciation')], texts, '2026-11-22'), []);
   assert.match(voteProblems(okVote({ evidence: ren.evidence }), CLAIM, [doc(3, 'renunciation')], texts, '2026-11-22').join(), /renunciation/);
   assert.match(voteProblems(ren, { ...CLAIM, type: 'prediction' }, [doc(3, 'renunciation')], texts, '2026-11-22').join(), /renunciation/);
+  // A renunciation must come on or after the day the promise was made (review 3, finding 4).
+  const future = { ...CLAIM, deadline: '2027-05-13' };
+  assert.deepEqual(voteProblems(ren, future, [doc(3, 'renunciation', 'Pub', { published_on: '2022-03-17' })], texts, '2026-11-22'), []);
+  for (const published_on of ['2022-03-16', null]) {
+    const p = voteProblems(ren, future, [doc(3, 'renunciation', 'Pub', { published_on })], texts, '2026-11-22').join();
+    assert.match(p, /published before the promise was made/, String(published_on));
+    assert.match(p, /not over/, String(published_on)); // and it no longer lets not_came_true come early
+  }
   assert.match(voteProblems(okVote({ evidence: [{ source_id: 9, excerpt: 'x' }] }), CLAIM, [doc(1, 'law')], texts, '2026-11-22').join(), /not given/);
 });
 
@@ -80,6 +101,11 @@ test('voteProblems: verdict values, deadlines, open question, summaries, vague c
   const te = { verdict: 'to_evaluate', reasoning: 'r', summary_fr: 'f', summary_en: 'e', evidence: [], open_question_fr: 'q', open_question_en: '' };
   assert.match(voteProblems(te, CLAIM, d, texts, '2026-11-22').join(), /open question/);
   assert.match(voteProblems(okVote({ summary_en: ' ' }), CLAIM, d, texts, '2026-11-22').join(), /summary missing/);
+  // Blank means the project's list (src/rules.js), not only what String.trim removes.
+  for (const blank of ['​', '⁠­', '‌‍']) {
+    assert.match(voteProblems(okVote({ summary_en: blank }), CLAIM, d, texts, '2026-11-22').join(), /summary missing/, JSON.stringify(blank));
+    assert.match(voteProblems(okVote({ reasoning: blank }), CLAIM, d, texts, '2026-11-22').join(), /reasoning is empty/, JSON.stringify(blank));
+  }
   assert.match(voteProblems(okVote(), { ...CLAIM, verifiability: 'vague' }, d, texts, '2026-11-22').join(), /must be unverifiable/);
   assert.match(voteProblems({ verdict: 'unverifiable', reasoning: 'r', summary_fr: 'f', summary_en: 'e', evidence: [] }, CLAIM, d, texts, '2026-11-22').join(), /one official document/);
 });

@@ -277,6 +277,7 @@ export function loadEvidenceDoc(source, { evidenceDir = DEFAULT_EVIDENCE_DIR } =
   const meta = {
     source_id: source.id, kind: source.kind, title: source.title, publisher: source.publisher,
     published_on: source.published_on, url: source.url, media_type: source.media_type, lang: source.lang,
+    sha256: source.sha256,
   };
   const bytes = readFileSync(evidencePath(evidenceDir, source.sha256));
   if (source.media_type === 'application/pdf') {
