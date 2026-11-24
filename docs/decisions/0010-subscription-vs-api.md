@@ -137,3 +137,7 @@ Mistral on subscription) is refused when the settings are read. Gemini and Mistr
   provider is one of the four companies exactly (no alias such as "codex" or "google"), its `via` is the route of
   its channel, the file is named for both. Tally, round closing and the desk use the same two functions. The superseded subagent votes (`via`
   "claude-code") are not accepted (coordinator, 2026-11-23): the 10 trial claims are re-cut and re-voted under rules 0.8.
+
+Founder, 2026-11-24: Google and Mistral judges wait until production starts ("开始PROD之后再来，不然订阅要花钱").
+Until then the jury is OpenAI (Codex) and Anthropic (Claude), both on existing subscriptions; Gemini and Mistral stay
+`off` in `src/jury-members.json`. Their terms check is postponed to then.
