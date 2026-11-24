@@ -33,8 +33,9 @@ export const CORRECTIONS_EMAIL = 'kanverify@gmail.com';
 
 const LANGS = ['fr', 'en'];
 const VERDICTS = ['unverifiable', 'pending', 'to_evaluate', 'came_true', 'partly_came_true', 'not_came_true'];
-// Schema order (db/schema.sql). The "Topics" link opens the first one.
-const DOMAINS = ['economy', 'tax', 'employment', 'health', 'education', 'environment', 'energy', 'security',
+// The rows of claim_domains, in order (db/schema.sql; a test keeps them equal). The "Topics"
+// link opens the first one.
+export const DOMAINS = ['economy', 'tax', 'employment', 'health', 'education', 'environment', 'energy', 'security',
   'defence', 'justice', 'immigration', 'foreign_affairs', 'institutions', 'social', 'housing', 'transport',
   'agriculture', 'digital', 'culture', 'other'];
 const NB = String.fromCharCode(160); // no-break space
@@ -42,6 +43,10 @@ const NNB = String.fromCharCode(0x202f); // narrow no-break space (components.md
 // The jury line names the company, never the adapter or the model (components.md "Jury line",
 // principle 8). A provider not in this table stops the build.
 const COMPANY = { anthropic: 'Anthropic', claude: 'Anthropic', openai: 'OpenAI', codex: 'OpenAI', gemini: 'Google', mistral: 'Mistral AI' };
+
+// The snapshot shapes this code can show (the snapshot's "format", db/schema.sql publishable).
+// A shape not listed here stops the build rather than being shown wrongly.
+const SNAPSHOT_FORMATS = new Set([1]);
 
 const T = {
   en: {
@@ -345,6 +350,9 @@ function localToday() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+/** The site's labels, for the test that every code of the lookup lists has one. */
+export { T as SITE_LABELS };
+
 const byLabel = (lang) => (a, b) => a.localeCompare(b, lang);
 
 // ------------------------------------------------------------------ reading the ledger
@@ -384,6 +392,9 @@ export function readLedger(db) {
 
 /** Codes are never shown raw (ia.md): a code without a label in both languages stops the build. */
 function checkLabels(s, entryId) {
+  if (!SNAPSHOT_FORMATS.has(s.format)) {
+    throw new Error(`Ledger entry ${entryId}: snapshot shape ${JSON.stringify(s.format ?? null)} is not one this code can show. Nothing was written.`);
+  }
   const need = [
     ['d', 'domain', s.claim.domain], ['ty', 'type', s.claim.type], ['verif', 'verifiability', s.claim.verifiability],
     ['v', 'verdict', s.verdict.verdict], ['sk', 'subject kind', s.subject.kind], ['kind', 'source kind', s.origin.kind],

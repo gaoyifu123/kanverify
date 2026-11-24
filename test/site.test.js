@@ -614,6 +614,15 @@ test('a code without a label stops the build before anything is replaced', () =>
   assertPreviousSiteKept((site) => () => buildSite(fakeLedger(snap2), site, { today: TODAY }), /unknown source kind "rumour"/);
 });
 
+test('a snapshot shape the code does not know stops the build (format 13: the snapshot says its shape)', () => {
+  const snap = currentSnapshot(ids.cameTrue);
+  assert.equal(snap.format, 1);
+  snap.format = 2;
+  assertPreviousSiteKept((site) => () => buildSite(fakeLedger(snap), site, { today: TODAY }), /snapshot shape 2 is not one this code can show/);
+  delete snap.format;
+  assertPreviousSiteKept((site) => () => buildSite(fakeLedger(snap), site, { today: TODAY }), /snapshot shape null/);
+});
+
 test('a page that fails to render leaves the previous site in place', () => {
   const snap = currentSnapshot(ids.cameTrue);
   snap.claim.said_on = null; // passes the label check, breaks rendering

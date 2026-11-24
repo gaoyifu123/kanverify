@@ -1,4 +1,4 @@
--- KANVERIFY record format, version 12. (9: the snapshot carries the origin's source id and
+-- KANVERIFY record format, version 13. (9: the snapshot carries the origin's source id and
 -- each evidence item's source id. 10: Fable review 3 — source ids and files fixed, one
 -- publisher normalisation, renunciation dated, measurable claims have a deadline, and the
 -- review desk's round bookkeeping: jury_votes.pack_sha256, verdicts.based_on_round.
@@ -8,7 +8,17 @@
 -- claim (decision 0015, S1), on a promise — is cited only under not_came_true on a
 -- measurable claim, dated on or after the day it was made and on or before its deadline (verdict-standard.md
 -- 0.6, RN-1 row 5), which removes format 11's widening; a prediction never has an inferred
--- deadline (VG-3).)
+-- deadline (VG-3). 13: the two lists that grow, claim domains and source kinds, are rows of the
+-- lookup tables claim_domains and source_kinds instead of CHECK lists, so an in-place upgrade
+-- can add to them; the snapshot says which shape it has, in its key "format" (Fable review 10).)
+--
+-- Upgrades. From format 13 on, a format change is applied in place to the existing file by
+-- upgradeDatabase in src/db.js (node src/db.js upgrade), from db/migrations/<format>.sql, without
+-- touching the ledger: its rows, its table, its triggers and current_publications stay as they
+-- are, and old snapshots keep the shape they were confirmed in. No table can be rebuilt (claims
+-- is under the ledger), so a column definition or a table CHECK below cannot change again; a
+-- new row rule becomes a workspace trigger or a publication check. Every released format is
+-- kept byte for byte in db/formats/ (Fable review 10; docs/decisions/0005).
 --
 -- Verdict rules have ids (docs/methodology/verdict-standard.md, table "Rules"); the comments
 -- below name the ones each check applies.
@@ -30,7 +40,8 @@
 --
 -- Two parts, kept apart on purpose:
 --
---   The WORKSPACE (subjects, sources, claims, verdicts, verdict_evidence, jury_votes)
+--   The WORKSPACE (claim_domains, source_kinds, subjects, sources, claims, verdicts,
+--   verdict_evidence, jury_votes)
 --   is where work happens. Rows can be edited freely. Only facts about a single row
 --   are checked here, with column types and plain CHECK constraints, plus one trigger
 --   that keeps a subject's public id from changing and one that keeps a source's id, address
@@ -92,6 +103,58 @@
 
 -- ============================== WORKSPACE ==============================
 
+-- The lists that may grow (format 13). A claim's domain and a source's kind are codes from
+-- these tables; an upgrade adds a code with an INSERT, and the same INSERT goes here. A code in
+-- use cannot be removed or renamed (the foreign keys refuse it). The website, the desk and the
+-- extraction check label or list every code; a test keeps them equal to these rows. Which class
+-- a source kind is in (own words, official, independent) is written in publication_checks below
+-- and in source-rule.md, so a new kind also needs a decision on its class and a new view.
+--
+-- domain is one code from this list; the website shows its French and English name.
+--   economy          growth, public finances in general, business, trade
+--   tax              taxes and social contributions
+--   employment       jobs, unemployment, wages, working conditions
+--   health           health care, hospitals, medicines, public health
+--   education        schools, universities, vocational training, research
+--   environment      climate, pollution, nature, water, waste
+--   energy           electricity, fuel, nuclear, renewables, energy prices
+--   security         internal security: police, crime, terrorism, civil protection
+--                    (the armed forces are 'defence')
+--   defence          armed forces, military spending, military alliances
+--   justice          courts, prisons, reform of the law
+--   immigration      immigration, asylum, nationality, integration
+--   foreign_affairs  diplomacy, European and international affairs, development aid
+--   institutions     constitution, elections, how government is organised, public ethics
+--   social           pensions, family, welfare, disability, poverty
+--   housing          housing, rent, construction, urban planning
+--   transport        roads, rail, public transport, aviation, shipping
+--   agriculture      farming, fisheries, food production, rural affairs
+--   digital          internet, telecoms, data protection, digital public services
+--   culture          arts, heritage, media, sport
+--   other           anything that fits none of the above
+-- List approved by the founder on 2026-11-22. 'security' is internal security only.
+-- Moving a published claim to another domain needs a new confirmation.
+CREATE TABLE claim_domains (
+  code TEXT NOT NULL PRIMARY KEY CHECK (code GLOB '[a-z]*' AND code NOT GLOB '*[^a-z_]*')
+) STRICT;
+
+INSERT INTO claim_domains (code) VALUES
+  ('economy'), ('tax'), ('employment'), ('health'), ('education'), ('environment'),
+  ('energy'), ('security'), ('defence'), ('justice'), ('immigration'),
+  ('foreign_affairs'), ('institutions'), ('social'), ('housing'), ('transport'),
+  ('agriculture'), ('digital'), ('culture'), ('other');
+
+-- A source's kind; what each one means is written above the sources table.
+CREATE TABLE source_kinds (
+  code TEXT NOT NULL PRIMARY KEY CHECK (code GLOB '[a-z]*' AND code NOT GLOB '*[^a-z_]*')
+) STRICT;
+
+INSERT INTO source_kinds (code) VALUES
+  ('platform'), ('statement'), ('renunciation'),
+  ('law'), ('gazette'), ('statistic'), ('budget'), ('parliament'),
+  ('court'), ('audit'), ('official'),
+  ('media'), ('dataset_study');
+
 -- A subject is identified by its id, never by its name: the id is public (it is in
 -- every snapshot and in page addresses), is never changed and never reused.
 -- AUTOINCREMENT keeps the database from handing out the number of a deleted subject
@@ -149,11 +212,7 @@ END;
 -- correct a source, register the corrected document as a new source.
 CREATE TABLE sources (
   id           INTEGER PRIMARY KEY AUTOINCREMENT,
-  kind         TEXT NOT NULL CHECK (kind IN (
-                 'platform', 'statement', 'renunciation',
-                 'law', 'gazette', 'statistic', 'budget', 'parliament',
-                 'court', 'audit', 'official',
-                 'media', 'dataset_study')),
+  kind         TEXT NOT NULL REFERENCES source_kinds(code),
   url          TEXT NOT NULL CHECK (length(trim(url, char(32, 9, 10, 11, 12, 13, 133, 160, 173, 5760, 8192, 8193, 8194, 8195, 8196, 8197, 8198, 8199, 8200, 8201, 8202, 8203, 8204, 8205, 8232, 8233, 8239, 8287, 8288, 12288, 65279))) > 0),
   title        TEXT NOT NULL CHECK (length(trim(title, char(32, 9, 10, 11, 12, 13, 133, 160, 173, 5760, 8192, 8193, 8194, 8195, 8196, 8197, 8198, 8199, 8200, 8201, 8202, 8203, 8204, 8205, 8232, 8233, 8239, 8287, 8288, 12288, 65279))) > 0),
   publisher    TEXT NOT NULL CHECK (length(trim(publisher, char(32, 9, 10, 11, 12, 13, 133, 160, 173, 5760, 8192, 8193, 8194, 8195, 8196, 8197, 8198, 8199, 8200, 8201, 8202, 8203, 8204, 8205, 8232, 8233, 8239, 8287, 8288, 12288, 65279))) > 0),
@@ -175,31 +234,7 @@ BEGIN
 END;
 
 -- One promise or prediction, quoted verbatim from its origin.
---
--- domain is one code from a fixed list; the website shows its French and English name.
---   economy          growth, public finances in general, business, trade
---   tax              taxes and social contributions
---   employment       jobs, unemployment, wages, working conditions
---   health           health care, hospitals, medicines, public health
---   education        schools, universities, vocational training, research
---   environment      climate, pollution, nature, water, waste
---   energy           electricity, fuel, nuclear, renewables, energy prices
---   security         internal security: police, crime, terrorism, civil protection
---                    (the armed forces are 'defence')
---   defence          armed forces, military spending, military alliances
---   justice          courts, prisons, reform of the law
---   immigration      immigration, asylum, nationality, integration
---   foreign_affairs  diplomacy, European and international affairs, development aid
---   institutions     constitution, elections, how government is organised, public ethics
---   social           pensions, family, welfare, disability, poverty
---   housing          housing, rent, construction, urban planning
---   transport        roads, rail, public transport, aviation, shipping
---   agriculture      farming, fisheries, food production, rural affairs
---   digital          internet, telecoms, data protection, digital public services
---   culture          arts, heritage, media, sport
---   other           anything that fits none of the above
--- List approved by the founder on 2026-11-22. 'security' is internal security only.
--- The list can grow; moving a published claim to another domain needs a new confirmation.
+-- Its domain is a code of claim_domains (above).
 CREATE TABLE claims (
   id              INTEGER PRIMARY KEY,
   subject_id      INTEGER NOT NULL REFERENCES subjects(id),
@@ -208,11 +243,7 @@ CREATE TABLE claims (
   speaker_role_fr TEXT,
   speaker_role_en TEXT,
   type            TEXT NOT NULL CHECK (type IN ('promise', 'prediction')),
-  domain          TEXT NOT NULL CHECK (domain IN (
-                    'economy', 'tax', 'employment', 'health', 'education', 'environment',
-                    'energy', 'security', 'defence', 'justice', 'immigration',
-                    'foreign_affairs', 'institutions', 'social', 'housing', 'transport',
-                    'agriculture', 'digital', 'culture', 'other')),
+  domain          TEXT NOT NULL REFERENCES claim_domains(code),
   quote_original TEXT NOT NULL CHECK (length(trim(quote_original, char(32, 9, 10, 11, 12, 13, 133, 160, 173, 5760, 8192, 8193, 8194, 8195, 8196, 8197, 8198, 8199, 8200, 8201, 8202, 8203, 8204, 8205, 8232, 8233, 8239, 8287, 8288, 12288, 65279))) > 0),
   -- ISO 639-1, lowercase, as for sources.
   lang           TEXT NOT NULL CHECK (lang GLOB '[a-z][a-z]' AND length(CAST(lang AS BLOB)) = 2),
@@ -442,10 +473,15 @@ LEFT JOIN sources o ON o.id = c.source_id
 LEFT JOIN verdicts v ON v.claim_id = c.id;
 
 -- Claims that pass every rule, with the exact snapshot that would be made public.
+-- "format" counts the snapshot's SHAPE (its keys and what they mean), not the record format:
+-- it changes only when this json_object changes shape, so an upgrade that leaves the shape
+-- alone leaves every published claim as it was. Shape 1 is the first with the key (record
+-- format 13); no earlier shape is in any ledger. The site refuses a shape it does not know.
 CREATE VIEW publishable AS
 SELECT
   c.id AS claim_id,
   json_object(
+    'format', 1,
     'claim', json_object(
       'id', c.id, 'type', c.type, 'domain', c.domain,
       'speaker_role_fr', c.speaker_role_fr, 'speaker_role_en', c.speaker_role_en,

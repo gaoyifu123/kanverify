@@ -54,7 +54,9 @@ test('confirming stores the complete content as one snapshot', () => {
   assert.equal(entry.review_seconds, 42);
 
   const s = entry.snapshot;
-  assert.deepEqual(Object.keys(s), ['claim', 'subject', 'origin', 'verdict', 'evidence', 'jury']);
+  assert.deepEqual(Object.keys(s), ['format', 'claim', 'subject', 'origin', 'verdict', 'evidence', 'jury']);
+  // The snapshot's shape, counted on its own (format 13, Fable review 10 finding 2).
+  assert.equal(s.format, 1);
   assert.deepEqual(s.claim, {
     id: claim, type: 'promise', domain: 'economy',
     speaker_role_fr: 'Candidat à la présidence, 2022', speaker_role_en: 'Candidate for president, 2022',

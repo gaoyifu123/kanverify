@@ -1,0 +1,3 @@
+# SQL files of the record format: LF line ends on every machine, so the bytes of a kept
+# format (db/formats/) and of a migration are the same everywhere (Fable review 10, finding 5).
+db/**/*.sql text eol=lf

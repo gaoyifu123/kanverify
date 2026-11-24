@@ -66,10 +66,11 @@ test('pdfPageCount reads the page tree; null when nothing is visible', () => {
   assert.equal(pdfPageCount(Buffer.from('%PDF-1.5 compressed')), null);
 });
 
-test('DOMAINS is exactly the list in the CHECK on claims.domain in db/schema.sql', () => {
-  const schema = readFileSync(join(ROOT, 'db/schema.sql'), 'utf8');
-  const list = /domain\s+TEXT NOT NULL CHECK \(domain IN \(([^)]*)\)\)/.exec(schema)[1];
-  assert.deepEqual([...list.matchAll(/'([a-z_]+)'/g)].map((m) => m[1]), [...DOMAINS]);
+test('DOMAINS is exactly the rows of claim_domains in db/schema.sql, in order (format 13)', () => {
+  const db = freshDb();
+  const rows = db.prepare('SELECT code FROM claim_domains ORDER BY rowid').all().map((r) => r.code);
+  db.close();
+  assert.deepEqual(rows, [...DOMAINS]);
 });
 
 test('estimateCost uses list prices per million tokens; unknown model gives null', () => {

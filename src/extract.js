@@ -26,7 +26,7 @@ const PRINCIPLES_PATH = resolve(ROOT, 'PRINCIPLES.md');
 const EXTRACT_PROMPT_PATH = resolve(ROOT, 'team/run/extract-prompt.md');
 const TRANSCRIBE_PROMPT_PATH = resolve(ROOT, 'team/run/transcribe-prompt.md');
 
-// Same list as the CHECK on claims.domain in db/schema.sql (a test keeps them equal).
+// The rows of claim_domains in db/schema.sql, in order (a test keeps them equal).
 export const DOMAINS = Object.freeze([
   'economy', 'tax', 'employment', 'health', 'education', 'environment', 'energy', 'security',
   'defence', 'justice', 'immigration', 'foreign_affairs', 'institutions', 'social', 'housing',

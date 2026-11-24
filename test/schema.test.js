@@ -181,7 +181,8 @@ test('a source says where it came from and what kind of file it is', () => {
   assert.throws(() => addSource(db, 'law', { url: '\n' }), /CHECK/);
   assert.throws(() => addSource(db, 'law', { publisher: '\t' }), /CHECK/);
   assert.throws(() => addSource(db, 'law', { media_type: 'pdf' }), /CHECK/);
-  assert.throws(() => addSource(db, 'rumour'), /CHECK/);
+  // A kind is a row of source_kinds (format 13).
+  assert.throws(() => addSource(db, 'rumour'), /FOREIGN KEY/);
 });
 
 test('dates are real calendar dates in one format', () => {
@@ -217,7 +218,7 @@ test('a measurable claim must state its criteria at recording time, in at least 
   addClaim(db, platform, { verifiability: 'vague', criteria_fr: null, criteria_en: null, deadline: null, deadline_basis: null });
 });
 
-test('a policy domain is one code from the fixed list', () => {
+test('a policy domain is one code of claim_domains', () => {
   const db = freshDb();
   const platform = addSource(db, 'platform');
   const domains = ['economy', 'tax', 'employment', 'health', 'education', 'environment', 'energy', 'security',
@@ -225,7 +226,7 @@ test('a policy domain is one code from the fixed list', () => {
     'agriculture', 'digital', 'culture', 'other'];
   for (const domain of domains) addClaim(db, platform, { domain });
   for (const bad of ['Economy', 'économie', 'pensions', 'defense', 'economy ', '']) {
-    assert.throws(() => addClaim(db, platform, { domain: bad }), /CHECK/, bad);
+    assert.throws(() => addClaim(db, platform, { domain: bad }), /FOREIGN KEY/, bad);
   }
   assert.throws(() => addClaim(db, platform, { domain: null }), /NOT NULL/);
 });

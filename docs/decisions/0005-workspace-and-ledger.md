@@ -189,3 +189,47 @@ the first verdict (principle 4).
   `docs/log/2026-11-23-format12-migration.md`.
 - Principles: 3 (one ruler, and visibly which one: every verdict names its rules), 2 (a renunciation is evidence only
   where the table says), 4 (the rule written once, the code derived from it), 5 (two columns, no new table).
+
+## Addendum 2026-11-24: Format 13 and upgrades in place (after Fable review 10)
+
+- Status: route reviewed as a design by Fable (review 10, pass with conditions), technical choices decided by the
+  coordinator; built by the developer. Reviewed by Fable in the record-format area before it counts.
+- **Format 13 is the last copy migration.** `claims.domain` and `sources.kind` become rows of the lookup tables
+  `claim_domains` and `source_kinds` with foreign keys, so the two lists that grow can still grow once tables can no
+  longer be rebuilt. The verdicts, claim types, verifiability values, deadline bases, subject kinds and the
+  blank-character list stay CHECK lists and are frozen from the first confirmation on; a seventh verdict would have
+  no clean route (the coordinator tells the founder). Script: `docs/log/2026-11-24-format13-migration.md`.
+- **The snapshot says its shape:** `"format": 1`, a counter of the snapshot's keys and their meaning, separate from
+  `user_version`, so an upgrade that leaves the shape alone does not make every published claim look changed
+  (finding 2). The site refuses a shape it does not know.
+- **From format 14 on, upgrades run in place** through `upgradeDatabase` / `node src/db.js upgrade` (`src/db.js`),
+  from `db/migrations/<format>.sql`, in one transaction taken before the backup copy: statements checked against a
+  whitelist by parsing (`src/sql-statements.js`), SELECTs as companion assertions that must return no rows, and
+  before COMMIT the ledger digest (every row and column, typed, count and highest id), every pre-existing workspace
+  row and column, the id counters, integrity and foreign keys, and the schema equal to a fresh `db/schema.sql` in
+  both directions (tokens compared) with the same lookup rows. Any failure rolls back; the file is as it was.
+- Old snapshots are never rewritten (principle 2): an entry stays what was confirmed, in the shape it was confirmed in.
+- Every released format is kept byte for byte in `db/formats/`; `db/**/*.sql` is pinned to LF (`.gitattributes`).
+  Defensive mode is on for every connection.
+- Principles: 2 (the public record is never rewritten, proven by a digest), 4 (a designed route before the first real
+  verdict), 5 (no import tool, no copy of the ledger; one runner), 8 (local only).
+- Known limit, accepted (Fable review 11, Low): the lookup tables' code CHECK (`GLOB '[a-z]*' AND NOT GLOB
+  '*[^a-z_]*'`) has no NUL guard, so a code with text hidden after a NUL could be stored by code that writes these
+  tables. Only `db/schema.sql` and migration files may write them (reviewer rule). If ever needed, a later upgrade adds
+  the guard as a workspace trigger with a companion assertion; the table itself cannot change.
+- Runner fixes after Fable review 11: migration text holds no control characters other than tab, LF and CR, and only
+  ASCII outside comments and string literals; spaces are SQLite's set; case folding is ASCII only; a quoted name that
+  is not a plain identifier stays quoted in the comparison; `CREATE TABLE IF NOT EXISTS` on an existing table, a
+  single-quoted forbidden name, and `WITHOUT ROWID` are refused; a Node without defensive mode gets no connection.
+
+## Addendum: backup to the founder's USB drive (founder, on the board, 2026-11-24)
+
+Principle 8: nothing leaves the machine except onto the founder's own drive; no network, no cloud. `node scripts/backup.mjs
+<folder on the USB drive>` refuses a target that is missing, inside the project or data folder, or on the same drive as
+`data/` (Windows: same volume root letter or same volume serial from `stat().dev`; elsewhere the device id). It copies
+`data/kanverify.db` with SQLite's online backup (`backup()` of `node:sqlite`, safe while the desk runs; never a raw copy,
+never VACUUM INTO), refuses if the database changed during the copy, and checks the copy: `integrity_check`, record format,
+ledger digest and every table's row count equal to the live file. Evidence goes to a shared, content-addressed
+`kanverify-backups/evidence/` (a file already there is checked, never replaced); the desk log and `data/candidates/` go
+into the dated folder; every copy's sha256 is checked; `manifest.json` is written last. Nothing on the drive is ever
+deleted or overwritten. Restoring is by hand for now (copy the dated `kanverify.db` back with the desk stopped).

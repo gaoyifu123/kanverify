@@ -39,3 +39,10 @@ no backup off this machine — urgent from the first confirmation.
 
 Format 13 stays. Runner fixes 1–3 → the same developer, then this reviewer re-checks. The first confirmation does not
 wait for the runner fixes (confirmations don't use it; no migration file exists yet). Reviewer rules applied now.
+
+# Re-check (same day): runner PASS
+
+Findings 1, 2 and the low items fixed; 26 crafted migrations re-run, nothing got through. Residual (low): a quoted
+name spelled like a keyword normalises to the bare keyword ("DEFAULT" "NULL" becomes part of a type name on a non-STRICT
+table) — closed by rule: tables created in a migration must be STRICT. Reviewer-rules text matches; added a test
+carve-out for the lookup-table write rule. Tag: fable-format13-runner-2026-11-24.

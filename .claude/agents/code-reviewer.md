@@ -29,12 +29,15 @@ Before anything else, read `PRINCIPLES.md` at the project root, then `team/READM
    - inserts into `subjects` or `sources` with an explicit `id`, or touches `sqlite_sequence` (these ids are public and must never be reused);
    - passes a `today` option to `confirm()` outside tests (the publication date must be the machine date);
    - writes `claim_domains` or `source_kinds` anywhere but `db/schema.sql` and a migration file (a new code needs the
-     same rows in both; a new source kind also needs its class decided);
+     same rows in both; a new source kind also needs its class decided; tests may attempt such a write to show it is
+     refused);
    - in a migration file: DELETE; DROP TABLE or DROP INDEX; ALTER TABLE ... RENAME or DROP COLUMN; ATTACH, DETACH,
      VACUUM; any PRAGMA; REPLACE in any form (including ON CONFLICT REPLACE); WITHOUT ROWID; any mention of
      `publications`, `current_publications`, `sqlite_sequence` or `sqlite_master`; a trigger on `publications` or on a
      view; a trigger whose body is not SELECTs only; a backfill UPDATE whose values have no stated source; non-ASCII
      text outside comments and string literals; NUL or control characters other than tab, line feed, carriage return;
+     a table created in a migration that is not STRICT (a quoted keyword like "NOT" "NULL" is otherwise read as a
+     type name, Fable review 11 re-check);
    - a migration without an upgrade test from the kept previous format (`db/formats/`) with a non-empty ledger
      (published, re-confirmed, withdrawn), or a format without its byte copy in `db/formats/`;
    - any change to `upgradeDatabase` or `src/sql-statements.js` that widens the whitelist, narrows or drops a check,

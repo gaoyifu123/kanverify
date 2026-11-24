@@ -42,7 +42,8 @@ export function packPromptVersion(path = PACK_PROMPT_PATH) {
 }
 
 export const VERDICTS = Object.freeze(['unverifiable', 'pending', 'to_evaluate', 'came_true', 'partly_came_true', 'not_came_true']);
-// Same three classes as sources.kind and publication_checks in db/schema.sql.
+// Same three classes as publication_checks in db/schema.sql; with ORIGIN_KINDS, every row of
+// source_kinds (a test keeps them equal).
 export const OFFICIAL_KINDS = Object.freeze(['law', 'gazette', 'statistic', 'budget', 'parliament', 'court', 'audit', 'official']);
 export const INDEPENDENT_KINDS = Object.freeze(['media', 'dataset_study']);
 export const EVIDENCE_KINDS = Object.freeze([...OFFICIAL_KINDS, ...INDEPENDENT_KINDS, 'renunciation']);
