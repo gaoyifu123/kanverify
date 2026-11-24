@@ -32,7 +32,7 @@ Six possible verdicts. The answer fields, as the prompt's "Answer format" gives 
 | `open_question_fr`, `open_question_en` | for `to_evaluate`; otherwise `null` |
 | `summary_fr`, `summary_en` | for every verdict, `pending` included |
 
-The vote file around the answer (`kind`, `pack_sha256`, `promptVersion`, `system_sha256`, `provider`, `channel`, `via`,
+The vote file around the answer (`kind`, `pack_sha256`, `promptVersion`, `system_sha256`, `judge_input_made` (the date of the judge input it was given; a vote counts only while that is the current judge input's date), `provider`, `channel`, `via`,
 `model`, `model_requested`, `created_at`, `usage`, …) is written by the program (`askVote` in `src/jury.js`) for every judge.
 Which channel each member (openai, anthropic, gemini, mistral) votes on — `subscription` (its vendor's command-line tool),
 `api` (`src/ai/` with the key from `.env`) or `off` — and its model is a setting in `src/jury-members.json`, not code; a
@@ -57,6 +57,11 @@ What the program cannot check is left to the other judges, the neutrality review
 positively shows the outcome (silence is not evidence), whether an `official` document only assesses its own work,
 whether a partial result is a result on the measure, whether a statement is an explicit, precise reversal of the same
 promise (RN-1 rows 5, 8), and whether the right rule ids are named (the founder sees and corrects them at the desk).
+
+## The Codex judge's model (2026-11-24)
+
+The Codex subscription judge's model is the one asked for, not one the tool confirmed: with `--json`, Codex 0.172.0
+does not name the model that answered, so its votes say `model_reported: false`.
 
 ## Independence of the Claude judge (2026-11-23)
 

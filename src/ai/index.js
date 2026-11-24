@@ -6,7 +6,7 @@
 // the single JSON retry, caching, streaming, rate limiting.
 
 import anthropic from './anthropic.js';
-import claude from './claude-cli.js';
+import claude, { atPathMention } from './claude-cli.js';
 import codex from './codex-cli.js';
 import { loadEnv } from './env.js';
 import { AiError } from './errors.js';
@@ -195,6 +195,15 @@ async function callOnce(adapter, req, key, fetchImpl) {
     }
     throw redact(error, key);
   }
+}
+
+// Text an adapter refuses to send, checked by the adapter itself before any call; here so a caller
+// can find it earlier (review 9 F2d: the pack check reports it to the cutter).
+const TEXT_CHECKS = Object.freeze({ claude: atPathMention });
+
+/** textRefusal(provider, text) -> why that provider's adapter would refuse to send `text`, or null. */
+export function textRefusal(provider, text) {
+  return TEXT_CHECKS[provider]?.(text) ?? null;
 }
 
 /**

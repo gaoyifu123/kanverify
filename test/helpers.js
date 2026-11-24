@@ -172,3 +172,24 @@ export const TEST_JURY = Object.freeze({
     mistral: { channel: 'off', model: null },
   },
 });
+
+/**
+ * The init report line Claude Code 2.1.330 prints first with --output-format stream-json --verbose,
+ * as a clean isolated run gives it (src/ai/claude-cli.js checks it). For fake claude runs in tests.
+ */
+export function claudeInitLine(cwd, over = {}) {
+  return JSON.stringify({
+    type: 'system', subtype: 'init', cwd, session_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', tools: [], mcp_servers: [],
+    model: 'claude-opus-5-5', permissionMode: 'dontAsk', slash_commands: [], apiKeySource: 'none', claude_code_version: '2.1.330',
+    skills: [], plugins: ['cc-plugin-agents-md', 'cc-plugin-privacy', 'cc-plugin-plugin-authoring'].map((name) => ({ name, path: 'builtin', source: `${name}@builtin` })),
+    ...over,
+  });
+}
+
+/** The --json events of a clean Codex judge run (codex-cli 0.171.0): a turn with only its answer. For fake codex runs in tests. */
+export const CODEX_EVENTS = [
+  { type: 'thread.started', thread_id: 't' }, { type: 'turn.started' },
+  { type: 'item.completed', item: { id: 'item_0', type: 'reasoning', text: 'r' } },
+  { type: 'item.completed', item: { id: 'item_1', type: 'agent_message', text: '{}' } },
+  { type: 'turn.completed', usage: { input_tokens: 900, cached_input_tokens: 0, output_tokens: 100 } },
+].map((e) => JSON.stringify(e)).join('\n');

@@ -123,9 +123,13 @@ function writePack(s, verdicts = ['came_true', 'came_true'], { claim: claimOver 
     const [provider, channel, via] = members[i];
     writeFileSync(join(s.packDir, `c1.vote-${provider}-${channel}.json`), JSON.stringify({
       kind: 'kanverify-vote', format: 1, claim: 'C1', pack_file: 'c1.pack.json', pack_sha256: sha256Of(bytes), provider, channel, via,
-      model: `model-${provider}`, promptVersion: ctx.promptVersion, system_sha256: ctx.systemSha256, verdict, rules_applied: ['EA-1', 'EV-1'],
+      model: `model-${provider}`, promptVersion: ctx.promptVersion, system_sha256: ctx.systemSha256, judge_input_made: made, verdict, rules_applied: ['EA-1', 'EV-1'],
       evidence: [{ source_id: s.law, excerpt: 'X est en vigueur depuis 2025.', locator: where.locator, pdf_page: where.pdf_page }],
-      ...(sessions[i] && { made_by: { session: sessions[i] } }),
+      // A command-line Claude vote names its run as the adapter wrote it (review 9 F6); sessions[0] null leaves the session out.
+      ...(via === 'claude-cli' ? {
+        made_by: { role: 'judge', tool: 'claude-cli', tool_version: '2.1.330', ...((sessions[i] ?? sessions[i] === undefined) && { session: sessions[i] ?? 'claude-cli-desk-test' }) },
+        raw: { tool: 'claude -p', num_turns: 1, subtype: 'success', permission_denials: [] },
+      } : sessions[i] && { made_by: { session: sessions[i] } }),
       reasoning: `reasoning ${i + 1}`, open_question_fr: null, open_question_en: null,
       summary_fr: `X est en vigueur (vote ${i + 1}).`, summary_en: `X is in force (vote ${i + 1}).`,
     }));
@@ -580,7 +584,8 @@ test('F1: a round holds only the members that are on, records that jury, and the
   assert.deepEqual(r.closed.votes.map((v) => v.file), ['c1.vote-anthropic-subscription.json', 'c1.vote-openai-subscription.json']);
   assert.ok(r.leftOut.includes('c1.vote-gemini-api.json (gemini is off in the jury settings)'));
   assert.deepEqual(r.closed.jury, [
-    { provider: 'openai', channel: 'subscription', model: 'gpt-6.2-sol' }, { provider: 'anthropic', channel: 'subscription', model: 'claude-opus-5-5' },
+    // Channel and model from the votes in it, not from the settings (review 9 F5).
+    { provider: 'openai', channel: 'subscription', model: 'model-openai' }, { provider: 'anthropic', channel: 'subscription', model: 'model-anthropic' },
   ]);
   assert.deepEqual(readRounds(packPathOf(s)).at(-1).jury, r.closed.jury);
   let [item] = s.desk.verdictQueue().items;
@@ -592,6 +597,27 @@ test('F1: a round holds only the members that are on, records that jury, and the
   assert.equal(gemini.valid, false);
   assert.match(gemini.problems.join(), /gemini is not in the jury round 2 was closed under/);
   assert.equal(item.valid.length, 2);
+});
+
+test('review 9 F7: a round line of format 2 or later without its jury is not read', (t) => {
+  const s = setup(t);
+  importOne(s);
+  writePack(s);
+  const path = roundsFileName(packPathOf(s));
+  const [closed] = readRounds(packPathOf(s));
+  assert.equal(closed.format, 2);
+  const { id: _id, jury: _jury, ...noJury } = closed;
+  appendFileSync(path, `${JSON.stringify({ ...noJury, round: 2 })}\n`);
+  appendFileSync(path, `${JSON.stringify({ ...noJury, round: 3, format: 3 })}\n`);
+  // Format 1 only when format is exactly the number 1: a string "1" or "2", or no format, must name its jury too.
+  const { format: _f, ...noFormat } = noJury;
+  appendFileSync(path, `${JSON.stringify({ ...noJury, round: 5, format: '2' })}\n`);
+  appendFileSync(path, `${JSON.stringify({ ...noJury, round: 6, format: '1' })}\n`);
+  appendFileSync(path, `${JSON.stringify({ ...noFormat, round: 7 })}\n`);
+  assert.deepEqual(readRounds(packPathOf(s)).map((r) => r.round), [1], 'format 2 and 3 lines, and lines without a numeric format 1, are skipped without a jury');
+  // A format-1 line (before the jury was recorded) is still read, with the jury of that time.
+  appendFileSync(path, `${JSON.stringify({ ...noJury, round: 4, format: 1 })}\n`);
+  assert.deepEqual(readRounds(packPathOf(s)).map((r) => r.round), [1, 4]);
 });
 
 test('F2: the desk takes only jury members\' votes: no alias provider, no via of another channel', (t) => {
@@ -927,19 +953,27 @@ test('Fable review 7: the desk does not hand its own date to confirm(); the ledg
 test('0012 A2: a Claude subscription vote from the session that cut the pack is refused', (t) => {
   const s = setup(t);
   importOne(s);
-  writePack(s, ['came_true', 'came_true'], { cutSession: 'session-7', sessions: ['session-7'] });
+  writePack(s, ['came_true', 'came_true'], { cutSession: 'claude-cli-7', sessions: ['claude-cli-7'] });
   let [item] = s.desk.verdictQueue().items;
   const claude = item.p.votes.find((v) => v.vote.provider === 'anthropic');
   assert.equal(claude.valid, false);
   assert.match(claude.problems.join(), /session that cut the pack/);
   assert.equal(item.valid.length, 1);
-  writePack(s, ['came_true', 'came_true'], { cutSession: 'session-7', sessions: ['session-8'] });
+  writePack(s, ['came_true', 'came_true'], { cutSession: 'claude-cli-7', sessions: ['claude-cli-8'] });
   [item] = s.desk.verdictQueue().items;
   assert.equal(item.valid.length, 2, 'a fresh session counts');
-  // Not recorded: counted, but the page says the program could not check it.
-  writePack(s, ['came_true', 'came_true']);
+  // Not recorded: a command-line Claude vote without its session is not counted (review 9 F6), and the page says why.
+  writePack(s, ['came_true', 'came_true'], { sessions: [null] });
+  // The jury step leaves it out (no round without it) ...
+  assert.ok(closeRound(packPathOf(s)).leftOut.includes('c1.vote-anthropic-subscription.json (not a vote of a jury member)'));
+  // ... and a round line written another way does not make the desk count it.
+  const sameJury = readRounds(packPathOf(s)).at(-1).jury;
+  forceRound(packPathOf(s), ['c1.vote-anthropic-subscription.json', 'c1.vote-openai-subscription.json'], sameJury);
   [item] = s.desk.verdictQueue().items;
-  assert.equal(item.p.votes.find((v) => v.vote.provider === 'anthropic').sessionUnrecorded, true);
+  const unnamed = item.p.votes.find((v) => v.vote.provider === 'anthropic');
+  assert.equal(unnamed.sessionUnrecorded, true);
+  assert.equal(unnamed.valid, false);
+  assert.match(unnamed.problems.join(), /must name the session its run reported/);
   assert.match(s.desk.verdictPage(item.id), /does not name its session/);
 });
 

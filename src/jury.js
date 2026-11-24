@@ -538,6 +538,25 @@ export function juryVoteProblems(vote, file, stem) {
     problems.push(`not a vote of a jury member: via ${JSON.stringify(via ?? null)} is not how ${provider} votes on ${channel} (${route.via})`);
   }
   if (file !== `${stem}.vote-${provider}-${channel}.json`) problems.push('file name does not match provider and channel');
+  if (via === 'claude-cli') problems.push(...claudeRunProblems(vote));
+  return problems;
+}
+
+/**
+ * Fable review 9 F6: the facts the Claude adapter checked when it ran, checked again whenever the vote
+ * file is read. (Codex votes record no run facts to re-check.)
+ */
+function claudeRunProblems(vote) {
+  const made = vote.made_by ?? {};
+  const raw = vote.raw ?? {};
+  const filled = (x) => typeof x === 'string' && x.trim().length > 0;
+  const problems = [];
+  if (made.tool !== 'claude-cli') problems.push('a claude-cli vote must name made_by.tool claude-cli');
+  if (!filled(made.tool_version)) problems.push('a claude-cli vote must name the tool version (made_by.tool_version)');
+  if (!filled(made.session) || !made.session.startsWith('claude-cli-')) problems.push('a claude-cli vote must name the session its run reported (made_by.session)');
+  if (raw.num_turns !== 1) problems.push('a claude-cli vote must record exactly one turn (raw.num_turns)');
+  if (raw.subtype !== 'success') problems.push('a claude-cli vote must record a successful run (raw.subtype)');
+  if (!Array.isArray(raw.permission_denials) || raw.permission_denials.length > 0) problems.push('a claude-cli vote must record no permission denials (raw.permission_denials)');
   return problems;
 }
 
@@ -557,7 +576,10 @@ export function sameCompanyProblems(entries) {
 
 /** The members that are not off: the jury whose votes are compared and needed to close a round. */
 export function juryOn(config = JURY_CONFIG_PATH) {
-  return loadJury(config).filter((m) => m.channel !== 'off');
+  const on = loadJury(config).filter((m) => m.channel !== 'off');
+  // Fable review 9 F9: one vote is not a jury's agreement, and none closes nothing.
+  if (on.length < 2) throw new Error(`jury settings: ${on.length} member(s) on; votes are compared and rounds closed only with at least two`);
+  return on;
 }
 
 /** <dir>/<name>.pack.json -> <dir>/<name>; every file of the flow is named from it. */
@@ -673,13 +695,20 @@ export async function askVote(pack, packPath, packSha256, member, { model, today
     kind: VOTE_KIND, format: 1,
     claim: pack.claim.key, pack_file: basename(packPath), pack_sha256: packSha256,
     provider: member.provider, channel: member.channel, via: route.via,
-    model: reply.modelVersion ?? reply.model, model_requested: reply.model,
-    promptVersion: reply.promptVersion, system_sha256: req.systemSha256, created_at: now().toISOString(),
+    // model_reported: false when the tool did not name the model that answered (Codex with --json);
+    // then `model` is only the one asked for, not one the tool confirmed.
+    model: reply.modelVersion ?? reply.model, model_requested: reply.model, model_reported: Boolean(reply.modelVersion),
+    promptVersion: reply.promptVersion, system_sha256: req.systemSha256, judge_input_made: today, created_at: now().toISOString(),
     ...answerOf(reply.json),
     usage: reply.usage ?? null,
     cost_usd_estimate: member.channel === 'subscription' ? 0 : call?.cost_usd_estimate ?? null,
     ...(viaClaude && {
       made_by: { role: 'judge', tool: 'claude-cli', tool_version: reply.raw?.cli_version ?? null, ...(session && { session: `claude-cli-${session}` }) },
+      raw: reply.raw ?? null,
+    }),
+    // The Codex judge: the tool's version and the run facts the adapter checked (events, items, errors).
+    ...(cliProvider === 'codex' && {
+      made_by: { role: 'judge', tool: 'codex-cli', tool_version: reply.raw?.cli_version ?? null },
       raw: reply.raw ?? null,
     }),
   };
@@ -699,6 +728,19 @@ export function supersedeVote(packPath, provider, channel, now = new Date()) {
   return aside;
 }
 
+/** The problems of a vote file read now, the checks tally makes (the judge input is the caller's, made just now). */
+function currentVoteProblems(path, stem, pack, checked, ctx) {
+  let vote;
+  try {
+    vote = JSON.parse(readFileSync(path, 'utf8'));
+  } catch {
+    return ['not valid JSON'];
+  }
+  const problems = [...juryVoteProblems(vote, basename(path), stem), ...checkVote(vote, pack, checked, ctx)];
+  const session = sameSessionProblem(pack, vote);
+  return session ? [...problems, session] : problems;
+}
+
 /**
  * Runs the votes of a pack: every member of the jury settings (`jury`, default JURY_CONFIG_PATH) on its
  * own channel. A member that is off, has no adapter on its channel, lacks its API key or its
@@ -713,10 +755,19 @@ export async function runPackVotes(db, packPath, {
   const { pack, packSha256, checked } = readPack(db, packPath, checkOptions);
   if (checked.problems.length > 0) throw new Error(`the pack fails its checks: ${checked.problems.join('; ')}`);
   writeFileSync(`${packStem(packPath)}.judge-input.md`, judgeInputText(pack, packSha256, today));
+  const { promptVersion, systemSha256 } = packJudgeRequest(pack, today);
+  const ctx = { packSha256, promptVersion, systemSha256, today };
+  const stem = basename(packStem(packPath));
   const outcomes = [];
   for (const member of members) {
     const { provider, channel, model, route } = member;
     if (channel === 'off') { outcomes.push({ provider, channel, skipped: 'off in the jury settings' }); continue; }
+    // Review 9 R2: a member with a valid vote on this pack, prompt and judge-input date does not vote again.
+    const own = voteFileName(packPath, provider, channel);
+    if (existsSync(own) && currentVoteProblems(own, stem, pack, checked, ctx).length === 0) {
+      outcomes.push({ provider, channel, skipped: `already has a valid vote on this pack, prompt and judge input of ${today}`, file: own });
+      continue;
+    }
     // Before anything changes: a missing key or tool means no vote, the earlier one stays where it is.
     const missing = unavailable(route.ask, askOptions);
     if (missing) { outcomes.push({ provider, channel, skipped: missing }); continue; }
@@ -838,7 +889,9 @@ export function readRounds(packPath) {
       && typeof v.text === 'string' && sha256Of(Buffer.from(v.text, 'utf8')) === v.sha256);
     if (r?.kind !== ROUND_KIND || !Number.isInteger(r.round) || !HEX64.test(r.pack_sha256 ?? '') || !filesOk) continue;
     // From format 2 a round names the jury it was closed under; a malformed one is skipped like any malformed line.
-    if (r.jury !== undefined && !roundJuryOk(r.jury)) continue;
+    // Review 9 F7: a format-2 line must have it.
+    // Format 1 (no jury recorded) only when format is exactly the number 1; anything else must name its jury.
+    if ((r.jury !== undefined || r.format !== 1) && !roundJuryOk(r.jury)) continue;
     out.push({ ...r, id: sha256Of(Buffer.from(line, 'utf8')) });
   }
   return out;
@@ -901,7 +954,7 @@ export function closeRound(packPath, { now = () => new Date(), jury = JURY_CONFI
     }
     const sha256 = sha256Of(b);
     if (text === null || sha256Of(Buffer.from(text, 'utf8')) !== sha256) { notText.push(f); continue; }
-    votes.push({ file: f, sha256, text, provider: vote.provider });
+    votes.push({ file: f, sha256, text, provider: vote.provider, channel: vote.channel, model: vote.model });
   }
   if (ctx.problem) return { closed: null, problem: `round not closed: ${ctx.problem}`, leftOut };
   if (notText.length > 0) {
@@ -915,8 +968,11 @@ export function closeRound(packPath, { now = () => new Date(), jury = JURY_CONFI
   }
   const rounds = readRounds(packPath);
   const last = rounds.at(-1);
-  // The settings the round was closed under: the desk counts only votes of these members.
-  const roundJury = on.map(({ provider, channel, model }) => ({ provider, channel, model }));
+  // The jury of the round, from its votes (review 9 F5: what voted, not what the settings say now), in
+  // the settings' order; the desk counts only votes of these members.
+  const roundJury = on.map(({ provider }) => votes.find((v) => v.provider === provider))
+    .map(({ provider, channel, model }) => ({ provider, channel, model }));
+  if (!roundJuryOk(roundJury)) return { closed: null, problem: 'round not closed: a vote names no model', leftOut };
   const kept = votes.map(({ file, sha256, text }) => ({ file, sha256, text }));
   if (last && last.pack_sha256 === packSha256 && JSON.stringify(last.votes.map((v) => [v.file, v.sha256])) === JSON.stringify(kept.map((v) => [v.file, v.sha256]))
     && JSON.stringify(last.jury ?? null) === JSON.stringify(roundJury)) {

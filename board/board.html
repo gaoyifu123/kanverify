@@ -12,30 +12,30 @@
   "meta": {
     "day": 2,
     "totalDays": 14,
-    "updated": "2026-11-24 08:45:36",
+    "updated": "2026-11-24 10:51:51",
     "launch": "Dec 5",
-    "headline": "Jury stays at two judges (OpenAI and Anthropic, on existing subscriptions) until production; Google and Mistral come later, so no new subscriptions now. Next: re-cut and re-vote the 10 trial claims under rules 0.8."
+    "headline": "Claude judge passed Fable (file-reading hole closed twice over). Codex installed on your computer and tested; its file-read check is being tightened. Your choice on subscriptions vs API is on the board."
   },
   "counts": [
     {
       "label": "Promises recorded",
-      "value": "0",
-      "target": "427 candidates ready (Macron 2022, Trump 2024); launch target 100 to 200"
+      "value": "173",
+      "target": "148 Macron + 25 Trump imported (workspace, not published); 55 flagged items wait for you"
     },
     {
       "label": "Fable reviews passed",
       "value": "7 of 8",
-      "target": "Queued: isolated Claude judge + judge channel setting"
+      "target": "Sent back again (one item): judge file-read guard"
     },
     {
       "label": "Tests",
-      "value": "366",
+      "value": "373",
       "target": "All passing"
     },
     {
       "label": "Jury",
       "value": "2",
-      "target": "OpenAI and Anthropic on subscriptions, isolated; Google and Mistral after production starts"
+      "target": "OpenAI and Anthropic on subscriptions; Google and Mistral after production starts"
     }
   ],
   "done": [
@@ -72,16 +72,44 @@
     "Claude command line installed and signed in by you; checked working",
     "Claude judge isolated through the command line; test run on your computer passed (6 of 6); committed",
     "Item page: one line with each AI juror's vote, person first (code review passed)",
-    "Judges switchable between subscription and API by setting (code review passed)"
+    "Judges switchable between subscription and API by setting (code review passed)",
+    "Source 4: missing pages 5-6 transcribed (old file kept)",
+    "Fable review 9 saved (docs/log/2026-11-24-fable-review-9.md)",
+    "Subjects created: Macron (1), Trump (2); 148 Macron promises imported, 48 to queue A",
+    "Sources 8, 22, 26 transcribed; source 3 dated 2024-07-13 (first archived copy)",
+    "Trump's promise page dated 2024-07-13 (first archived copy); 25 Trump promises imported, 7 to queue A",
+    "3 trial evidence packs cut and checked"
   ],
   "next": [
-    "Transcribe the missing pages; re-cut and re-vote the 10 trial claims under rules 0.8",
-    "Fable review: isolated Claude judge and the judge channel setting",
-    "Desk and site in a real browser; create Macron and Trump, import candidates",
-    "Before your first real confirmation: a way to upgrade the database once it holds publications",
-    "After production starts: Google and Mistral judges"
+    "Tighten the @ refusal + test a second guard; Codex judge file-read test (developers); smoke run in your terminal; Fable re-check",
+    "3 trial packs ready (Macron health record, Trump deportations, Iron Dome); votes after Fable passes",
+    "PDF tables need page images: your answer on pages 2/136 or poppler",
+    "You: queue A at the desk (48 Macron + 7 Trump items) once the desk is tested in a browser",
+    "Before automatic approval: protect vote files from hand-writing; judges' channel"
   ],
   "needs": [
+    {
+      "id": "s27-pages",
+      "t": "Look at two pages of one PDF (one minute)",
+      "d": "The 2026 social security budget law (Assemblée nationale, texte adopté n° 199) has 142 pages; pages 2 and 136 have no text, so the program cannot tell whether they are blank. I cannot render PDF pages on this machine without installing a tool. Option A: you open the file and tell me whether pages 2 and 136 are blank: https://www.assemblee-nationale.fr/dyn/17/textes/l17t0199_texte-adopte-provisoire.pdf . Option B: allow me to install poppler (free, open source PDF tools) so the program can render pages itself from now on.",
+      "options": [
+        "Both blank",
+        "Not blank (I'll say what's there)",
+        "Install poppler"
+      ],
+      "placeholder": "What you saw on pages 2 and 136"
+    },
+    {
+      "id": "judge-channel-safety",
+      "t": "Judges: subscriptions with guards, or the API? (Fable: if one moves, it should be OpenAI)",
+      "d": "Tested on your computer. Claude: two guards now block the file-reading hole (texts with @paths are refused, and the tool is forbidden to read files); Fable passed it. Codex: its model can read files by itself if a text persuades it; in the test it declined, and the program voids any vote whose run read a file, but that check is still being tightened. Codex on the subscription also cannot tell us which model actually answered; votes will say \"model requested, not confirmed\". The API has neither issue but costs money (about 0.10 USD per claim per judge). Recommendation: both on subscriptions with the guards until launch, since you confirm every verdict; before any automatic approval, move OpenAI (the weaker one) to the API.",
+      "options": [
+        "Subscriptions + guards until auto-approval",
+        "Move OpenAI to the API now",
+        "Both to the API now"
+      ],
+      "placeholder": "Anything to add"
+    },
     {
       "id": "note",
       "t": "Anything else to tell me",

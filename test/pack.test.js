@@ -15,10 +15,10 @@ import {
   JUDGE_SCHEMA, closeRound, judgeInputHeader, judgeInputText, loadJury, packJudgeRequest, principlesText, runPackVotes, tallyPack, voteFileName,
 } from '../src/jury.js';
 import {
-  MAX_PACK_TOKENS, boundaryProblems, checkCandidatesFile, checkPack, checkVote, locateSpan, packPromptVersion, sha256Of, sourceUnits, startPack, unitsListing,
+  MAX_PACK_TOKENS, boundaryProblems, judgeTextRefusals, checkCandidatesFile, checkPack, checkVote, locateSpan, packPromptVersion, sha256Of, sourceUnits, startPack, unitsListing,
 } from '../src/pack.js';
 import { sameSessionProblem } from '../src/rules.js';
-import { TEST_JURY, addClaim, addSource, freshDb } from './helpers.js';
+import { CODEX_EVENTS, TEST_JURY, addClaim, addSource, claudeInitLine, freshDb } from './helpers.js';
 
 /** The test jury with some members changed: jury({ gemini: { channel: 'api', model: 'gemini-x' } }). */
 const jury = (members = {}) => ({ ...TEST_JURY, members: { ...TEST_JURY.members, ...members } });
@@ -177,9 +177,11 @@ function voteFor(s, packSha256, over = {}) {
   return {
     kind: 'kanverify-vote', format: 1, claim: 'C1', pack_file: 'c1.pack.json', pack_sha256: packSha256,
     provider: 'anthropic', channel: 'subscription', via: 'claude-cli', model: 'claude-opus-5-5', promptVersion: JUDGE_VERSION,
-    system_sha256: SYSTEM_SHA256, verdict: 'partly_came_true', rules_applied: ['DL-2', 'EV-1', 'OC-2'],
+    system_sha256: SYSTEM_SHA256, judge_input_made: '2026-11-22', verdict: 'partly_came_true', rules_applied: ['DL-2', 'EV-1', 'OC-2'],
     evidence: [{ source_id: s.ids.law, excerpt: 'Trente minutes d’activité physique quotidienne sont généralisées', locator: '§2', pdf_page: null }],
-    reasoning: 'r', open_question_fr: null, open_question_en: null, summary_fr: 'f', summary_en: 'e', ...over,
+    reasoning: 'r', open_question_fr: null, open_question_en: null, summary_fr: 'f', summary_en: 'e',
+    made_by: { role: 'judge', tool: 'claude-cli', tool_version: '2.1.330', session: 'claude-cli-vote-test' },
+    raw: { tool: 'claude -p', num_turns: 1, subtype: 'success', permission_denials: [] }, ...over,
   };
 }
 
@@ -203,8 +205,11 @@ test('checkVote: date from the judge input, not the judge; system text bound; qu
   const checked = checkPack(s.db, s.pack, s.opts);
   const ctx = { packSha256: 'f'.repeat(64), promptVersion: JUDGE_VERSION, systemSha256: SYSTEM_SHA256, today: '2022-12-31' };
   // An invented created_at does not move the date: on the deadline day (2022-12-31) pending stands.
-  const pending = voteFor(s, ctx.packSha256, { verdict: 'pending', created_at: '2030-01-01T00:00:00Z' });
+  const pending = voteFor(s, ctx.packSha256, { verdict: 'pending', created_at: '2030-01-01T00:00:00Z', judge_input_made: '2022-12-31' });
   assert.deepEqual(checkVote(pending, s.pack, checked, ctx), []);
+  // Review 9 F3: a vote counts only against the date its own judge was shown (the judge input it was given).
+  assert.match(checkVote({ ...pending, judge_input_made: '2022-12-30' }, s.pack, checked, ctx).join(), /judge_input_made "2022-12-30" is not the date of the current judge input \(2022-12-31\)/);
+  assert.match(checkVote({ ...pending, judge_input_made: undefined }, s.pack, checked, ctx).join(), /judge_input_made null is not the date/);
   assert.match(checkVote(pending, s.pack, checked, { ...ctx, today: '2023-01-01' }).join(), /passed, but verdict is pending/);
   // pending without summaries: void for a judge (the prompt asks for them).
   assert.match(checkVote({ ...pending, summary_en: null }, s.pack, checked, ctx).join(), /summary missing/);
@@ -259,10 +264,11 @@ const STDERR = 'OpenAI Codex v0.171.0\n--------\nmodel: gpt-6.2-sol\nprovider: o
 function fakeRun(answer = ANSWER, { code = 0, stderr = STDERR } = {}) {
   const calls = [];
   const run = async (args, opts) => {
+    if (args[0] === '--version') return { code: 0, stdout: 'codex-cli 0.172.0\n', stderr: '' };
     const schemaAt = args.indexOf('--output-schema');
     calls.push({ args, ...opts, cwdFiles: readdirSync(opts.cwd), schema: schemaAt >= 0 ? JSON.parse(readFileSync(args[schemaAt + 1], 'utf8')) : null });
     if (code === 0) writeFileSync(args[args.indexOf('-o') + 1], answer);
-    return { code, stdout: '', stderr };
+    return { code, stdout: CODEX_EVENTS, stderr };
   };
   run.calls = calls;
   return run;
@@ -333,6 +339,10 @@ test('runPackVotes and tallyPack: Codex votes, Gemini without a key is skipped, 
   const codexVote = JSON.parse(readFileSync(voteFileName(packPath, 'openai', 'subscription'), 'utf8'));
   assert.equal(codexVote.model, 'gpt-6.2-sol');
   assert.equal(codexVote.cost_usd_estimate, 0);
+  // The Codex vote records the tool's version, whether it named the model, and the run facts checked.
+  assert.deepEqual(codexVote.made_by, { role: 'judge', tool: 'codex-cli', tool_version: '0.172.0' });
+  assert.equal(codexVote.model_reported, true);
+  assert.deepEqual(codexVote.raw.run.item_types, ['agent_message', 'reasoning']);
 
   // The Claude subscription vote is a file written by a fresh agent; the program checks it.
   writeFileSync(voteFileName(packPath, 'anthropic', 'subscription'), JSON.stringify(voteFor(s, packSha256, { created_at: new Date().toISOString() })));
@@ -368,7 +378,7 @@ test('runPackVotes: the Claude command-line judge gets the same text as Codex an
   const claudeRun = async (args, opts) => {
     if (args[0] === '--version') return { code: 0, stdout: '2.1.330 (Claude Code)\n', stderr: '' };
     claudeCalls.push({ args, cwdFiles: readdirSync(opts.cwd), system: args[args.indexOf('--system-prompt') + 1], input: opts.input });
-    return { code: 0, stderr: '', stdout: JSON.stringify({
+    return { code: 0, stderr: '', stdout: `${claudeInitLine(opts.cwd)}\n` + JSON.stringify({
       type: 'result', subtype: 'success', is_error: false, result: answer, session_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
       num_turns: 1, permission_denials: [], usage: { input_tokens: 10, output_tokens: 5 }, modelUsage: { 'claude-opus-5-5': {} },
     }) };
@@ -397,13 +407,18 @@ ${req.prompt}`);
   assert.deepEqual(vote, {
     kind: 'kanverify-vote', format: 1, claim: 'C1', pack_file: 'c1.pack.json', pack_sha256: packSha256,
     provider: 'anthropic', channel: 'subscription', via: 'claude-cli',
-    model: 'claude-opus-5-5', model_requested: 'claude-opus-5-5', promptVersion: JUDGE_VERSION, system_sha256: SYSTEM_SHA256,
-    created_at: NOW.toISOString(), ...JSON.parse(answer),
+    model: 'claude-opus-5-5', model_requested: 'claude-opus-5-5', model_reported: true, promptVersion: JUDGE_VERSION, system_sha256: SYSTEM_SHA256,
+    judge_input_made: '2026-11-22', created_at: NOW.toISOString(), ...JSON.parse(answer),
     usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 }, cost_usd_estimate: 0,
     made_by: { role: 'judge', tool: 'claude-cli', tool_version: '2.1.330', session: 'claude-cli-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee' },
     raw: {
-      tool: 'claude -p', cli_version: '2.1.330', system_prefix: "You are a Claude agent, built on Anthropic's Claude Agent SDK.", effort: 'high', model: 'claude-opus-5-5', models_used: ['claude-opus-5-5'],
-      session_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', subtype: 'success', num_turns: 1, permission_denials: [],
+      tool: 'claude -p', deny_read: true, cli_version: '2.1.330', cli_verified: '2026-11-23', system_prefix: "You are a Claude agent, built on Anthropic's Claude Agent SDK.",
+      effort: 'high', model: 'claude-opus-5-5', models_used: ['claude-opus-5-5'],
+      session_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', subtype: 'success', num_turns: 1, permission_denials: [], input_tokens_all: 10,
+      init: {
+        tools: [], mcp_servers: [], skills: [], slash_commands: [], plugins: ['cc-plugin-agents-md', 'cc-plugin-privacy', 'cc-plugin-plugin-authoring'],
+        api_key_source: 'none', permission_mode: 'dontAsk', cwd_checked: true, fields: Object.keys(JSON.parse(claudeInitLine('x'))).sort(),
+      },
     },
   });
   assert.equal(vote.system_sha256, codexVote.system_sha256);
@@ -414,9 +429,10 @@ ${req.prompt}`);
   assert.ok(s.pack.header.session && vote.made_by.session !== s.pack.header.session);
 
   // F6: a re-vote first moves the earlier vote aside, so a failed call cannot leave it counting.
+  // A later day, so the earlier vote is not current (the same day it would be kept: review 9 R2).
   const failing = async (args) => (args[0] === '--version' ? { code: 0, stdout: '2.1.330' } : { code: 1, stdout: '', stderr: 'usage limit reached' });
   const again = await runPackVotes(s.db, packPath, {
-    jury: jury({ openai: { channel: 'off', model: null } }), today: '2026-11-22', checkOptions: s.opts,
+    jury: jury({ openai: { channel: 'off', model: null } }), today: '2026-11-23', checkOptions: s.opts,
     askOptions: { adapters: { claude: createClaudeAdapter({ run: failing }) }, env: {} },
   });
   const claudeOutcome = again.find((o) => o.provider === 'anthropic');
@@ -424,9 +440,41 @@ ${req.prompt}`);
   assert.match(claudeOutcome.superseded, /^c1\.superseded-\d{8}T\d{6}-\d+\.vote-anthropic-subscription\.json$/);
   assert.equal(existsSync(voteFileName(packPath, 'anthropic', 'subscription')), false);
   assert.deepEqual(JSON.parse(readFileSync(join(s.packDir, claudeOutcome.superseded), 'utf8')), vote);
-  // The moved file is not read as a vote: only Codex's counts now.
+  // The moved file is not read as a vote: only Codex's is there now.
   const after = tallyPack(s.db, packPath, { checkOptions: s.opts, jury: TEST_JURY });
   assert.deepEqual(after.votes.map((v) => v.file), ['c1.vote-openai-subscription.json']);
+  // Review 9 F3: Codex did not vote again (off this time); its vote was made on the judge input of
+  // 2026-11-22, and checked against the new one (2026-11-23) it does not count.
+  assert.equal(after.votes[0].valid, false);
+  assert.match(after.votes[0].problems.join(), /judge_input_made "2026-11-22" is not the date of the current judge input \(2026-11-23\)/);
+});
+
+test('runPackVotes (review 9 R2): a member with a valid vote on this pack, prompt and judge-input date is not asked again', async (t) => {
+  const s = setup(t);
+  const { packPath, answer } = packFile(s);
+  const codexRun = fakeRun(answer);
+  const apiCalls = [];
+  // The Anthropic member on the API, so this test does not depend on the command-line adapter's internals.
+  const anthropicApi = { name: 'anthropic', keyVar: 'ANTHROPIC_API_KEY', documentTypes: [], async call(req) { apiCalls.push(req); return { text: answer, modelVersion: req.model, usage: { inputTokens: 1, outputTokens: 1 } }; } };
+  const settings = jury({ anthropic: { channel: 'api', model: 'claude-api-model' } });
+  const run = (today) => runPackVotes(s.db, packPath, {
+    jury: settings, today, checkOptions: s.opts, askOptions: { adapters: { codex: createCodexAdapter({ run: codexRun }), anthropic: anthropicApi }, env: { ANTHROPIC_API_KEY: 'k' } },
+  });
+  await run('2026-11-22');
+  const first = readFileSync(voteFileName(packPath, 'anthropic', 'api'), 'utf8');
+  const again = await run('2026-11-22');
+  assert.deepEqual(again.slice(0, 2).map((o) => o.skipped), Array(2).fill('already has a valid vote on this pack, prompt and judge input of 2026-11-22'));
+  assert.deepEqual([codexRun.calls.length, apiCalls.length], [1, 1], 'nobody asked twice');
+  assert.equal(readFileSync(voteFileName(packPath, 'anthropic', 'api'), 'utf8'), first, 'the vote is kept, not moved aside');
+  assert.deepEqual(readdirSync(s.packDir).filter((f) => f.includes('.superseded-')), []);
+  // An invalid earlier vote (here: quoting outside the pack) is asked again.
+  writeFileSync(voteFileName(packPath, 'anthropic', 'api'), JSON.stringify({ ...JSON.parse(first), evidence: [{ source_id: s.ids.law, excerpt: 'Article 2. Fin.', locator: '§3', pdf_page: null }] }));
+  await run('2026-11-22');
+  assert.equal(apiCalls.length, 2);
+  // Another day: a new judge input, so both are asked again, each with that date.
+  await run('2026-11-24');
+  assert.deepEqual([codexRun.calls.length, apiCalls.length], [2, 3]);
+  assert.equal(JSON.parse(readFileSync(voteFileName(packPath, 'openai', 'subscription'), 'utf8')).judge_input_made, '2026-11-24');
 });
 
 test('runPackVotes: a pack that fails its checks is never sent to a judge', async (t) => {
@@ -451,10 +499,10 @@ function fakeApi(name, keyVar, answer) {
 /** A Claude command-line run that records its calls and answers. */
 function fakeClaudeRun(answer) {
   const calls = [];
-  const run = async (args) => {
+  const run = async (args, opts) => {
     if (args[0] === '--version') return { code: 0, stdout: '2.1.330 (Claude Code)\n', stderr: '' };
     calls.push(args);
-    return { code: 0, stderr: '', stdout: JSON.stringify({
+    return { code: 0, stderr: '', stdout: `${claudeInitLine(opts.cwd)}\n` + JSON.stringify({
       type: 'result', subtype: 'success', is_error: false, result: answer, session_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
       num_turns: 1, permission_denials: [], usage: { input_tokens: 10, output_tokens: 5 }, modelUsage: { 'claude-opus-5-5': {} },
     }) };
@@ -595,6 +643,60 @@ test('jury settings: tally, closeRound and the desk accept the same votes: no al
   assert.match(closeRound(packPath, { jury: TEST_JURY }).problem, /no vote on this pack yet from anthropic/);
   write('anthropic-subscription', { provider: 'anthropic', channel: 'subscription', via: 'claude-cli' });
   assert.equal(closeRound(packPath, { jury: TEST_JURY }).closed.votes.length, 2);
+});
+
+test('review 9 F2d: the pack check names the part of a pack the Claude command-line judge would refuse', (t) => {
+  const s = setup(t);
+  assert.deepEqual(judgeTextRefusals(s.pack), []);
+  const p = clone(s.pack);
+  p.excerpts[1].text = 'Voir @~/.env pour le détail.';
+  p.sources[0].title = 'Rapport @../../secret';
+  const found = judgeTextRefusals(p);
+  assert.equal(found.length, 2);
+  assert.match(found.join(' | '), new RegExp(`source ${p.sources[0].source_id}: an @ file mention`));
+  assert.match(found.join(' | '), /excerpt 2: an @ file mention.*would refuse the whole pack/);
+  // A handle is not a path, and is not reported.
+  p.excerpts[1].text = 'Selon @ElyseeFR, la mesure est appliquée.';
+  p.sources[0].title = s.pack.sources[0].title;
+  assert.deepEqual(judgeTextRefusals(p), []);
+});
+
+test('review 9 F9: fewer than two members on: no tally, no round', (t) => {
+  const s = setup(t);
+  const { packPath } = packFile(s);
+  const one = jury({ openai: { channel: 'off', model: null } });
+  const none = jury({ openai: { channel: 'off', model: null }, anthropic: { channel: 'off', model: null } });
+  for (const settings of [one, none]) {
+    assert.throws(() => tallyPack(s.db, packPath, { checkOptions: s.opts, jury: settings }), /member\(s\) on; votes are compared and rounds closed only with at least two/);
+    assert.throws(() => closeRound(packPath, { jury: settings }), /at least two/);
+  }
+  assert.equal(existsSync(join(s.packDir, 'c1.rounds.jsonl')), false, 'no round line written');
+});
+
+test('review 9 F6: a Claude command-line vote file must still show the run facts the adapter checked', (t) => {
+  const s = setup(t);
+  const { packPath } = packFile(s);
+  const packSha256 = sha256Of(readFileSync(packPath));
+  writeFileSync(join(s.packDir, 'c1.judge-input.md'), judgeInputText(s.pack, packSha256, '2026-11-22'));
+  const file = voteFileName(packPath, 'anthropic', 'subscription');
+  const problemsOf = (over) => {
+    const v = voteFor(s, packSha256, { created_at: new Date().toISOString() });
+    writeFileSync(file, JSON.stringify({ ...v, made_by: { ...v.made_by, ...over.made_by }, raw: { ...v.raw, ...over.raw } }));
+    const found = tallyPack(s.db, packPath, { checkOptions: s.opts, jury: TEST_JURY }).votes.find((x) => x.provider === 'anthropic');
+    return found.valid ? 'valid' : found.problems.join('; ');
+  };
+  assert.equal(problemsOf({}), 'valid');
+  assert.match(problemsOf({ made_by: { tool: 'claude-code' } }), /must name made_by\.tool claude-cli/);
+  assert.match(problemsOf({ made_by: { tool_version: ' ' } }), /must name the tool version/);
+  assert.match(problemsOf({ made_by: { session: undefined } }), /must name the session its run reported/);
+  assert.match(problemsOf({ made_by: { session: 'some-session' } }), /must name the session its run reported/);
+  assert.match(problemsOf({ raw: { num_turns: 2 } }), /exactly one turn/);
+  assert.match(problemsOf({ raw: { subtype: 'error_max_turns' } }), /a successful run/);
+  assert.match(problemsOf({ raw: { permission_denials: [{ tool_name: 'Read' }] } }), /no permission denials/);
+  const v = voteFor(s, packSha256, { created_at: new Date().toISOString() });
+  delete v.raw;
+  writeFileSync(file, JSON.stringify(v));
+  assert.equal(tallyPack(s.db, packPath, { checkOptions: s.opts, jury: TEST_JURY }).votes.find((x) => x.provider === 'anthropic').valid, false, 'no raw at all');
 });
 
 test('jury settings: the file in the repository loads, and a typo is an error, not a default', () => {

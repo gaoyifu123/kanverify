@@ -25,6 +25,7 @@ import { isDeepStrictEqual, parseArgs } from 'node:util';
 import { DEFAULT_EVIDENCE_DIR, evidencePath } from './archive.js';
 import { openDatabase } from './db.js';
 import { candidateProblems, checkVerbatim, htmlToParagraphs, loadPrompt, normalizeForMatch } from './extract.js';
+import { textRefusal } from './ai/index.js';
 import { isLegifranceSource, legifranceToUnits } from './legifrance.js';
 import {
   REVERSAL_TYPES, deadlineProblem, filled, futureEvidence, renunciationAdmitted, renunciationProblems, renunciationRefusal,
@@ -448,6 +449,23 @@ export function judgeView(pack) {
   };
 }
 
+/**
+ * The parts of what judges see that the Claude command-line judge would refuse to send (an @ file
+ * mention; review 9 F2d), so the cutter finds them at the pack check, not at vote time. Each part is
+ * checked as written and as it goes into the prompt (JSON). Not a pack problem: the other judges and
+ * the Claude API judge can take it.
+ */
+export function judgeTextRefusals(pack) {
+  const view = judgeView(pack);
+  const parts = [['the claim', view.claim], ...view.sources.map((s) => [`source ${s.source_id}`, s]), ...view.excerpts.map((e) => [`excerpt ${e.n}`, e])];
+  const out = [];
+  for (const [where, value] of parts) {
+    const why = textRefusal('claude', JSON.stringify(value)) ?? Object.values(value).map((v) => (typeof v === 'string' ? textRefusal('claude', v) : null)).find(Boolean);
+    if (why) out.push(`${where}: ${why}; the Claude command-line judge would refuse the whole pack, so cut or quote it differently`);
+  }
+  return out;
+}
+
 const sortedNums = (set) => [...set].sort((a, b) => a - b);
 
 /**
@@ -795,6 +813,9 @@ export function checkVote(vote, pack, checked, { packSha256, promptVersion, syst
     date = localDateOf(vote.created_at);
   } else if (typeof date !== 'string' || !DATE_RE.test(date)) {
     return [...problems, 'the date of the judge input is not known'];
+  } else if (vote?.judge_input_made !== date) {
+    // Fable review 9 F3: a vote is checked against the date its own judge was shown, never a later judge input's.
+    problems.push(`judge_input_made ${JSON.stringify(vote?.judge_input_made ?? null)} is not the date of the current judge input (${date}): this judge was shown another date; vote again`);
   }
   if (checked.problems.length > 0) problems.push('the pack itself does not pass its checks');
   // voteProblems asks for summaries for every verdict but pending; a judge owes them for pending too.
@@ -883,6 +904,7 @@ async function main(argv) {
     const checked = checkPack(db, readJson(file));
     for (const p of checked.problems) console.log(p);
     for (const f of checked.flags) console.log(`flag (shown at the desk): excerpt ${f.excerpt} ${f.flag}`);
+    for (const r of judgeTextRefusals(readJson(file))) console.log(`judge would refuse: ${r}`);
     for (const c of checked.coverage) {
       console.log(`coverage, source ${c.source_id}${c.cited ? '' : ' (not used)'}: ${c.excerpted.length} of ${c.units} units excerpted, ${c.read_not_excerpted} declared read and not excerpted, ${c.not_read.length} not read, ${c.not_transcribed.length} not transcribed`);
     }

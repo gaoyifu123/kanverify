@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ask } from '../src/ai/index.js';
 import { createCodexAdapter } from '../src/ai/codex-cli.js';
+import { CODEX_EVENTS } from './helpers.js';
 import { createFakeAdapter } from '../src/ai/fake.js';
 import { findSecret, secretValues } from '../src/ai/secrets.js';
 
@@ -78,8 +79,9 @@ test('ask refuses a Codex reply that quotes a secret (the adapter path F3 was ab
   const root = mkdtempSync(join(tmpdir(), 'kv-codex-root-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const run = async (args) => {
+    if (args[0] === '--version') return { code: 0, stdout: 'codex-cli 0.172.0\n', stderr: '' };
     writeFileSync(args[args.indexOf('-o') + 1], JSON.stringify({ verdict: 'came_true', reasoning: `token: ${JWT}` }));
-    return { code: 0, stdout: '', stderr: 'model: gpt-x\n' };
+    return { code: 0, stdout: CODEX_EVENTS, stderr: 'model: gpt-x\n' };
   };
   await assert.rejects(
     ask({ ...REQ, provider: 'codex', model: 'gpt-x' }, { env: {}, adapters: { codex: createCodexAdapter({ run, tmpRoot: root }) } }),
