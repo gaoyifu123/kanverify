@@ -539,12 +539,13 @@ export function juryVoteProblems(vote, file, stem) {
   }
   if (file !== `${stem}.vote-${provider}-${channel}.json`) problems.push('file name does not match provider and channel');
   if (via === 'claude-cli') problems.push(...claudeRunProblems(vote));
+  if (via === 'codex-cli') problems.push(...codexRunProblems(vote));
   return problems;
 }
 
 /**
  * Fable review 9 F6: the facts the Claude adapter checked when it ran, checked again whenever the vote
- * file is read. (Codex votes record no run facts to re-check.)
+ * file is read. codexRunProblems does the same for Codex votes.
  */
 function claudeRunProblems(vote) {
   const made = vote.made_by ?? {};
@@ -557,6 +558,24 @@ function claudeRunProblems(vote) {
   if (raw.num_turns !== 1) problems.push('a claude-cli vote must record exactly one turn (raw.num_turns)');
   if (raw.subtype !== 'success') problems.push('a claude-cli vote must record a successful run (raw.subtype)');
   if (!Array.isArray(raw.permission_denials) || raw.permission_denials.length > 0) problems.push('a claude-cli vote must record no permission denials (raw.permission_denials)');
+  return problems;
+}
+
+/**
+ * Fable review 9, re-check 3: the facts the Codex adapter checked when it ran (src/ai/codex-cli.js
+ * codexRunFacts), checked again whenever the vote file is read. Codex votes made before these facts
+ * were recorded (in the coordinator's sandbox) fail here and must be made again.
+ */
+function codexRunProblems(vote) {
+  const made = vote.made_by ?? {};
+  const run = vote.raw?.run ?? {};
+  const problems = [];
+  if (made.tool !== 'codex-cli') problems.push('a codex-cli vote must name made_by.tool codex-cli');
+  if (!(typeof made.tool_version === 'string' && made.tool_version.trim())) problems.push('a codex-cli vote must name the tool version (made_by.tool_version)');
+  const items = Array.isArray(run.items) ? run.items : null;
+  if (!items) problems.push('a codex-cli vote must record the items of its run (raw.run.items)');
+  else if (items.filter((i) => i?.type === 'agent_message').length !== 1) problems.push('a codex-cli vote must record exactly one answer message (raw.run.items)');
+  else if (items.some((i) => !['agent_message', 'reasoning', 'error'].includes(i?.type))) problems.push('a codex-cli vote must record nothing but its answer, reasoning and notices (raw.run.items)');
   return problems;
 }
 

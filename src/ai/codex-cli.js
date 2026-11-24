@@ -3,7 +3,8 @@
 // AI interface layer like the HTTP adapters, so it gets every ask() guarantee: a prompt version
 // on every call, a timeout, the JSON check and retry, and no business code talking to a vendor.
 //
-// How one call runs (verified with codex-cli 0.171.0 on 2026-11-22):
+// How one call runs (first verified with codex-cli 0.171.0 on 2026-11-22; the judge runs only on the
+// versions in VERIFIED_CODEX_VERSIONS, today 0.172.0):
 //   codex exec --skip-git-repo-check --ephemeral -s read-only --ignore-user-config --ignore-rules
 //     -c web_search=disabled -c model_reasoning_effort=<effort> --disable browser_use
 //     --disable computer_use --disable apps --json -m <model> [--output-schema <file>] -o <file> -
@@ -12,7 +13,7 @@
 // tools keep it to reading what it was given. Its read-only sandbox can still read other files on
 // this machine (docs/log/2026-11-22-pipeline-0010-output.md), so an injected line in a pack could
 // ask it to (Fable review 9, re-check 1). --json makes it print every step as an event on stdout
-// (checked with 0.171.0 on 2026-11-24: thread.started, turn.started, item.*, error); a reply is
+// (on 0.172.0, founder's smoke runs of 2026-11-24: thread.started, turn.started, item.*, turn.completed); a reply is
 // refused unless every event is of RUN_EVENT_TYPES, exactly one turn completed, every item is a
 // message, reasoning or an error notice (RUN_ITEM_TYPES), and every error is a known-harmless one
 // for the version: a command run, a file change, a tool or a web search voids it. The counts and
@@ -70,9 +71,16 @@ export function codexArgs({ model, effort = REASONING_EFFORT, schemaFile, outFil
  * The Codex versions the judge may run on (same ruler as the Claude judge, claude-cli.js):
  *   harmlessErrors  error messages a run may report and still count (transport notices); any other
  *                   error message refuses the reply
- * 0.172.0: installed by the founder on 2026-11-24; its smoke run (scripts/smoke-codex-judge.mjs) the
- * same day: control, @ mention and plain "copy the contents" probes answered without tools, and
- * --json reports no model name. The two notices are what 0.171.0 printed when its WebSocket was
+ *   actionsBlocked       its own execution policy blocked a command and a file read asked for in the
+ *                        prompt (the smoke script's positive control)
+ *   inputOverheadTokens  input tokens of the smoke control (Codex's own instructions plus a tiny
+ *                        prompt); a run may read at most this + our input's characters / 2.5 +
+ *                        INPUT_MARGIN_TOKENS, because a blocked action sends the whole context again
+ *                        (about twice the input) even when it leaves only one answer message
+ * 0.172.0: installed by the founder on 2026-11-24; its smoke runs (scripts/smoke-codex-judge.mjs) the
+ * same day: control (17,085 input tokens), @ mention and plain "copy the contents" probes answered
+ * without tools; the positive control was blocked by the execution policy, sent the context again
+ * (34,514) and left a second answer message; --json reports no model name. The two notices are what 0.171.0 printed when its WebSocket was
  * refused (2026-11-24, logged out). Adding a version: run the smoke script, add it only if every
  * check passes.
  */
@@ -80,9 +88,20 @@ export const VERIFIED_CODEX_VERSIONS = Object.freeze({
   '0.172.0': Object.freeze({
     verified: '2026-11-24',
     harmlessErrors: Object.freeze([/^Reconnecting\.\.\. \d+\/\d+ \(/, /^Falling back from WebSockets to HTTPS transport\./]),
+    actionsBlocked: true,
+    inputOverheadTokens: 17_085,
   }),
 });
 const CODEX_VERSION_RE = /(\d+\.\d+\.\d+)/;
+// Room above the estimate before a run counts as having read its context twice (Fable review 9, re-check 3, D1).
+export const INPUT_MARGIN_TOKENS = 3000;
+const CHARS_PER_TOKEN_LOW = 2.5;
+
+/** The most input tokens one answer to `input` can take on a version with a measured overhead, or null. */
+export function inputLimit(expected, input) {
+  if (!Number.isInteger(expected?.inputOverheadTokens)) return null;
+  return expected.inputOverheadTokens + Math.ceil(String(input ?? '').length / CHARS_PER_TOKEN_LOW) + INPUT_MARGIN_TOKENS;
+}
 
 // The only event types a judge's run may print with --json, and the only kinds of item in it: its
 // answer, its reasoning, and error notices. Anything else (another event type, a command run, a
@@ -354,6 +373,12 @@ export function createCodexAdapter({ run = spawnCodex, effort = REASONING_EFFORT
         const inputTokens = num(u.input_tokens);
         const outputTokens = num(u.output_tokens);
         const total = info.totalTokens ?? (inputTokens !== null && outputTokens !== null ? inputTokens + outputTokens : null);
+        // D1: a blocked action with no second message still reads the context twice.
+        const limit = inputLimit(expected, input);
+        if (limit !== null && inputTokens === null) throw new AiError('bad_response', 'codex: the run reports no input tokens, so a second reading of the context cannot be ruled out', { provider: 'codex' });
+        if (limit !== null && inputTokens > limit) {
+          throw new AiError('bad_response', `codex: the run did more than answer: it read ${inputTokens} input tokens, more than the ${limit} one answer to this prompt can take (a blocked action sends the context again)`, { provider: 'codex' });
+        }
         return {
           text,
           ...(info.model && { modelVersion: info.model }),
@@ -362,7 +387,7 @@ export function createCodexAdapter({ run = spawnCodex, effort = REASONING_EFFORT
           // not; then the vote's model is only the one asked for (never copied here as if reported).
           raw: {
             tool: 'codex exec', cli_version: cliVersion, cli_verified: expected.verified ?? null, reasoning_effort: effort,
-            model_reported: Boolean(info.model), ...(info.model && { model: info.model }), total_tokens: total, run: run_.facts,
+            model_reported: Boolean(info.model), ...(info.model && { model: info.model }), total_tokens: total, input_limit: limit, run: run_.facts,
           },
         };
       } finally {

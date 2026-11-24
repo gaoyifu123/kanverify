@@ -18,7 +18,7 @@ import {
   MAX_PACK_TOKENS, boundaryProblems, judgeTextRefusals, checkCandidatesFile, checkPack, checkVote, locateSpan, packPromptVersion, sha256Of, sourceUnits, startPack, unitsListing,
 } from '../src/pack.js';
 import { sameSessionProblem } from '../src/rules.js';
-import { CODEX_EVENTS, TEST_JURY, addClaim, addSource, claudeInitLine, freshDb } from './helpers.js';
+import { CODEX_EVENTS, CODEX_VOTE_FACTS, TEST_JURY, codexOutFile, addClaim, addSource, claudeInitLine, freshDb } from './helpers.js';
 
 /** The test jury with some members changed: jury({ gemini: { channel: 'api', model: 'gemini-x' } }). */
 const jury = (members = {}) => ({ ...TEST_JURY, members: { ...TEST_JURY.members, ...members } });
@@ -267,7 +267,7 @@ function fakeRun(answer = ANSWER, { code = 0, stderr = STDERR } = {}) {
     if (args[0] === '--version') return { code: 0, stdout: 'codex-cli 0.172.0\n', stderr: '' };
     const schemaAt = args.indexOf('--output-schema');
     calls.push({ args, ...opts, cwdFiles: readdirSync(opts.cwd), schema: schemaAt >= 0 ? JSON.parse(readFileSync(args[schemaAt + 1], 'utf8')) : null });
-    if (code === 0) writeFileSync(args[args.indexOf('-o') + 1], answer);
+    if (code === 0) writeFileSync(codexOutFile(args), answer);
     return { code, stdout: CODEX_EVENTS, stderr };
   };
   run.calls = calls;
@@ -627,7 +627,7 @@ test('jury settings: tally, closeRound and the desk accept the same votes: no al
   write('codex-subscription', { provider: 'codex', channel: 'subscription', via: 'codex-cli' });
   write('google-api', { provider: 'google', channel: 'api', via: 'api' });
   write('anthropic-subscription', { provider: 'anthropic', channel: 'subscription', via: 'api' });
-  write('openai-subscription', { provider: 'openai', channel: 'subscription', via: 'codex-cli' });
+  write('openai-subscription', { provider: 'openai', channel: 'subscription', via: 'codex-cli', ...CODEX_VOTE_FACTS });
   const result = tallyPack(s.db, packPath, { checkOptions: s.opts, jury: TEST_JURY });
   const problems = Object.fromEntries(result.votes.map((v) => [v.file, v.valid ? 'valid' : v.problems.join('; ')]));
   assert.match(problems['c1.vote-codex-subscription.json'], /not a vote of a jury member: provider "codex"/);
@@ -643,6 +643,18 @@ test('jury settings: tally, closeRound and the desk accept the same votes: no al
   assert.match(closeRound(packPath, { jury: TEST_JURY }).problem, /no vote on this pack yet from anthropic/);
   write('anthropic-subscription', { provider: 'anthropic', channel: 'subscription', via: 'claude-cli' });
   assert.equal(closeRound(packPath, { jury: TEST_JURY }).closed.votes.length, 2);
+  // Re-check 3: a Codex vote's run facts are checked again when the file is read.
+  const codexProblems = (over) => {
+    write('openai-subscription', { provider: 'openai', channel: 'subscription', via: 'codex-cli', ...over });
+    return tallyPack(s.db, packPath, { checkOptions: s.opts, jury: TEST_JURY }).votes.find((v) => v.file === 'c1.vote-openai-subscription.json').problems.join('; ');
+  };
+  assert.match(codexProblems({}), /must name made_by\.tool codex-cli.*must record the items of its run/);
+  assert.match(codexProblems({ made_by: { role: 'judge', tool: 'codex-cli' } }), /must name the tool version/);
+  const twoAnswers = { ...CODEX_VOTE_FACTS, raw: { run: { items: [{ type: 'agent_message', length: 20 }, { type: 'agent_message', length: 400 }] } } };
+  assert.match(codexProblems(twoAnswers), /exactly one answer message/);
+  const ranCommand = { ...CODEX_VOTE_FACTS, raw: { run: { items: [{ type: 'command_execution', length: null }, { type: 'agent_message', length: 400 }] } } };
+  assert.match(codexProblems(ranCommand), /nothing but its answer, reasoning and notices/);
+  assert.equal(codexProblems(CODEX_VOTE_FACTS), '');
 });
 
 test('review 9 F2d: the pack check names the part of a pack the Claude command-line judge would refuse', (t) => {

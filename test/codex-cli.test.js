@@ -3,6 +3,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { codexOutFile } from './helpers.js';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
@@ -222,7 +223,7 @@ test('Codex run events (Fable review 9, re-check 1): a reply counts only if the 
   const root = tempRoot(t, 'kv-codex-root-');
   const runWith = (stdout) => async (args) => {
     if (args[0] === '--version') return { code: 0, stdout: 'codex-cli 0.172.0\n', stderr: '' };
-    writeFileSync(args[args.indexOf('-o') + 1], '{"ok": true}');
+    writeFileSync(codexOutFile(args), '{"ok": true}');
     return { code: 0, stdout, stderr: 'model: gpt-x\n' };
   };
   const { ask } = await import('../src/ai/index.js');
@@ -236,7 +237,7 @@ test('Codex run events (Fable review 9, re-check 1): a reply counts only if the 
   assert.equal(r.raw.cli_version, '0.172.0');
   assert.equal(r.raw.model_reported, true, 'this fake prints a model line on stderr');
   const silent = async (args) => (args[0] === '--version' ? { code: 0, stdout: 'codex-cli 0.172.0' }
-    : (writeFileSync(args[args.indexOf('-o') + 1], '{"ok": true}'), { code: 0, stdout: ev(item('agent_message'), done), stderr: '' }));
+    : (writeFileSync(codexOutFile(args), '{"ok": true}'), { code: 0, stdout: ev(item('agent_message'), done), stderr: '' }));
   const quiet = await ask(req, { env: {}, adapters: { codex: createCodexAdapter({ run: silent, tmpRoot: root }) } });
   assert.equal(quiet.raw.model_reported, false);
   assert.ok(!('model' in quiet.raw) && quiet.modelVersion === undefined);
@@ -270,4 +271,36 @@ test('finding codex: PATH under any case and in quotes; the script named by a co
   // A shim naming a script that is not there finds nothing.
   writeFileSync(join(b, 'codex.cmd'), '"%dp0%\\nowhere\\codex.js" %*');
   assert.equal(findCodexScript({ PATH: b }), null);
+});
+
+test('Codex D1 (re-check 3): a run that read more input than one answer can take is refused, even with one answer message', async (t) => {
+  const { inputLimit, INPUT_MARGIN_TOKENS, VERIFIED_CODEX_VERSIONS } = await import('../src/ai/codex-cli.js');
+  const { ask } = await import('../src/ai/index.js');
+  const entry = VERIFIED_CODEX_VERSIONS['0.172.0'];
+  assert.equal(entry.actionsBlocked, true);
+  assert.equal(entry.inputOverheadTokens, 17_085);
+  assert.equal(inputLimit(entry, 'x'.repeat(1000)), 17_085 + 400 + INPUT_MARGIN_TOKENS);
+  assert.equal(inputLimit({ verified: null }, 'x'), null, 'candidate mode: no limit until measured');
+  const root = tempRoot(t, 'kv-codex-root-');
+  const runWithTokens = (usage) => async (args) => {
+    if (args[0] === '--version') return { code: 0, stdout: 'codex-cli 0.172.0' };
+    writeFileSync(codexOutFile(args), '{"ok": true}');
+    const lines = [{ type: 'thread.started' }, { type: 'turn.started' }, { type: 'item.completed', item: { id: 'a', type: 'agent_message', text: '{}' } },
+      { type: 'turn.completed', ...(usage && { usage }) }];
+    return { code: 0, stdout: lines.map((e) => JSON.stringify(e)).join('\n'), stderr: '' };
+  };
+  const req = { provider: 'codex', model: 'gpt-x', promptVersion: 'v', system: 'S', prompt: 'Answer in JSON.', json: true };
+  const limit = inputLimit(entry, 'S\n\n---\n\nAnswer in JSON.');
+  const opts = (usage) => ({ env: {}, adapters: { codex: createCodexAdapter({ run: runWithTokens(usage), tmpRoot: root }) } });
+  // The founder's positive control read 34,514 tokens for a tiny prompt: refused.
+  await assert.rejects(ask(req, opts({ input_tokens: 34_514, output_tokens: 50 })),
+    (e) => e.code === 'bad_response' && new RegExp(`did more than answer: it read 34514 input tokens, more than the ${limit}`).test(e.message));
+  await assert.rejects(ask(req, opts(null)), (e) => /reports no input tokens/.test(e.message));
+  const ok = await ask(req, opts({ input_tokens: 17_085, output_tokens: 50 }));
+  assert.equal(ok.raw.input_limit, limit);
+});
+
+test('fake codex runs never write into the folder the tests run from', () => {
+  assert.throws(() => codexOutFile(['--version']), /no -o/);
+  assert.equal(codexOutFile(['exec', '-o', 'answer.txt', '-']), 'answer.txt');
 });

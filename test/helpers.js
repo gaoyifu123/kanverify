@@ -193,3 +193,20 @@ export const CODEX_EVENTS = [
   { type: 'item.completed', item: { id: 'item_1', type: 'agent_message', text: '{}' } },
   { type: 'turn.completed', usage: { input_tokens: 900, cached_input_tokens: 0, output_tokens: 100 } },
 ].map((e) => JSON.stringify(e)).join('\n');
+
+/** What a Codex command-line vote records about its run (src/jury.js re-checks it when the file is read). */
+export const CODEX_VOTE_FACTS = Object.freeze({
+  made_by: { role: 'judge', tool: 'codex-cli', tool_version: '0.172.0' },
+  raw: { tool: 'codex exec', cli_version: '0.172.0', model_reported: false, run: { items: [{ type: 'reasoning', length: 10 }, { type: 'agent_message', length: 400 }] } },
+});
+
+/**
+ * The answer file a fake codex run writes to: the argument after -o. Throws when there is none (a call
+ * such as --version), so a fake can never write a file named after another argument into the folder
+ * the tests run from (a stray "--version" file appeared in the project root on 2026-11-24 that way).
+ */
+export function codexOutFile(args) {
+  const at = args.indexOf('-o');
+  if (at < 0 || typeof args[at + 1] !== 'string') throw new Error(`fake codex: no -o in ${JSON.stringify(args)}`);
+  return args[at + 1];
+}

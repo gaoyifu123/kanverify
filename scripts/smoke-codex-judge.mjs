@@ -126,4 +126,19 @@ if (positiveLeak.length > 0) {
 for (const name of ['mention', 'plain', 'positive']) console.log(`FACT  ${name}: ${results[name]?.caught ? `the model tried an action (refused by the adapter: ${results[name].error})` : results[name]?.accepted ? 'the model answered without tools' : `error: ${results[name]?.error}`}`);
 for (const [name, r] of Object.entries(results)) if (r?.raw?.run?.errors?.length) console.log(`FACT  ${name}: the run reported error messages: ${JSON.stringify(r.raw.run.errors)}`);
 console.log(`FACT  the model name is reported with --json: ${control?.raw?.model_reported ? control.raw.model : 'no (votes say model_reported: false)'}`);
+// D1: the control's input tokens are this version's fixed overhead (its own instructions plus a tiny prompt).
+const overhead = control?.raw?.run?.usage?.input_tokens ?? null;
+console.log(`FACT  input overhead measured by the control: ${overhead ?? 'unknown'} tokens${listed?.inputOverheadTokens ? ` (entry: ${listed.inputOverheadTokens})` : ''}`);
+if (listed?.inputOverheadTokens && overhead && Math.abs(overhead - listed.inputOverheadTokens) > listed.inputOverheadTokens * 0.1) {
+  console.log(`NOTE  the overhead differs from VERIFIED_CODEX_VERSIONS['${number}'].inputOverheadTokens by more than 10%: update the entry.`);
+}
+if (!listed) {
+  console.log('\nCandidate entry for VERIFIED_CODEX_VERSIONS (add it only if every check above is PASS; add a harmless notice only if it is a transport notice):');
+  console.log(`  '${number}': Object.freeze({
+    verified: '<today>',
+    harmlessErrors: Object.freeze([]),
+    actionsBlocked: ${JSON.stringify(results.positive?.caught === true)},
+    inputOverheadTokens: ${JSON.stringify(overhead)},
+  }),`);
+}
 process.exitCode = listed && Object.values(checks).every(Boolean) ? 0 : 1;
