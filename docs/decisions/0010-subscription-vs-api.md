@@ -146,3 +146,6 @@ Founder, 2026-11-24 (board, `judge-channel-safety`): "Subscriptions + guards unt
 their subscriptions with the guards of Fable review 9 while every verdict is confirmed by the founder; before any
 automatic approval the channel is decided again (Fable: OpenAI first to the API, since Codex is the weaker one and
 does not confirm its answering model).
+
+Founder, 2026-11-24 (board, `mistral-now`): "Add it now" — Mistral (Vibe CLI, installed by the founder) becomes the
+third judge now, after its terms are checked and its adapter passes the same isolation tests as the other two.
