@@ -12,9 +12,9 @@
   "meta": {
     "day": 2,
     "totalDays": 14,
-    "updated": "2026-11-24 11:12:31",
+    "updated": "2026-11-24 11:34:21",
     "launch": "Dec 5",
-    "headline": "Fable passed the design for upgrading the database once it holds published verdicts, with conditions; one last restructuring (format 13) and the safe upgrade tool are being built now, so please still don't press C in the verdicts queue (about one more day). Queue A is open to you."
+    "headline": "Database format 13 is live and passed Fable; you can now confirm verdicts at the desk (press C). Before many confirmations, please pick a backup (question below): from the first confirmation the public record exists only on this computer."
   },
   "counts": [
     {
@@ -82,16 +82,28 @@
     "Both judges passed Fable review 9 after 3 re-checks; committed and tagged",
     "First real votes: 3 trial claims, both judges agree on each",
     "Fable review 10: the database-upgrade design passed with conditions",
-    "Retirement trial pack cut and checked (pages 2 and 136 blank, as you confirmed)"
+    "Retirement trial pack cut and checked (pages 2 and 136 blank, as you confirmed)",
+    "Database format 13 live (last restructuring; growable lists for policy areas and source kinds); Fable review 11 passed it"
   ],
   "next": [
-    "Format 13 (last restructuring while nothing is published) + safe in-place upgrade tool (running); code review",
-    "Then: you confirm the trial verdicts and queue A at the desk",
-    "Mistral judge: adapter + file-reading tests (after the Codex follow-ups)",
-    "Vote on the retirement trial claim (pack ready) once the judge code settles",
-    "Backup of the database off this machine: needs a decision soon"
+    "You: confirm the 4 trial verdicts and queue A at the desk (desk is open)",
+    "Backup plan (your choice above), then a small backup script",
+    "Upgrade tool: small fixes from Fable review 11 (running); needed only before the next format change",
+    "Mistral judge: waits for the Vibe command-line install on your computer",
+    "Remaining trial packs: PDF tables need page images"
   ],
   "needs": [
+    {
+      "id": "backup-plan",
+      "t": "Backup of the database and evidence files",
+      "d": "From your first confirmation, the public record (ledger) and the archived evidence exist only on this computer; a disk failure would lose them. Rule so far: nothing leaves this machine until you decide. Options: A) an external USB drive, copied by a script after each desk session (stays offline, cheapest, needs you to plug it in); B) an encrypted copy (key only on your machine) to a cloud folder you already use (automatic, data leaves the machine but unreadable without the key); C) both. Cost: a small script either way. Recommendation: C, or A to start.",
+      "options": [
+        "A: USB drive",
+        "B: encrypted cloud copy",
+        "C: both"
+      ],
+      "placeholder": "Which drive or cloud folder, anything to add"
+    },
     {
       "id": "note",
       "t": "Anything else to tell me",
