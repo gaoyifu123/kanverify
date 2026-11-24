@@ -141,3 +141,8 @@ Mistral on subscription) is refused when the settings are read. Gemini and Mistr
 Founder, 2026-11-24: Google and Mistral judges wait until production starts ("开始PROD之后再来，不然订阅要花钱").
 Until then the jury is OpenAI (Codex) and Anthropic (Claude), both on existing subscriptions; Gemini and Mistral stay
 `off` in `src/jury-members.json`. Their terms check is postponed to then.
+
+Founder, 2026-11-24 (board, `judge-channel-safety`): "Subscriptions + guards until auto-approval". Both judges stay on
+their subscriptions with the guards of Fable review 9 while every verdict is confirmed by the founder; before any
+automatic approval the channel is decided again (Fable: OpenAI first to the API, since Codex is the weaker one and
+does not confirm its answering model).

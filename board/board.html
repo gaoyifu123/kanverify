@@ -12,9 +12,9 @@
   "meta": {
     "day": 2,
     "totalDays": 14,
-    "updated": "2026-11-24 10:51:51",
+    "updated": "2026-11-24 11:03:17",
     "launch": "Dec 5",
-    "headline": "Claude judge passed Fable (file-reading hole closed twice over). Codex installed on your computer and tested; its file-read check is being tightened. Your choice on subscriptions vs API is on the board."
+    "headline": "First real votes with both isolated judges on your computer: 3 trial claims, all unanimous (Macron health record: came true; Trump deportations and Iron Dome: pending). Judges passed Fable and are committed. Next: the desk in a browser so you can confirm them."
   },
   "counts": [
     {
@@ -24,18 +24,18 @@
     },
     {
       "label": "Fable reviews passed",
-      "value": "7 of 8",
-      "target": "Sent back again (one item): judge file-read guard"
+      "value": "8 of 8",
+      "target": "Judges isolated (tag fable-cli-judges-2026-11-24)"
     },
     {
       "label": "Tests",
-      "value": "373",
+      "value": "376",
       "target": "All passing"
     },
     {
       "label": "Jury",
       "value": "2",
-      "target": "OpenAI and Anthropic on subscriptions; Google and Mistral after production starts"
+      "target": "Codex and Claude on subscriptions, isolated and tested on your computer; first 3 real votes unanimous"
     }
   ],
   "done": [
@@ -78,14 +78,16 @@
     "Subjects created: Macron (1), Trump (2); 148 Macron promises imported, 48 to queue A",
     "Sources 8, 22, 26 transcribed; source 3 dated 2024-07-13 (first archived copy)",
     "Trump's promise page dated 2024-07-13 (first archived copy); 25 Trump promises imported, 7 to queue A",
-    "3 trial evidence packs cut and checked"
+    "3 trial evidence packs cut and checked",
+    "Both judges passed Fable review 9 after 3 re-checks; committed and tagged",
+    "First real votes: 3 trial claims, both judges agree on each"
   ],
   "next": [
-    "Tighten the @ refusal + test a second guard; Codex judge file-read test (developers); smoke run in your terminal; Fable re-check",
-    "3 trial packs ready (Macron health record, Trump deportations, Iron Dome); votes after Fable passes",
-    "PDF tables need page images: your answer on pages 2/136 or poppler",
-    "You: queue A at the desk (48 Macron + 7 Trump items) once the desk is tested in a browser",
-    "Before automatic approval: protect vote files from hand-writing; judges' channel"
+    "Desk: real-browser test, then you confirm the 3 trial verdicts and queue A (55 items)",
+    "Mistral Vibe: check terms, build its judge with the same isolation tests (your call below)",
+    "Remaining trial packs: PDF tables need page images (poppler question on the board)",
+    "Small follow-ups on the Codex judge (token check); ordinary review",
+    "Before automatic approval: protect vote files; judges' channel"
   ],
   "needs": [
     {
@@ -100,15 +102,14 @@
       "placeholder": "What you saw on pages 2 and 136"
     },
     {
-      "id": "judge-channel-safety",
-      "t": "Judges: subscriptions with guards, or the API? (Fable: if one moves, it should be OpenAI)",
-      "d": "Tested on your computer. Claude: two guards now block the file-reading hole (texts with @paths are refused, and the tool is forbidden to read files); Fable passed it. Codex: its model can read files by itself if a text persuades it; in the test it declined, and the program voids any vote whose run read a file, but that check is still being tightened. Codex on the subscription also cannot tell us which model actually answered; votes will say \"model requested, not confirmed\". The API has neither issue but costs money (about 0.10 USD per claim per judge). Recommendation: both on subscriptions with the guards until launch, since you confirm every verdict; before any automatic approval, move OpenAI (the weaker one) to the API.",
+      "id": "mistral-now",
+      "t": "Mistral as a third judge: now or after launch?",
+      "d": "You installed Mistral Vibe. Making it a judge means: check its terms for automated use on a subscription, write its judge adapter, and run the same file-reading bait tests on your computer, then one Fable review (about half a day to a day). Benefits: three judges avoid 1-1 splits; a European vendor beside two American ones (principle 8). Recommendation: now.",
       "options": [
-        "Subscriptions + guards until auto-approval",
-        "Move OpenAI to the API now",
-        "Both to the API now"
+        "Add it now",
+        "After launch"
       ],
-      "placeholder": "Anything to add"
+      "placeholder": "Your plan (Pro?), anything to add"
     },
     {
       "id": "note",
@@ -800,6 +801,12 @@
       "id": "0017",
       "t": "Commentary predictions: top 100 per person analysed first (by event impact, place, specificity, spread, never by outcome); all extracted ones kept with our preliminary classification; promises and official forecasts not capped",
       "by": "You decided in chat",
+      "s": "done"
+    },
+    {
+      "id": "0010+",
+      "t": "Judges stay on subscriptions with the Fable-reviewed guards until automatic approval; then OpenAI moves to the API first",
+      "by": "You decided on the board",
       "s": "done"
     }
   ],
