@@ -1,4 +1,4 @@
-# 0017. At most 100 predictions analysed per person; campaign promises are not capped
+# 0017. Top 100 predictions per person analysed first; everything extracted is kept; campaign promises are not capped
 
 - Date: 2026-11-24
 - Decided by: the founder, in chat (the cap, impact as a criterion, promises not capped); selection order proposed by
@@ -46,3 +46,15 @@ predictions wait for phase 2.
 
 - Impact is a judgment; the reason line makes it checkable, and the founder reviews the selection.
 - "At least half world/national" can favour sweeping, harder-to-check claims; the "checkable outcome" gate stays first.
+
+## Amendment (2026-11-24, founder): a priority, not a cap
+
+> 不是说是只记录一百条，是我们会按照我们的标准选出 top 一百，然后来优先的进行分析。其他的那些我们反正都已经抄录出来了，
+> 可以把我们抄录的……而且我们初步的判断也都记下来。
+
+- Every prediction extracted from commentary is kept: the verbatim quote, its source and our preliminary
+  classification (checkable or not, time range, probability with its reason). Nothing is thrown away.
+- The selection order above picks the **top 100 per person to analyse first** (evidence, jury, the founder's
+  confirmation). The rest wait, recorded, and can be analysed later in the same order.
+- Preliminary classifications are not verdicts. Whether and how the not-yet-analysed ones are shown on the site is
+  decided with the design; they are never presented as checked.
