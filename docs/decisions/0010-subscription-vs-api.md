@@ -149,3 +149,22 @@ does not confirm its answering model).
 
 Founder, 2026-11-24 (board, `mistral-now`): "Add it now" — Mistral (Vibe CLI, installed by the founder) becomes the
 third judge now, after its terms are checked and its adapter passes the same isolation tests as the other two.
+
+**Progress (2026-11-24, developer): Mistral on its subscription (Vibe CLI).**
+- Terms (coordinator's check): no Mistral page allows or forbids scripted use of a subscription; programmatic mode
+  (`vibe -p`) is documented for scripts; the consumer terms limit use to the subscriber's "personal capacity", which
+  fits one person running his own judge votes on his own machine and account; Mistral's help center steers API
+  automation to pay-as-you-go keys. Treated like Claude and Codex: subscription login, the founder's own use only,
+  revisited before readers can ever trigger a vote (that path must use the API).
+- Built: `src/ai/mistral-cli.js` (provider `vibe`), route `mistral` / `subscription` → `mistral-cli` in `src/jury.js`.
+  Same pattern as the other two: empty working folder, environment allowlist (no `MISTRAL_API_KEY`), `--max-turns 1`,
+  `--enabled-tools` naming no tool, `--system-prompt-file`, `@` path mentions refused, the run's facts read from the
+  tool's `export.json` (tool calls, assistant messages, warnings, model, fields) and checked again when a vote is read,
+  `model_reported` only when the export names the model, and a verified-versions list.
+- Still open: the flags come from Mistral's documentation; the developer's shell cannot run the founder's Vibe. The list
+  of verified versions is empty, so every Mistral vote is refused until `node scripts/smoke-mistral-judge.mjs` passes in
+  the founder's terminal and its entry is added. Mistral stays `off` in `src/jury-members.json` until then.
+- After code review (first send-back): a Vibe version is used only if its smoke run showed no tool call at all in
+  the positive control (`toolsOff`) and no reading of `@` files (`expandsAtMentions: false`; a version that reads them
+  is refused outright, there is no second layer). Whether Vibe uses the subscription login or a key stored in its own
+  folder (`~/.vibe/.env`) is unverified; the smoke script prints what it can see. Not yet shown: that it never bills the API.

@@ -271,6 +271,30 @@ export function initProblems(init, { cwd, version, expected }) {
 }
 
 /**
+ * L4: what a Claude vote file recorded, checked against the verified versions whenever the vote is
+ * read (src/jury.js, through ask's index): the tool version is verified, the recorded prefix is that
+ * version's, and the Read deny rule was on where the version reads @ files. Returns the problems.
+ */
+export function recordedRunProblems({ version, model, raw }, versions = VERIFIED_CLI_VERSIONS) {
+  const expected = typeof version === 'string' && Object.hasOwn(versions, version) ? versions[version] : null;
+  if (!expected) return [`tool version ${JSON.stringify(version ?? null)} is not a verified Claude Code version (${Object.keys(versions).join(', ')})`];
+  const problems = [];
+  // The tool's own init report, as the adapter required it (review of the Mistral judge, L1).
+  const init = raw?.init;
+  if (!init || typeof init !== 'object') problems.push('no init report recorded (raw.init)');
+  else {
+    for (const k of ['tools', 'mcp_servers', 'skills', 'slash_commands']) {
+      if (!Array.isArray(init[k]) || init[k].length > 0) problems.push(`the recorded init report does not show ${k} empty (raw.init.${k})`);
+    }
+    if (!Array.isArray(init.fields) || init.fields.some((f) => !expected.initFields.includes(f))) problems.push('the recorded init report has fields not seen when this version was verified (raw.init.fields)');
+  }
+  if (typeof model !== 'string' || answeringModel({ [raw?.model]: {} }, model) !== raw?.model) problems.push('the recorded model is not the one asked for (raw.model, model_requested)');
+  if (raw?.system_prefix !== expected.systemPrefix) problems.push('the recorded system prefix is not the one verified for this version (raw.system_prefix)');
+  if (expected.expandsAtMentions === true && raw?.deny_read !== true) problems.push('this version reads @ files, and the vote does not record the Read deny rule on (raw.deny_read)');
+  return problems;
+}
+
+/**
  * The adapter. `run` replaces spawnClaude in tests. `tmpRoot` is where the empty working folder
  * is made (tests give their own, so they can check nothing is left behind). `versions` replaces
  * VERIFIED_CLI_VERSIONS (tests, and the smoke script's candidate mode). `denyRead: false` drops the

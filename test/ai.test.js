@@ -252,7 +252,7 @@ test('JSON answers: a fenced block and padding are accepted, prose is not', asyn
 });
 
 test('index.js exports only ask, AiError and provider names: no adapter object is reachable', () => {
-  assert.deepEqual(Object.keys(layer).sort(), ['AiError', 'PROVIDERS', 'ask', 'textRefusal', 'unavailable']);
+  assert.deepEqual(Object.keys(layer).sort(), ['AiError', 'PROVIDERS', 'ask', 'recordProblems', 'textRefusal', 'unavailable']);
   assert.ok(Object.isFrozen(PROVIDERS));
   for (const entry of PROVIDERS) {
     assert.ok(Object.isFrozen(entry));
@@ -262,7 +262,7 @@ test('index.js exports only ask, AiError and provider names: no adapter object i
   }
   // Nothing exported carries a call() method, the shape every adapter has.
   for (const value of Object.values(layer)) {
-    assert.equal(typeof value?.call === 'function' && value !== layer.ask && value !== layer.AiError && value !== layer.unavailable && value !== layer.textRefusal, false);
+    assert.equal(typeof value?.call === 'function' && value !== layer.ask && value !== layer.AiError && value !== layer.unavailable && value !== layer.textRefusal && value !== layer.recordProblems, false);
   }
 });
 
@@ -285,7 +285,7 @@ function insideAi(rel) {
 }
 const VENDOR_RE = /api\.anthropic\.com|generativelanguage\.googleapis\.com|api\.openai\.com|api\.mistral\.ai|_API_KEY/;
 // Business code goes through ask(): importing an adapter or helper file directly is refused.
-const INTERNAL_IMPORT_RE = /['"][^'"]*\bai\/(anthropic|openai|gemini|mistral|http|chat-completions|fake|codex-cli|claude-cli)\.js['"]/;
+const INTERNAL_IMPORT_RE = /['"][^'"]*\bai\/(anthropic|openai|gemini|mistral|http|chat-completions|fake|codex-cli|claude-cli|mistral-cli)\.js['"]/;
 
 test('principle 8 guard: its own checks catch what they should', () => {
   assert.equal(insideAi('ai/index.js'), true);

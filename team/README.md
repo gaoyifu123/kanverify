@@ -115,3 +115,9 @@ forces a model switch or a costly handover:
   The other session resumes from the note alone, without rereading old transcripts.
 - **Switch only between steps, never in the middle of one.** A step is small enough to finish within a quota window.
 - Short Fable jobs (one review) don't need this; they run as a single reviewer agent from `docs/review-queue-fable.md`.
+
+## Cost discipline until launch (decision 0018)
+
+Fresh coordinator conversation when one gets long; architecture frozen; Fable only for changes that can alter the
+public record, otherwise one Opus code review, one re-check at most; fewer, bigger agent tasks; Sonnet for rule-following
+batch work; board updated two or three times a day.

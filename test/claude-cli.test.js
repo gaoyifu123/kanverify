@@ -294,3 +294,20 @@ test('findOnPath (Fable review 9, F8): on Windows only .exe and .com, never the 
   writeFileSync(join(bin, 'tool.exe'), '');
   assert.equal(findOnPath('tool', { PATH: bin }, 'win32'), join(bin, 'tool.exe'));
 });
+
+test('Claude L4: what a vote recorded is checked against the verified versions when it is read', async () => {
+  const { recordProblems } = await import('../src/ai/index.js');
+  const { claudeVoteRaw } = await import('./helpers.js');
+  const rec = (over = {}, model = 'claude-opus-5-5', version = '2.1.330') => recordProblems('claude', { version, model, raw: claudeVoteRaw(over) }).join('; ');
+  assert.equal(rec(), '');
+  assert.match(rec({}, 'claude-opus-5-5', '2.1.329'), /not a verified Claude Code version/);
+  assert.match(rec({ system_prefix: 'other' }), /system prefix/);
+  assert.match(rec({ deny_read: undefined }), /Read deny rule/);
+  // L1: the init report and the model are checked again too.
+  assert.match(rec({ init: { ...claudeVoteRaw().init, tools: ['Read'] } }), /does not show tools empty/);
+  assert.match(rec({ init: { ...claudeVoteRaw().init, mcp_servers: [{ name: 'x' }] } }), /mcp_servers empty/);
+  assert.match(rec({ init: { ...claudeVoteRaw().init, fields: [...claudeVoteRaw().init.fields, 'account'] } }), /fields not seen/);
+  assert.match(rec({ init: undefined }), /no init report recorded/);
+  assert.match(rec({ model: 'claude-haiku-5-5' }), /recorded model is not the one asked for/);
+  assert.equal(rec({ model: 'claude-opus-5-5-20261101' }), '', 'the requested name with a date');
+});

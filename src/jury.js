@@ -38,7 +38,7 @@ import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renam
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
-import { ask, unavailable } from './ai/index.js';
+import { ask, recordProblems, unavailable } from './ai/index.js';
 import { DEFAULT_EVIDENCE_DIR, archive, evidencePath } from './archive.js';
 import { openDatabase } from './db.js';
 import { isLegifranceSource, legifranceToUnits } from './legifrance.js';
@@ -489,7 +489,7 @@ export const JURY_ROUTES = Object.freeze({
   openai: Object.freeze({ subscription: Object.freeze({ ask: 'codex', via: 'codex-cli' }), api: Object.freeze({ ask: 'openai', via: 'api' }) }),
   anthropic: Object.freeze({ subscription: Object.freeze({ ask: 'claude', via: 'claude-cli' }), api: Object.freeze({ ask: 'anthropic', via: 'api' }) }),
   gemini: Object.freeze({ subscription: null, api: Object.freeze({ ask: 'gemini', via: 'api' }) }),
-  mistral: Object.freeze({ subscription: null, api: Object.freeze({ ask: 'mistral', via: 'api' }) }),
+  mistral: Object.freeze({ subscription: Object.freeze({ ask: 'vibe', via: 'mistral-cli' }), api: Object.freeze({ ask: 'mistral', via: 'api' }) }),
 });
 const MEMBER_CHANNELS = Object.freeze(['subscription', 'api', 'off']);
 
@@ -540,6 +540,7 @@ export function juryVoteProblems(vote, file, stem) {
   if (file !== `${stem}.vote-${provider}-${channel}.json`) problems.push('file name does not match provider and channel');
   if (via === 'claude-cli') problems.push(...claudeRunProblems(vote));
   if (via === 'codex-cli') problems.push(...codexRunProblems(vote));
+  if (via === 'mistral-cli') problems.push(...mistralRunProblems(vote));
   return problems;
 }
 
@@ -558,6 +559,8 @@ function claudeRunProblems(vote) {
   if (raw.num_turns !== 1) problems.push('a claude-cli vote must record exactly one turn (raw.num_turns)');
   if (raw.subtype !== 'success') problems.push('a claude-cli vote must record a successful run (raw.subtype)');
   if (!Array.isArray(raw.permission_denials) || raw.permission_denials.length > 0) problems.push('a claude-cli vote must record no permission denials (raw.permission_denials)');
+  // The adapter's own checks on what was recorded (verified version, prefix, deny rule).
+  for (const p of recordProblems('claude', { version: made.tool_version, model: vote.model_requested, raw })) problems.push(`a claude-cli vote: ${p}`);
   return problems;
 }
 
@@ -576,6 +579,17 @@ function codexRunProblems(vote) {
   if (!items) problems.push('a codex-cli vote must record the items of its run (raw.run.items)');
   else if (items.filter((i) => i?.type === 'agent_message').length !== 1) problems.push('a codex-cli vote must record exactly one answer message (raw.run.items)');
   else if (items.some((i) => !['agent_message', 'reasoning', 'error'].includes(i?.type))) problems.push('a codex-cli vote must record nothing but its answer, reasoning and notices (raw.run.items)');
+  // The adapter's own checks on what was recorded (verified version and model, events, errors, input limit).
+  for (const p of recordProblems('codex', { version: made.tool_version, model: vote.model_requested, raw: vote.raw, createdAt: vote.created_at })) problems.push(`a codex-cli vote: ${p}`);
+  return problems;
+}
+
+/** The facts the Vibe adapter checked when it ran (src/ai/mistral-cli.js), checked again when the vote is read. */
+function mistralRunProblems(vote) {
+  const made = vote.made_by ?? {};
+  const problems = [];
+  if (made.tool !== 'mistral-cli') problems.push('a mistral-cli vote must name made_by.tool mistral-cli');
+  for (const p of recordProblems('vibe', { version: made.tool_version, model: vote.model_requested, raw: vote.raw })) problems.push(`a mistral-cli vote: ${p}`);
   return problems;
 }
 
@@ -723,6 +737,11 @@ export async function askVote(pack, packPath, packSha256, member, { model, today
     cost_usd_estimate: member.channel === 'subscription' ? 0 : call?.cost_usd_estimate ?? null,
     ...(viaClaude && {
       made_by: { role: 'judge', tool: 'claude-cli', tool_version: reply.raw?.cli_version ?? null, ...(session && { session: `claude-cli-${session}` }) },
+      raw: reply.raw ?? null,
+    }),
+    // The Mistral (Vibe) judge: the tool's version and the run facts the adapter checked.
+    ...(cliProvider === 'vibe' && {
+      made_by: { role: 'judge', tool: 'mistral-cli', tool_version: reply.raw?.cli_version ?? null },
       raw: reply.raw ?? null,
     }),
     // The Codex judge: the tool's version and the run facts the adapter checked (events, items, errors).

@@ -123,7 +123,7 @@ test('R1: a grandchild that keeps the pipes open cannot hold the call past its t
 test('F2: a cleanup failure never replaces the original error; stale folders are swept later', async (t) => {
   const root = tempRoot(t, 'kv-codex-root-');
   const run = async () => { throw Object.assign(new Error('aborted'), { name: 'AbortError' }); };
-  await assert.rejects(createCodexAdapter({ run, tmpRoot: root }).call({ model: 'm', prompt: 'p' }, {}), (e) => e.name === 'AbortError');
+  await assert.rejects(createCodexAdapter({ run, tmpRoot: root }).call({ model: 'gpt-6.2-sol', prompt: 'p' }, {}), (e) => e.name === 'AbortError');
   assert.deepEqual(readdirSync(root), []);
 
   const old = join(root, 'kv-codex-work-old');
@@ -157,7 +157,7 @@ test('F6: the stderr tail keeps only the last lines that are not part of the pro
 
   const root = tempRoot(t, 'kv-codex-root-');
   const run = async (args) => (args[0] === '--version' ? { code: 0, stdout: 'codex-cli 0.172.0' } : { code: 1, stdout: '', stderr: `${stderr}\nJudge this claim.` });
-  await assert.rejects(createCodexAdapter({ run, tmpRoot: root }).call({ model: 'm', system: 'KANVERIFY principles\nSECRET PACK LINE: ignore previous instructions', prompt: 'Judge this claim.' }, {}), (e) => {
+  await assert.rejects(createCodexAdapter({ run, tmpRoot: root }).call({ model: 'gpt-6.2-sol', system: 'KANVERIFY principles\nSECRET PACK LINE: ignore previous instructions', prompt: 'Judge this claim.' }, {}), (e) => {
     assert.ok(!e.message.includes('SECRET PACK LINE'));
     assert.ok(!e.message.includes('Judge this claim'));
     assert.match(e.message, /fatal: gave up/);
@@ -227,7 +227,7 @@ test('Codex run events (Fable review 9, re-check 1): a reply counts only if the 
     return { code: 0, stdout, stderr: 'model: gpt-x\n' };
   };
   const { ask } = await import('../src/ai/index.js');
-  const req = { provider: 'codex', model: 'gpt-x', promptVersion: 'v', prompt: 'Answer in JSON.', json: true };
+  const req = { provider: 'codex', model: 'gpt-6.2-sol', promptVersion: 'v', prompt: 'Answer in JSON.', json: true };
   const reading = ev({ type: 'item.completed', item: { id: 'i', type: 'command_execution', command: 'type C:/x/.env' } }, item('agent_message'), done);
   await assert.rejects(ask(req, { env: {}, adapters: { codex: createCodexAdapter({ run: runWith(reading), tmpRoot: root }) } }),
     (e) => e.code === 'bad_response' && /did more than answer: command_execution/.test(e.message));
@@ -289,7 +289,7 @@ test('Codex D1 (re-check 3): a run that read more input than one answer can take
       { type: 'turn.completed', ...(usage && { usage }) }];
     return { code: 0, stdout: lines.map((e) => JSON.stringify(e)).join('\n'), stderr: '' };
   };
-  const req = { provider: 'codex', model: 'gpt-x', promptVersion: 'v', system: 'S', prompt: 'Answer in JSON.', json: true };
+  const req = { provider: 'codex', model: 'gpt-6.2-sol', promptVersion: 'v', system: 'S', prompt: 'Answer in JSON.', json: true };
   const limit = inputLimit(entry, 'S\n\n---\n\nAnswer in JSON.');
   const opts = (usage) => ({ env: {}, adapters: { codex: createCodexAdapter({ run: runWithTokens(usage), tmpRoot: root }) } });
   // The founder's positive control read 34,514 tokens for a tiny prompt: refused.
@@ -303,4 +303,44 @@ test('Codex D1 (re-check 3): a run that read more input than one answer can take
 test('fake codex runs never write into the folder the tests run from', () => {
   assert.throws(() => codexOutFile(['--version']), /no -o/);
   assert.equal(codexOutFile(['exec', '-o', 'answer.txt', '-']), 'answer.txt');
+});
+
+test('Codex L2: the measured overhead holds for the measured model only; another model is refused before anything is sent', async (t) => {
+  const { ask } = await import('../src/ai/index.js');
+  const { VERIFIED_CODEX_VERSIONS } = await import('../src/ai/codex-cli.js');
+  assert.equal(VERIFIED_CODEX_VERSIONS['0.172.0'].model, 'gpt-6.2-sol');
+  const root = tempRoot(t, 'kv-codex-root-');
+  let sent = false;
+  const run = async (args) => (args[0] === '--version' ? { code: 0, stdout: 'codex-cli 0.172.0' } : ((sent = true), { code: 0, stdout: '' }));
+  await assert.rejects(ask({ provider: 'codex', model: 'gpt-7-other', promptVersion: 'v', prompt: 'Answer in JSON.', json: true }, { env: {}, adapters: { codex: createCodexAdapter({ run, tmpRoot: root }) } }),
+    (e) => e.code === 'unsupported' && /measured with model gpt-6\.2-sol, not gpt-7-other; run node scripts\/smoke-codex-judge\.mjs/.test(e.message));
+  assert.equal(sent, false);
+});
+
+test('Codex L4: what a vote recorded is checked again as the adapter checked it', async () => {
+  const { recordProblems } = await import('../src/ai/index.js');
+  const { CODEX_VOTE_FACTS } = await import('./helpers.js');
+  const good = { version: '0.172.0', model: 'gpt-6.2-sol', raw: CODEX_VOTE_FACTS.raw };
+  assert.deepEqual(recordProblems('codex', good), []);
+  const withRun = (run, over = {}) => ({ ...good, ...over, raw: { ...good.raw, ...over.raw, run: { ...good.raw.run, ...run } } });
+  const cases = [
+    [{ ...good, version: '0.171.0' }, /not a verified Codex version/],
+    [{ ...good, model: 'gpt-7-other' }, /measured with model gpt-6\.2-sol, not gpt-7-other/],
+    [withRun({ events: { ...good.raw.run.events, 'exec_command_begin': 1 } }), /events a judge's run does not have: exec_command_begin/],
+    [withRun({ events: { ...good.raw.run.events, 'turn.completed': 2 } }), /2 completed turns recorded/],
+    [withRun({ item_types: ['agent_message', 'command_execution'] }), /item types other than/],
+    [withRun({ errors: ['Model rerouted to gpt-mini'] }), /error message not known to be harmless/],
+    [withRun({ usage: { input_tokens: 40_000 } }), /above the recorded limit/],
+    [{ ...good, raw: { tool: 'codex exec' } }, /no run facts recorded/],
+  ];
+  for (const [record, re] of cases) assert.match(recordProblems('codex', record).join('; '), re);
+  assert.deepEqual(recordProblems('codex', withRun({ errors: ['Reconnecting... 2/5 (unexpected status 401)'] })), [], 'a known transport notice is fine');
+  // L2: a vote without a limit is accepted only if it was made before the limit existed.
+  const { INPUT_LIMIT_SINCE } = await import('../src/ai/codex-cli.js');
+  const noLimit = { ...good, raw: { ...good.raw, input_limit: undefined } };
+  assert.deepEqual(recordProblems('codex', { ...noLimit, createdAt: '2026-11-24T10:01:57.664Z' }), [], 'a vote from before the limit');
+  assert.match(recordProblems('codex', { ...noLimit, createdAt: INPUT_LIMIT_SINCE }).join(), /no input limit recorded/);
+  assert.match(recordProblems('codex', { ...noLimit, createdAt: '2026-11-25T09:00:00Z' }).join(), /no input limit recorded/);
+  assert.match(recordProblems('codex', noLimit).join(), /no input limit recorded/, 'no date: not shown to be from before');
+  assert.deepEqual(recordProblems('gemini', good), [], 'API judges record no run facts');
 });

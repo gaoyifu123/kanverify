@@ -73,6 +73,8 @@ export function codexArgs({ model, effort = REASONING_EFFORT, schemaFile, outFil
  *                   error message refuses the reply
  *   actionsBlocked       its own execution policy blocked a command and a file read asked for in the
  *                        prompt (the smoke script's positive control)
+ *   model                the model the smoke script measured; the overhead holds for it only, so
+ *                        another model is refused until the smoke script has run for it
  *   inputOverheadTokens  input tokens of the smoke control (Codex's own instructions plus a tiny
  *                        prompt); a run may read at most this + our input's characters / 2.5 +
  *                        INPUT_MARGIN_TOKENS, because a blocked action sends the whole context again
@@ -89,12 +91,17 @@ export const VERIFIED_CODEX_VERSIONS = Object.freeze({
     verified: '2026-11-24',
     harmlessErrors: Object.freeze([/^Reconnecting\.\.\. \d+\/\d+ \(/, /^Falling back from WebSockets to HTTPS transport\./]),
     actionsBlocked: true,
+    model: 'gpt-6.2-sol',
     inputOverheadTokens: 17_085,
   }),
 });
 const CODEX_VERSION_RE = /(\d+\.\d+\.\d+)/;
 // Room above the estimate before a run counts as having read its context twice (Fable review 9, re-check 3, D1).
 export const INPUT_MARGIN_TOKENS = 3000;
+// Our input is estimated at one token per 2.5 characters, generous for French and English text
+// (about 3.5-4 in practice). Text in a script that takes more tokens per character (Chinese,
+// Arabic, Cyrillic, much of it quoted) could exceed the estimate and be refused as a double read:
+// a false refusal, reported to the founder, never a vote let through. Revisit before such packs.
 const CHARS_PER_TOKEN_LOW = 2.5;
 
 /** The most input tokens one answer to `input` can take on a version with a measured overhead, or null. */
@@ -157,6 +164,42 @@ export function codexRunFacts(stdout, { harmlessErrors = [] } = {}) {
     problems,
     facts: { events, item_types: [...itemTypes].sort(), items, usage, errors: errors.slice(0, MAX_ERRORS_KEPT).map((m) => m.slice(0, 300)) },
   };
+}
+
+/**
+ * L4: the adapter's checks, run again on what a Codex vote file recorded (src/jury.js calls this
+ * through ask's index whenever a vote is read). `version` is made_by.tool_version, `model` the model
+ * asked for, `raw` the vote's raw record. Returns the problems.
+ */
+// D1 went into effect with commit 6006077 (2026-11-24 11:06:47 +01:00). A vote made before then may
+// lack raw.input_limit; one made after must have it (review of the Mistral judge, L2).
+export const INPUT_LIMIT_SINCE = '2026-11-24T10:06:47Z';
+
+export function recordedRunProblems({ version, model, raw, createdAt }, versions = VERIFIED_CODEX_VERSIONS) {
+  const problems = [];
+  const expected = typeof version === 'string' && Object.hasOwn(versions, version) ? versions[version] : null;
+  if (!expected) problems.push(`tool version ${JSON.stringify(version ?? null)} is not a verified Codex version (${Object.keys(versions).join(', ')})`);
+  else if (Number.isInteger(expected.inputOverheadTokens) && expected.model !== model) problems.push(`Codex ${version} was measured with model ${expected.model}, not ${model}`);
+  const run = raw?.run;
+  if (!run || typeof run !== 'object') return [...problems, 'no run facts recorded (raw.run)'];
+  const events = run.events && typeof run.events === 'object' ? run.events : null;
+  if (!events) problems.push('no event counts recorded (raw.run.events)');
+  else {
+    const other = Object.keys(events).filter((t) => !RUN_EVENT_TYPES.includes(t));
+    if (other.length > 0) problems.push(`events a judge's run does not have: ${other.sort().join(', ')}`);
+    if (events['turn.completed'] !== 1) problems.push(`${events['turn.completed'] ?? 0} completed turns recorded, not exactly one`);
+  }
+  if (!Array.isArray(run.item_types) || run.item_types.some((t) => !RUN_ITEM_TYPES.includes(t))) problems.push('item types other than answer, reasoning and notices recorded (raw.run.item_types)');
+  if (!Array.isArray(run.errors)) problems.push('no error messages recorded (raw.run.errors)');
+  else if (expected && run.errors.some((m) => !(expected.harmlessErrors ?? []).some((re) => re.test(String(m))))) problems.push('an error message not known to be harmless is recorded (raw.run.errors)');
+  if (raw.input_limit !== undefined && raw.input_limit !== null) {
+    const used = run.usage?.input_tokens;
+    if (!Number.isInteger(raw.input_limit) || !Number.isInteger(used) || used > raw.input_limit) problems.push('the recorded input tokens are missing or above the recorded limit (raw.run.usage, raw.input_limit)');
+  } else if (expected && Number.isInteger(expected.inputOverheadTokens)) {
+    const made = Date.parse(createdAt ?? '');
+    if (!(made < Date.parse(INPUT_LIMIT_SINCE))) problems.push('no input limit recorded, and the vote is not from before the limit existed (raw.input_limit, created_at)');
+  }
+  return problems;
 }
 
 /** Model and token count from the header and footer Codex prints on stderr. */
@@ -357,6 +400,10 @@ export function createCodexAdapter({ run = spawnCodex, effort = REASONING_EFFORT
         const expected = Object.hasOwn(versions, cliVersion) ? versions[cliVersion] : null;
         if (!expected) {
           throw new AiError('unsupported', `codex: Codex ${cliVersion} is not a verified version (${Object.keys(versions).join(', ') || 'none'}); run node scripts/smoke-codex-judge.mjs to verify it`, { provider: 'codex' });
+        }
+        // L2: the measured overhead holds for the measured model only.
+        if (Number.isInteger(expected.inputOverheadTokens) && expected.model !== req.model) {
+          throw new AiError('unsupported', `codex: Codex ${cliVersion} was measured with model ${expected.model ?? '(none)'}, not ${req.model}; run node scripts/smoke-codex-judge.mjs for this model`, { provider: 'codex' });
         }
         const input = req.system ? `${req.system}\n\n---\n\n${req.prompt}` : req.prompt;
         const result = await run(args, { cwd: work, env, input, signal: ctx.signal });

@@ -18,7 +18,7 @@ import {
   MAX_PACK_TOKENS, boundaryProblems, judgeTextRefusals, checkCandidatesFile, checkPack, checkVote, locateSpan, packPromptVersion, sha256Of, sourceUnits, startPack, unitsListing,
 } from '../src/pack.js';
 import { sameSessionProblem } from '../src/rules.js';
-import { CODEX_EVENTS, CODEX_VOTE_FACTS, TEST_JURY, codexOutFile, addClaim, addSource, claudeInitLine, freshDb } from './helpers.js';
+import { CODEX_EVENTS, CODEX_VOTE_FACTS, TEST_JURY, claudeVoteRaw, codexOutFile, addClaim, addSource, claudeInitLine, freshDb } from './helpers.js';
 
 /** The test jury with some members changed: jury({ gemini: { channel: 'api', model: 'gemini-x' } }). */
 const jury = (members = {}) => ({ ...TEST_JURY, members: { ...TEST_JURY.members, ...members } });
@@ -181,7 +181,7 @@ function voteFor(s, packSha256, over = {}) {
     evidence: [{ source_id: s.ids.law, excerpt: 'Trente minutes d’activité physique quotidienne sont généralisées', locator: '§2', pdf_page: null }],
     reasoning: 'r', open_question_fr: null, open_question_en: null, summary_fr: 'f', summary_en: 'e',
     made_by: { role: 'judge', tool: 'claude-cli', tool_version: '2.1.330', session: 'claude-cli-vote-test' },
-    raw: { tool: 'claude -p', num_turns: 1, subtype: 'success', permission_denials: [] }, ...over,
+    model_requested: 'claude-opus-5-5', raw: claudeVoteRaw(), ...over,
   };
 }
 
@@ -724,7 +724,7 @@ test('jury settings: the file in the repository loads, and a typo is an error, n
   assert.equal(loadJury(jury({ mistral: { channel: 'api', model: 'mistral-x' } }))[3].route.ask, 'mistral');
   // F7: a channel with no adapter is refused when the settings are read, before any pack is touched.
   assert.throws(() => loadJury(jury({ gemini: { channel: 'subscription', model: 'g' } })), /gemini: no subscription adapter yet; choose api or off/);
-  assert.throws(() => loadJury(jury({ mistral: { channel: 'subscription', model: 'm' } })), /mistral: no subscription adapter yet; choose api or off/);
+  assert.deepEqual(loadJury(jury({ mistral: { channel: 'subscription', model: 'mistral-large-4-0' } }))[3].route, { ask: 'vibe', via: 'mistral-cli' });
 });
 
 // ---------------------------------------------------------------- Fable review 6: pack-0.2 enforced by the program

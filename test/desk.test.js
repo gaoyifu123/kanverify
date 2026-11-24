@@ -16,7 +16,7 @@ import { closeRound as closeRoundWith, judgeInputText, readRounds, roundsFileNam
 import { publicationBlockers, withdraw } from '../src/ledger.js';
 import { packPromptVersion, sha256Of } from '../src/pack.js';
 import { sameSessionProblem } from '../src/rules.js';
-import { TEST_JURY, addClaim, addSource, addVerdict, freshDb, CODEX_VOTE_FACTS } from './helpers.js';
+import { TEST_JURY, addClaim, addSource, addVerdict, freshDb, CODEX_VOTE_FACTS, claudeVoteRaw } from './helpers.js';
 
 // The test jury (openai and anthropic on), not the real settings file.
 const closeRound = (packPath, options = {}) => closeRoundWith(packPath, { jury: TEST_JURY, ...options });
@@ -128,7 +128,7 @@ function writePack(s, verdicts = ['came_true', 'came_true'], { claim: claimOver 
       // A command-line Claude vote names its run as the adapter wrote it (review 9 F6); sessions[0] null leaves the session out.
       ...(via === 'claude-cli' ? {
         made_by: { role: 'judge', tool: 'claude-cli', tool_version: '2.1.330', ...((sessions[i] ?? sessions[i] === undefined) && { session: sessions[i] ?? 'claude-cli-desk-test' }) },
-        raw: { tool: 'claude -p', num_turns: 1, subtype: 'success', permission_denials: [] },
+        model_requested: 'claude-opus-5-5', raw: claudeVoteRaw(),
       } : via === 'codex-cli' ? CODEX_VOTE_FACTS : sessions[i] && { made_by: { session: sessions[i] } }),
       reasoning: `reasoning ${i + 1}`, open_question_fr: null, open_question_en: null,
       summary_fr: `X est en vigueur (vote ${i + 1}).`, summary_en: `X is in force (vote ${i + 1}).`,

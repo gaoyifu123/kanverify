@@ -55,7 +55,13 @@ console.log(`codex script: ${script}`);
 const number = /(\d+\.\d+\.\d+)/.exec(version)?.[1];
 const listed = number && Object.hasOwn(VERIFIED_CODEX_VERSIONS, number) ? VERIFIED_CODEX_VERSIONS[number] : null;
 console.log(`Codex: ${version}, model ${member.model}: ${listed ? `verified on ${listed.verified}` : 'NOT VERIFIED, candidate mode'}`);
-const adapter = createCodexAdapter({ versions: listed ? VERIFIED_CODEX_VERSIONS : { [number]: { verified: null, harmlessErrors: [] } } });
+// L2: the overhead is per model. For a model the entry was not measured with, measure it (no limit yet).
+const otherModel = Boolean(listed?.inputOverheadTokens) && listed.model !== member.model;
+if (otherModel) console.log(`Codex ${number} was measured with model ${listed.model}; measuring ${member.model} (no input limit this run)`);
+const adapter = createCodexAdapter({
+  versions: !listed ? { [number]: { verified: null, harmlessErrors: [] } }
+    : otherModel ? { [number]: { ...listed, model: null, inputOverheadTokens: null } } : VERIFIED_CODEX_VERSIONS,
+});
 
 const tag = randomBytes(4).toString('hex').toUpperCase();
 const canaryA = `KVCANARY-ALPHA-${tag}`;
@@ -129,16 +135,20 @@ console.log(`FACT  the model name is reported with --json: ${control?.raw?.model
 // D1: the control's input tokens are this version's fixed overhead (its own instructions plus a tiny prompt).
 const overhead = control?.raw?.run?.usage?.input_tokens ?? null;
 console.log(`FACT  input overhead measured by the control: ${overhead ?? 'unknown'} tokens${listed?.inputOverheadTokens ? ` (entry: ${listed.inputOverheadTokens})` : ''}`);
-if (listed?.inputOverheadTokens && overhead && Math.abs(overhead - listed.inputOverheadTokens) > listed.inputOverheadTokens * 0.1) {
-  console.log(`NOTE  the overhead differs from VERIFIED_CODEX_VERSIONS['${number}'].inputOverheadTokens by more than 10%: update the entry.`);
+// L3: a version entry's overhead must still be what this version uses, for the model it was measured with.
+if (listed?.inputOverheadTokens && !otherModel) {
+  const near = Number.isInteger(overhead) && Math.abs(overhead - listed.inputOverheadTokens) <= listed.inputOverheadTokens * 0.1;
+  console.log(`${near ? 'PASS' : 'FAIL'}  input overhead within 10% of the entry (${listed.inputOverheadTokens}, model ${listed.model})${near ? '' : ': update the entry from this run'}`);
+  if (!near) checks['input overhead within 10% of the entry'] = false;
 }
-if (!listed) {
+if (!listed || otherModel) {
   console.log('\nCandidate entry for VERIFIED_CODEX_VERSIONS (add it only if every check above is PASS; add a harmless notice only if it is a transport notice):');
   console.log(`  '${number}': Object.freeze({
     verified: '<today>',
-    harmlessErrors: Object.freeze([]),
+    harmlessErrors: ${listed ? '(keep the existing list)' : 'Object.freeze([])'},
     actionsBlocked: ${JSON.stringify(results.positive?.caught === true)},
+    model: ${JSON.stringify(member.model)},
     inputOverheadTokens: ${JSON.stringify(overhead)},
   }),`);
 }
-process.exitCode = listed && Object.values(checks).every(Boolean) ? 0 : 1;
+process.exitCode = listed && !otherModel && Object.values(checks).every(Boolean) ? 0 : 1;

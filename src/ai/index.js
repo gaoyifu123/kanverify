@@ -6,8 +6,9 @@
 // the single JSON retry, caching, streaming, rate limiting.
 
 import anthropic from './anthropic.js';
-import claude, { atPathMention } from './claude-cli.js';
-import codex from './codex-cli.js';
+import claude, { atPathMention, recordedRunProblems as claudeRecordProblems } from './claude-cli.js';
+import codex, { recordedRunProblems as codexRecordProblems } from './codex-cli.js';
+import vibe, { recordedRunProblems as vibeRecordProblems } from './mistral-cli.js';
 import { loadEnv } from './env.js';
 import { AiError } from './errors.js';
 import gemini from './gemini.js';
@@ -21,7 +22,8 @@ export { AiError } from './errors.js';
 // without ask() (docs/log/2026-11-22-step-back-ai-guard.md). Only names are public.
 // codex runs the Codex command-line tool under the founder's ChatGPT subscription (decision 0010);
 // claude runs the Claude Code command-line tool under his Claude subscription (decision 0013).
-const ADAPTERS = Object.freeze({ anthropic, gemini, openai, mistral, codex, claude });
+// vibe runs Mistral's Vibe command-line tool under the founder's Mistral subscription (decision 0010, 2026-11-24).
+const ADAPTERS = Object.freeze({ anthropic, gemini, openai, mistral, codex, claude, vibe });
 // The providers paid through an API key in .env. codex and claude need no key and are not listed.
 export const PROVIDERS = Object.freeze(
   Object.values(ADAPTERS).filter(({ keyVar }) => keyVar).map(({ name, keyVar }) => Object.freeze({ name, keyVar })),
@@ -199,7 +201,18 @@ async function callOnce(adapter, req, key, fetchImpl) {
 
 // Text an adapter refuses to send, checked by the adapter itself before any call; here so a caller
 // can find it earlier (review 9 F2d: the pack check reports it to the cutter).
-const TEXT_CHECKS = Object.freeze({ claude: atPathMention });
+const TEXT_CHECKS = Object.freeze({ claude: atPathMention, vibe: atPathMention });
+
+// What a command-line judge's vote recorded about its run, checked again when the vote is read.
+const RECORD_CHECKS = Object.freeze({ claude: claudeRecordProblems, codex: codexRecordProblems, vibe: vibeRecordProblems });
+
+/**
+ * recordProblems(provider, { version, model, raw }) -> the problems the adapter of `provider` finds in
+ * what a vote recorded about its run (tool version verified, run facts as the adapter requires), or [].
+ */
+export function recordProblems(provider, record) {
+  return RECORD_CHECKS[provider]?.(record) ?? [];
+}
 
 /** textRefusal(provider, text) -> why that provider's adapter would refuse to send `text`, or null. */
 export function textRefusal(provider, text) {

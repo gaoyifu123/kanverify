@@ -196,8 +196,15 @@ export const CODEX_EVENTS = [
 
 /** What a Codex command-line vote records about its run (src/jury.js re-checks it when the file is read). */
 export const CODEX_VOTE_FACTS = Object.freeze({
+  model_requested: 'gpt-6.2-sol',
   made_by: { role: 'judge', tool: 'codex-cli', tool_version: '0.172.0' },
-  raw: { tool: 'codex exec', cli_version: '0.172.0', model_reported: false, run: { items: [{ type: 'reasoning', length: 10 }, { type: 'agent_message', length: 400 }] } },
+  raw: {
+    tool: 'codex exec', cli_version: '0.172.0', model_reported: false, input_limit: 26_000,
+    run: {
+      events: { 'thread.started': 1, 'turn.started': 1, 'item.completed': 2, 'turn.completed': 1 }, item_types: ['agent_message', 'reasoning'],
+      items: [{ type: 'reasoning', length: 10 }, { type: 'agent_message', length: 400 }], usage: { input_tokens: 21_000, output_tokens: 300 }, errors: [],
+    },
+  },
 });
 
 /**
@@ -209,4 +216,14 @@ export function codexOutFile(args) {
   const at = args.indexOf('-o');
   if (at < 0 || typeof args[at + 1] !== 'string') throw new Error(`fake codex: no -o in ${JSON.stringify(args)}`);
   return args[at + 1];
+}
+
+/** What a Claude command-line vote records about its run (src/jury.js re-checks it when the file is read). */
+export function claudeVoteRaw(over = {}) {
+  return {
+    tool: 'claude -p', num_turns: 1, subtype: 'success', permission_denials: [], deny_read: true, model: 'claude-opus-5-5',
+    system_prefix: "You are a Claude agent, built on Anthropic's Claude Agent SDK.",
+    init: { tools: [], mcp_servers: [], skills: [], slash_commands: [], fields: Object.keys(JSON.parse(claudeInitLine('x'))).sort() },
+    ...over,
+  };
 }

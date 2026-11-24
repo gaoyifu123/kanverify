@@ -84,7 +84,7 @@ test('ask refuses a Codex reply that quotes a secret (the adapter path F3 was ab
     return { code: 0, stdout: CODEX_EVENTS, stderr: 'model: gpt-x\n' };
   };
   await assert.rejects(
-    ask({ ...REQ, provider: 'codex', model: 'gpt-x' }, { env: {}, adapters: { codex: createCodexAdapter({ run, tmpRoot: root }) } }),
+    ask({ ...REQ, provider: 'codex', model: 'gpt-6.2-sol' }, { env: {}, adapters: { codex: createCodexAdapter({ run, tmpRoot: root }) } }),
     (e) => e.code === 'secret_in_reply' && e.provider === 'codex'
   );
 });
