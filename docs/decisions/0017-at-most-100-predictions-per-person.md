@@ -13,8 +13,10 @@ per person are analysed and shown.
 
 ## Scope
 
-- **Predictions** (commentators, forecasters, officials' forecasts): at most 100 per person.
-- **Campaign promises are not capped** (founder): every recorded promise is analysed and shown, as decided in 0013.
+- **Only predictions published as commentary (时评)** — blogs, columns, opinion pieces, commentary programmes,
+  replies under them: at most 100 per person (founder: "限制的只是时评发布的预言").
+- **Not capped**: campaign promises (every recorded promise is analysed and shown, decision 0013), and every other
+  kind of statement, such as forecasts made in an official capacity.
 
 ## Who qualifies
 
